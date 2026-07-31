@@ -16,7 +16,7 @@
   *{box-sizing:border-box;}
   body{margin:0;background:var(--ink);color:var(--text);font-family:var(--font-body);-webkit-font-smoothing:antialiased;}
   a{color:inherit;text-decoration:none;}
-
+ 
   header.site{position:sticky;top:0;z-index:50;background:rgba(20,22,31,0.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);}
   .header-inner{max-width:1280px;margin:0 auto;padding:16px 28px;display:flex;align-items:center;gap:28px;flex-wrap:wrap;}
   .brand{font-family:var(--font-display);font-weight:700;font-size:22px;display:flex;align-items:baseline;gap:6px;cursor:pointer;}
@@ -24,7 +24,7 @@
   .search-wrap{flex:1;position:relative;max-width:520px;min-width:200px;}
   .search-wrap input{width:100%;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:10px 14px 10px 36px;border-radius:var(--radius);font-size:14px;}
   .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:13px;}
-
+ 
   main{max-width:1280px;margin:0 auto;padding:0 28px 80px;}
   .hero{padding:44px 0 30px;border-bottom:1px solid var(--border);margin-bottom:28px;}
   .hero .eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold);margin-bottom:12px;}
@@ -32,10 +32,10 @@
   .hero p{color:var(--text-dim);font-size:15px;max-width:560px;line-height:1.5;margin:0;}
   .data-status{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);margin-top:12px;}
   .data-status.error{color:var(--red);}
-
+ 
   .section-title{font-family:var(--font-display);font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:space-between;margin:0 0 18px;}
   .section-title .count{font-family:var(--font-mono);font-size:12px;color:var(--text-faint);font-weight:400;}
-
+ 
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:20px;}
   .card-tile{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:border-color .15s, transform .15s;}
   .card-tile:hover{border-color:var(--gold);transform:translateY(-2px);}
@@ -46,11 +46,11 @@
   .tile-body{padding:12px 14px 14px;}
   .tile-body .tcg-label{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;}
   .tile-body h3{font-family:var(--font-display);font-size:16px;margin:4px 0 0;font-weight:600;line-height:1.25;}
-
+ 
   .load-more{width:100%;padding:12px;margin-bottom:48px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;}
   .load-more:hover{border-color:var(--gold);color:var(--text);}
   .load-more:disabled{opacity:0.5;cursor:default;}
-
+ 
   .breadcrumb{font-family:var(--font-mono);font-size:12px;color:var(--text-faint);margin:24px 0 20px;}
   .breadcrumb a:hover{color:var(--gold);}
   .detail-top{display:grid;grid-template-columns:300px 1fr;gap:36px;margin-bottom:40px;}
@@ -69,14 +69,14 @@
   .buy-btn.ebay{border-left:3px solid #0064d2;}
   .buy-btn.ebay:hover{border-color:#0064d2;}
   .buy-btn.ebay .buy-badge{background:linear-gradient(90deg,#e53238 0 25%,#0064d2 25% 50%,#f5af02 50% 75%,#86b817 75% 100%);}
-
+ 
   .detail-info h1{font-family:var(--font-display);font-size:30px;margin:0 0 6px;font-weight:600;}
   .detail-meta{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-bottom:22px;text-transform:uppercase;}
   .market-placeholder{background:var(--panel);border:1px dashed var(--border);border-radius:var(--radius);padding:32px 24px;text-align:center;color:var(--text-dim);}
   .market-placeholder .icon{font-size:28px;margin-bottom:10px;}
   .market-placeholder h4{font-family:var(--font-display);font-size:16px;color:var(--text);margin:0 0 6px;}
   .market-placeholder p{font-size:13px;line-height:1.5;margin:0;max-width:420px;margin:0 auto;}
-
+ 
   .empty-state{padding:40px 10px;text-align:center;color:var(--text-faint);font-family:var(--font-mono);font-size:12px;}
   footer{border-top:1px solid var(--border);padding:28px;text-align:center;color:var(--text-faint);font-family:var(--font-mono);font-size:11px;}
   .view{display:none;} .view.active{display:block;}
@@ -84,7 +84,7 @@
 </style>
 </head>
 <body>
-
+ 
 <header class="site">
   <div class="header-inner">
     <div class="brand" onclick="navigateHome()"><span class="mark">◆</span>CartaBourse</div>
@@ -94,7 +94,7 @@
     </div>
   </div>
 </header>
-
+ 
 <main>
   <section id="view-home" class="view active">
     <div class="hero">
@@ -107,7 +107,7 @@
     <div class="grid" id="card-grid"></div>
     <button class="load-more" id="load-more-btn" onclick="loadMoreCards()">Charger plus de cartes</button>
   </section>
-
+ 
   <section id="view-card" class="view">
     <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / <span id="bc-name"></span></div>
     <div class="detail-top">
@@ -127,31 +127,40 @@
     </div>
   </section>
 </main>
-
+ 
 <footer>CartaBourse — Connecté à Supabase. Catalogue Pokémon en cours de complétion.</footer>
-
+ 
 <script>
 /* ============================================================
    CONFIGURATION — à renseigner avant de publier le site
    ============================================================ */
 const SUPABASE_URL = "https://yxtkigoxixxuvudjumfw.supabase.co";   // Project Settings -> API -> Project URL
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4dGtpZ294aXh4dXZ1ZGp1bWZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MzkzMDksImV4cCI6MjEwMTAxNTMwOX0.ZLWmbFUw34kLghouphKDGUvn9YA8Vz7kziX7zFZ4Ric";          // Project Settings -> API -> anon public key (PAS service_role)
-
-const PAGE_SIZE = 60;
-
+ 
+const PAGE_SIZE = 40; // plus petit = premier affichage plus rapide ; "Charger plus" complète ensuite
+ 
 function detectLang(){
   const l = ((navigator.language || "en") + "").slice(0,2).toLowerCase();
   return (l === "fr" || l === "de") ? l : "en";
 }
 const LANG = detectLang();
-
+ 
 function slugify(str){
   return (str || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")  // retire les accents
     .replace(/[^a-zA-Z0-9\s-]/g, "")
     .trim().replace(/\s+/g, "-");
 }
-
+ 
+/* Les images sont stockées en haute résolution (.../high.png) — utile pour
+   la fiche détail, mais beaucoup trop lourd pour de petites vignettes dans
+   une grille. TCGdex propose une variante basse résolution WebP nettement
+   plus légère ; on la dérive à la volée pour la grille. */
+function toThumbUrl(url){
+  if (!url) return url;
+  return url.replace(/\/high\.(png|webp|jpg)$/, "/low.webp");
+}
+ 
 async function supabaseSelect(path){
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
@@ -159,7 +168,7 @@ async function supabaseSelect(path){
   if (!resp.ok) throw new Error(`Erreur Supabase (${resp.status}) sur ${path}`);
   return resp.json();
 }
-
+ 
 /* Transforme une ligne brute Supabase (avec ses card_names/card_images
    imbriqués) en objet prêt à afficher */
 function shapeCard(row){
@@ -176,11 +185,11 @@ function shapeCard(row){
     image,
   };
 }
-
+ 
 let offset = 0;
 let allLoadedCards = [];
 let currentSearch = "";
-
+ 
 async function fetchCardsPage(){
   const rows = await supabaseSelect(
     `cards?select=id,card_number,sets(name_en),card_names(locale,name),card_images(image_url,variant)` +
@@ -188,7 +197,7 @@ async function fetchCardsPage(){
   );
   return rows.map(shapeCard);
 }
-
+ 
 async function loadMoreCards(){
   const btn = document.getElementById("load-more-btn");
   btn.disabled = true;
@@ -205,33 +214,33 @@ async function loadMoreCards(){
     btn.disabled = true;
   }
 }
-
+ 
 function showStatus(msg, isError){
   const el = document.getElementById("data-status");
   el.textContent = msg;
   el.className = "data-status" + (isError ? " error" : "");
 }
-
+ 
 function renderGrid(){
   const grid = document.getElementById("card-grid");
   const term = currentSearch.toLowerCase();
   const visible = term
     ? allLoadedCards.filter(c => c.name.toLowerCase().includes(term) || c.nameEn.toLowerCase().includes(term))
     : allLoadedCards;
-
+ 
   document.getElementById("grid-count").textContent = `— ${visible.length} carte${visible.length > 1 ? "s" : ""}`;
-
+ 
   if (visible.length === 0){
     grid.innerHTML = `<div class="empty-state">Aucune carte ne correspond à votre recherche (dans ce qui est déjà chargé — essayez "Charger plus de cartes" pour élargir).</div>`;
     return;
   }
-
+ 
   grid.innerHTML = visible.map(c => `
     <div class="card-tile" onclick="navigateCard(${c.id})">
       <div class="art">
         <span class="set-tag">${c.setName}</span>
         ${c.image
-          ? `<img class="art-img" src="${c.image}" alt="${c.name}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'glyph',textContent:'⚡'}))">`
+          ? `<img class="art-img" src="${toThumbUrl(c.image)}" alt="${c.name}" loading="lazy" decoding="async" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'glyph',textContent:'⚡'}))">`
           : `<span class="glyph">⚡</span>`}
       </div>
       <div class="tile-body">
@@ -241,21 +250,21 @@ function renderGrid(){
     </div>
   `).join("");
 }
-
+ 
 function onSearch(v){
   currentSearch = v.trim();
   renderGrid();
 }
-
+ 
 /* ============================================================
    ROUTAGE
    ============================================================ */
 function navigateHome(){ location.hash = "#/"; }
 function navigateCard(id){ location.hash = "#/card/" + id; }
-
+ 
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", init);
-
+ 
 async function init(){
   try {
     await loadMoreCards();
@@ -265,13 +274,13 @@ async function init(){
   }
   route();
 }
-
+ 
 function route(){
   const hash = location.hash || "#/";
   const match = hash.match(/^#\/card\/(\d+)$/);
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
-
+ 
   if (match){
     document.getElementById("view-card").classList.add("active");
     renderCardDetail(parseInt(match[1], 10));
@@ -279,7 +288,7 @@ function route(){
     document.getElementById("view-home").classList.add("active");
   }
 }
-
+ 
 async function renderCardDetail(id){
   document.getElementById("detail-name").textContent = "Chargement...";
   try {
@@ -291,22 +300,22 @@ async function renderCardDetail(id){
       return;
     }
     const card = shapeCard(rows[0]);
-
+ 
     document.getElementById("bc-name").textContent = card.name;
     document.getElementById("detail-name").textContent = card.name;
     document.getElementById("detail-meta").textContent = `Pokémon · Extension : ${card.setName}`;
-
+ 
     const art = document.getElementById("detail-art");
     art.innerHTML = card.image
       ? `<img class="art-img" src="${card.image}" alt="${card.name}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'glyph',textContent:'⚡'}))">`
       : `<span class="glyph">⚡</span>`;
-
+ 
     const cmSet = slugify(card.setName);
     const cmCard = slugify(card.nameEn);
     const cardmarketUrl = `https://www.cardmarket.com/${LANG}/Pokemon/Products/Singles/${cmSet}/${cmCard}`;
     const ebayDomain = LANG === "fr" ? "www.ebay.fr" : (LANG === "de" ? "www.ebay.de" : "www.ebay.com");
     const ebayUrl = `https://${ebayDomain}/sch/i.html?_nkw=${encodeURIComponent(card.nameEn)}`;
-
+ 
     document.getElementById("buy-buttons").innerHTML = `
       <a class="buy-btn cardmarket" href="${cardmarketUrl}" target="_blank" rel="noopener"><span class="buy-badge">CM</span>Voir sur Cardmarket<span class="arrow">→</span></a>
       <a class="buy-btn ebay" href="${ebayUrl}" target="_blank" rel="noopener"><span class="buy-badge">eBay</span>Voir sur eBay<span class="arrow">→</span></a>
