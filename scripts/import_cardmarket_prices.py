@@ -89,7 +89,8 @@ def main():
     if os.path.exists(PROGRESS_FILE):
         with open(PROGRESS_FILE, encoding="utf-8") as f:
             last_id = int(f.read().strip() or 0)
-
+    else:
+      print("File not read")
     cards = supabase_get(
         f"cards?select=id,card_number,sets(code)&id=gt.{last_id}&order=id.asc&limit={CARD_BATCH_SIZE}"
     )
