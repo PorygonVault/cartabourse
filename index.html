@@ -35,6 +35,24 @@
 
   .section-title{font-family:var(--font-display);font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:space-between;margin:0 0 18px;}
   .section-title .count{font-family:var(--font-mono);font-size:12px;color:var(--text-faint);font-weight:400;}
+  .view-toggle{display:flex;gap:4px;}
+  .view-toggle-btn{
+    font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;
+    padding:6px 12px;border:1px solid var(--border);border-radius:20px;background:transparent;
+    color:var(--text-dim);cursor:pointer;transition:all .15s;
+  }
+  .view-toggle-btn:hover{border-color:var(--gold);color:var(--text);}
+  .view-toggle-btn.active{background:var(--gold);border-color:var(--gold);color:var(--ink-deep);font-weight:600;}
+
+  .grid.list-mode{display:flex;flex-direction:column;gap:8px;}
+  .card-row{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:8px 14px;cursor:pointer;transition:border-color .15s;}
+  .card-row:hover{border-color:var(--gold);}
+  .row-thumb{width:44px;height:44px;flex-shrink:0;border-radius:2px;overflow:hidden;background:linear-gradient(135deg,#2b3a55,#c9a227 130%);display:flex;align-items:center;justify-content:center;}
+  .row-thumb img{width:100%;height:100%;object-fit:contain;}
+  .row-thumb .glyph{font-size:18px;}
+  .row-info{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .row-name{font-family:var(--font-display);font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row-set{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
 
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:20px;}
   .card-tile{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:border-color .15s, transform .15s;}
@@ -90,7 +108,7 @@
     <div class="brand" onclick="navigateHome()"><span class="mark">◆</span>CartaBourse</div>
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
-      <input id="global-search" type="text" placeholder="Rechercher une carte…" oninput="onSearch(this.value)">
+      <input id="global-search" type="text" placeholder="Rechercher une carte ou une extension… (Entrée pour lancer)" onkeydown="onSearchKeydown(event)">
     </div>
   </div>
 </header>
@@ -103,7 +121,13 @@
       <p>Ces fiches viennent directement de Supabase — plus de données d'exemple. Les prix et annonces arriveront à l'étape suivante (collecte du marché).</p>
       <div id="data-status" class="data-status">Chargement du catalogue...</div>
     </div>
-    <div class="section-title">Cartes <span class="count" id="grid-count"></span></div>
+    <div class="section-title">
+      <span>Cartes <span class="count" id="grid-count"></span></span>
+      <div class="view-toggle">
+        <button id="view-grid-btn" class="view-toggle-btn active" onclick="setViewMode('grid')">Grille</button>
+        <button id="view-list-btn" class="view-toggle-btn" onclick="setViewMode('list')">Liste</button>
+      </div>
+    </div>
     <div class="grid" id="card-grid"></div>
     <button class="load-more" id="load-more-btn" onclick="loadMoreCards()">Charger plus de cartes</button>
   </section>
@@ -134,8 +158,8 @@
 /* ============================================================
    CONFIGURATION — à renseigner avant de publier le site
    ============================================================ */
-const SUPABASE_URL = "https://yxtkigoxixxuvudjumfw.supabase.co";   // Project Settings -> API -> Project URL
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4dGtpZ294aXh4dXZ1ZGp1bWZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MzkzMDksImV4cCI6MjEwMTAxNTMwOX0.ZLWmbFUw34kLghouphKDGUvn9YA8Vz7kziX7zFZ4Ric";          // Project Settings -> API -> anon public key (PAS service_role)
+const SUPABASE_URL = "https://yxtkigoxixxuvudjumfw.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4dGtpZ294aXh4dXZ1ZGp1bWZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MzkzMDksImV4cCI6MjEwMTAxNTMwOX0.ZLWmbFUw34kLghouphKDGUvn9YA8Vz7kziX7zFZ4Ric";
 
 const PAGE_SIZE = 40; // plus petit = premier affichage plus rapide ; "Charger plus" complète ensuite
 
@@ -169,6 +193,14 @@ async function supabaseSelect(path){
   return resp.json();
 }
 
+/* Choisit le nom dans la langue du site, avec repli sur l'anglais puis
+   sur la première valeur disponible */
+function pickLocalized(names, lang){
+  const list = names || [];
+  const match = list.find(n => n.locale === lang) || list.find(n => n.locale === "en") || list[0];
+  return match ? match.name : null;
+}
+
 /* Transforme une ligne brute Supabase (avec ses card_names/card_images
    imbriqués) en objet prêt à afficher */
 function shapeCard(row){
@@ -176,7 +208,7 @@ function shapeCard(row){
   const nameObj = names.find(n => n.locale === LANG) || names.find(n => n.locale === "en") || names[0];
   const nameEn = (names.find(n => n.locale === "en") || nameObj || {}).name || "?";
   const image = (row.card_images && row.card_images[0]) ? row.card_images[0].image_url : null;
-  const setName = row.sets ? row.sets.name_en : "";
+  const setName = row.sets ? (pickLocalized(row.sets.set_names, LANG) || row.sets.name_en) : "";
   return {
     id: row.id,
     name: nameObj ? nameObj.name : nameEn,
@@ -190,12 +222,12 @@ let offset = 0;
 let allLoadedCards = [];
 let isSearching = false;
 let searchResults = [];
-let searchDebounceTimer = null;
-const SEARCH_RESULTS_LIMIT = 60;
+let viewMode = "grid"; // "grid" | "list"
+const SEARCH_RESULTS_LIMIT = 200;
 
 async function fetchCardsPage(){
   const rows = await supabaseSelect(
-    `cards?select=id,card_number,sets(name_en),card_names(locale,name),card_images(image_url,variant)` +
+    `cards?select=id,card_number,sets(name_en,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)` +
     `&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
   );
   return rows.map(shapeCard);
@@ -224,39 +256,51 @@ function showStatus(msg, isError){
   el.className = "data-status" + (isError ? " error" : "");
 }
 
-/* Recherche sur toute la base (pas seulement les cartes déjà chargées) :
-   interroge d'abord card_names (toutes langues confondues, l'index de
-   recherche du schéma s'en charge), puis récupère les cartes correspondantes
-   avec toutes leurs infos d'affichage. */
+/* Recherche sur toute la base (pas seulement les cartes déjà chargées),
+   à la fois sur le nom de la carte ET sur le nom de l'extension.
+   Pour l'extension, on interroge à la fois set_names (traductions, si
+   déjà renseignées) et sets.name_en directement (toujours renseigné,
+   lui, depuis l'import initial) — pour ne jamais dépendre uniquement
+   d'une table de traduction qui peut être incomplète. */
 async function searchCardsRemote(term){
   const pattern = `*${term.replace(/\*/g, "**")}*`; // échappe un "*" littéral avant de l'utiliser comme joker PostgREST
-  const matches = await supabaseSelect(
-    `card_names?select=card_id&name=ilike.${encodeURIComponent(pattern)}&limit=200`
-  );
-  const ids = [...new Set(matches.map(m => m.card_id))].slice(0, SEARCH_RESULTS_LIMIT);
-  if (ids.length === 0) return [];
+  const encPattern = encodeURIComponent(pattern);
+
+  const [nameMatches, setNameMatches, setEnMatches] = await Promise.all([
+    supabaseSelect(`card_names?select=card_id&name=ilike.${encPattern}&limit=500`),
+    supabaseSelect(`set_names?select=set_id&name=ilike.${encPattern}&limit=100`),
+    supabaseSelect(`sets?select=id&name_en=ilike.${encPattern}&limit=100`),
+  ]);
+
+  const ids = new Set(nameMatches.map(m => m.card_id));
+  const setIds = new Set([
+    ...setNameMatches.map(m => m.set_id),
+    ...setEnMatches.map(m => m.id),
+  ]);
+
+  if (setIds.size > 0){
+    const cardsInSets = await supabaseSelect(`cards?set_id=in.(${[...setIds].join(",")})&select=id&limit=500`);
+    cardsInSets.forEach(c => ids.add(c.id));
+  }
+
+  const idList = [...ids].slice(0, SEARCH_RESULTS_LIMIT);
+  if (idList.length === 0) return [];
+
   const rows = await supabaseSelect(
-    `cards?id=in.(${ids.join(",")})&select=id,card_number,sets(name_en),card_names(locale,name),card_images(image_url,variant)`
+    `cards?id=in.(${idList.join(",")})&select=id,card_number,sets(name_en,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
   );
   return rows.map(shapeCard);
 }
 
-function renderGrid(){
-  const grid = document.getElementById("card-grid");
-  const visible = isSearching ? searchResults : allLoadedCards;
-  const loadMoreBtn = document.getElementById("load-more-btn");
-  loadMoreBtn.style.display = isSearching ? "none" : "block";
+function setViewMode(mode){
+  viewMode = mode;
+  document.getElementById("view-grid-btn").classList.toggle("active", mode === "grid");
+  document.getElementById("view-list-btn").classList.toggle("active", mode === "list");
+  renderGrid();
+}
 
-  document.getElementById("grid-count").textContent = `— ${visible.length} carte${visible.length > 1 ? "s" : ""}`;
-
-  if (visible.length === 0){
-    grid.innerHTML = isSearching
-      ? `<div class="empty-state">Aucune carte ne correspond à cette recherche dans toute la base.</div>`
-      : `<div class="empty-state">Aucune carte chargée pour l'instant.</div>`;
-    return;
-  }
-
-  grid.innerHTML = visible.map(c => `
+function cardTileHtml(c){
+  return `
     <div class="card-tile" onclick="navigateCard(${c.id})">
       <div class="art">
         <span class="set-tag">${c.setName}</span>
@@ -268,13 +312,46 @@ function renderGrid(){
         <div class="tcg-label">${c.setName}</div>
         <h3>${c.name}</h3>
       </div>
-    </div>
-  `).join("");
+    </div>`;
 }
 
-function onSearch(v){
-  const term = v.trim();
-  clearTimeout(searchDebounceTimer);
+function cardRowHtml(c){
+  return `
+    <div class="card-row" onclick="navigateCard(${c.id})">
+      <div class="row-thumb">
+        ${c.image
+          ? `<img src="${toThumbUrl(c.image)}" alt="${c.name}" loading="lazy" decoding="async" onerror="this.remove()">`
+          : `<span class="glyph">⚡</span>`}
+      </div>
+      <div class="row-info">
+        <span class="row-name">${c.name}</span>
+        <span class="row-set">${c.setName}</span>
+      </div>
+    </div>`;
+}
+
+function renderGrid(){
+  const grid = document.getElementById("card-grid");
+  const visible = isSearching ? searchResults : allLoadedCards;
+  const loadMoreBtn = document.getElementById("load-more-btn");
+  loadMoreBtn.style.display = isSearching ? "none" : "block";
+
+  document.getElementById("grid-count").textContent = `— ${visible.length} carte${visible.length > 1 ? "s" : ""}`;
+  grid.className = "grid" + (viewMode === "list" ? " list-mode" : "");
+
+  if (visible.length === 0){
+    grid.innerHTML = isSearching
+      ? `<div class="empty-state">Aucune carte ni extension ne correspond à cette recherche dans toute la base.</div>`
+      : `<div class="empty-state">Aucune carte chargée pour l'instant.</div>`;
+    return;
+  }
+
+  grid.innerHTML = visible.map(viewMode === "list" ? cardRowHtml : cardTileHtml).join("");
+}
+
+function onSearchKeydown(e){
+  if (e.key !== "Enter") return;
+  const term = e.target.value.trim();
 
   if (!term){
     isSearching = false;
@@ -283,19 +360,15 @@ function onSearch(v){
     return;
   }
 
-  // Attend une petite pause après la dernière frappe avant d'interroger
-  // Supabase, pour ne pas envoyer une requête à chaque lettre tapée
-  searchDebounceTimer = setTimeout(async () => {
-    isSearching = true;
-    showStatus(`Recherche de "${term}" dans toute la base...`);
-    try {
-      searchResults = await searchCardsRemote(term);
-      showStatus(`${searchResults.length} résultat${searchResults.length > 1 ? "s" : ""} pour "${term}".`);
-      renderGrid();
-    } catch (e) {
-      showStatus(`Recherche impossible : ${e.message}`, true);
-    }
-  }, 300);
+  isSearching = true;
+  showStatus(`Recherche de "${term}" dans toute la base...`);
+  searchCardsRemote(term).then(results => {
+    searchResults = results;
+    showStatus(`${results.length} résultat${results.length > 1 ? "s" : ""} pour "${term}".`);
+    renderGrid();
+  }).catch(err => {
+    showStatus(`Recherche impossible : ${err.message}`, true);
+  });
 }
 
 /* ============================================================
@@ -335,7 +408,7 @@ async function renderCardDetail(id){
   document.getElementById("detail-name").textContent = "Chargement...";
   try {
     const rows = await supabaseSelect(
-      `cards?id=eq.${id}&select=id,card_number,sets(name_en),card_names(locale,name),card_images(image_url,variant)`
+      `cards?id=eq.${id}&select=id,card_number,sets(name_en,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
     );
     if (!rows.length){
       document.getElementById("detail-name").textContent = "Carte introuvable";
