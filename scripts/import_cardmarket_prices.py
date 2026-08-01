@@ -86,6 +86,7 @@ def supabase_upsert(table, rows, on_conflict):
 
 def main():
     last_id = 0
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
     if os.path.exists(PROGRESS_FILE):
         with open(PROGRESS_FILE, encoding="utf-8") as f:
             last_id = int(f.read().strip() or 0)
