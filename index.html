@@ -1,59 +1,747 @@
--- ============================================================
--- Patch — pseudos auto-générés (format uXXXXXXXXXXXX) et
--- garantie de non-réutilisation, même après changement de pseudo
--- À exécuter après auth-profiles.sql, dans le SQL Editor de Supabase
--- ============================================================
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CartaBourse — L'indice du marché TCG européen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --ink:#14161f; --ink-deep:#0d0e15; --panel:#1c1f2c; --panel-light:#242839;
+    --border:#333749; --gold:#c9a227; --gold-bright:#e3c15a; --green:#5aa07f; --red:#c4573b;
+    --text:#ede9e0; --text-dim:#9a9db3; --text-faint:#666a80; --radius:3px;
+    --font-display:'Fraunces', serif; --font-body:'Inter', sans-serif; --font-mono:'IBM Plex Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--ink);color:var(--text);font-family:var(--font-body);-webkit-font-smoothing:antialiased;}
+  a{color:inherit;text-decoration:none;}
 
--- Journal de TOUS les suffixes à 12 chiffres déjà distribués, pour toujours.
--- Contrairement à une simple contrainte d'unicité sur profiles.display_name
--- (qui ne protège que les pseudos ACTUELLEMENT utilisés), cette table garde
--- la trace même après qu'un utilisateur ait changé de pseudo personnalisé —
--- le numéro reste marqué "déjà utilisé" pour toujours.
-CREATE TABLE IF NOT EXISTS used_auto_usernames (
-    suffix      TEXT PRIMARY KEY,
-    used_at     TIMESTAMP NOT NULL DEFAULT now()
-);
+  header.site{position:sticky;top:0;z-index:50;background:rgba(20,22,31,0.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);}
+  .header-inner{max-width:1280px;margin:0 auto;padding:16px 28px;display:flex;align-items:center;gap:28px;flex-wrap:wrap;}
+  .brand{font-family:var(--font-display);font-weight:700;font-size:22px;display:flex;align-items:baseline;gap:6px;cursor:pointer;}
+  .brand .mark{color:var(--gold-bright);}
+  .search-wrap{flex:1;position:relative;max-width:520px;min-width:200px;}
+  .search-wrap input{width:100%;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:10px 14px 10px 36px;border-radius:var(--radius);font-size:14px;}
+  .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:13px;}
 
--- Un pseudo doit être unique parmi tous les utilisateurs (auto-généré ou choisi)
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'profiles_display_name_unique'
-    ) THEN
-        ALTER TABLE profiles ADD CONSTRAINT profiles_display_name_unique UNIQUE (display_name);
-    END IF;
-END $$;
+  .auth-area{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .auth-btn{
+    font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.04em;
+    padding:8px 16px;border:1px solid var(--border);border-radius:20px;background:transparent;
+    color:var(--text-dim);cursor:pointer;transition:all .15s;
+  }
+  .auth-btn:hover{border-color:var(--gold);color:var(--text);}
+  .auth-user{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
+  .auth-user:hover{color:var(--gold-bright);}
 
--- Génère un suffixe à 12 chiffres qui n'a JAMAIS été distribué
-CREATE OR REPLACE FUNCTION generate_unique_auto_username()
-RETURNS TEXT AS $$
-DECLARE
-    candidate TEXT;
-BEGIN
-    LOOP
-        candidate := lpad(floor(random() * 1000000000000)::TEXT, 12, '0');
-        BEGIN
-            INSERT INTO used_auto_usernames (suffix) VALUES (candidate);
-            RETURN 'u' || candidate;
-        EXCEPTION WHEN unique_violation THEN
-            -- ce numéro a déjà été utilisé un jour : on retire un autre nombre
-            CONTINUE;
-        END;
-    END LOOP;
-END;
-$$ LANGUAGE plpgsql;
+  .account-panel{max-width:440px;margin:24px 0 60px;}
+  .account-panel h2{font-family:var(--font-display);font-size:26px;margin:0 0 24px;font-weight:600;}
+  .account-field{margin-bottom:16px;}
+  .account-field label{display:block;font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-faint);margin-bottom:6px;}
+  .account-field input{
+    width:100%;background:var(--panel-light);border:1px solid var(--border);color:var(--text);
+    padding:10px 12px;border-radius:var(--radius);font-size:14px;
+  }
+  .account-field input:disabled{color:var(--text-faint);}
+  .account-field input:focus{border-color:var(--gold);outline:none;}
+  .account-hint{font-size:12px;color:var(--text-faint);margin-top:16px;line-height:1.5;}
 
--- Remplace la création de profil : le pseudo de départ est désormais
--- au format uXXXXXXXXXXXX, modifiable ensuite par l'utilisateur lui-même
--- depuis sa page de compte.
-CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.profiles (id, email, display_name)
-    VALUES (NEW.id, NEW.email, generate_unique_auto_username());
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+  .modal-overlay{
+    display:none;position:fixed;inset:0;z-index:100;background:rgba(13,14,21,0.75);
+    align-items:center;justify-content:center;
+  }
+  .modal-overlay.active{display:flex;}
+  .modal{
+    background:var(--panel);border:1px solid var(--border);border-radius:6px;
+    padding:32px 28px;width:100%;max-width:360px;position:relative;
+  }
+  .modal-close{
+    position:absolute;top:12px;right:14px;background:none;border:none;color:var(--text-faint);
+    font-size:20px;cursor:pointer;line-height:1;
+  }
+  .modal-close:hover{color:var(--text);}
+  .modal h3{font-family:var(--font-display);font-size:20px;margin:0 0 20px;font-weight:600;}
+  .google-btn{
+    width:100%;display:flex;align-items:center;justify-content:center;gap:10px;
+    background:var(--panel-light);border:1px solid var(--border);border-radius:var(--radius);
+    padding:11px;font-family:var(--font-body);font-size:14px;font-weight:600;color:var(--text);
+    cursor:pointer;transition:border-color .15s;
+  }
+  .google-btn:hover{border-color:var(--gold);}
+  .google-icon{
+    width:20px;height:20px;border-radius:50%;background:#fff;color:#4285F4;
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px;flex-shrink:0;
+  }
+  .modal-divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:var(--text-faint);font-family:var(--font-mono);font-size:11px;text-transform:uppercase;}
+  .modal-divider::before, .modal-divider::after{content:"";flex:1;height:1px;background:var(--border);}
+  .modal input{
+    width:100%;background:var(--panel-light);border:1px solid var(--border);color:var(--text);
+    padding:10px 12px;border-radius:var(--radius);font-size:14px;margin-bottom:10px;
+  }
+  .modal input:focus{border-color:var(--gold);outline:none;}
+  .auth-error{font-family:var(--font-mono);font-size:12px;color:var(--red);margin-bottom:10px;min-height:14px;}
+  .auth-error.success{color:var(--green);}
+  .auth-submit{
+    width:100%;background:var(--gold);border:none;border-radius:var(--radius);padding:11px;
+    font-family:var(--font-body);font-size:14px;font-weight:700;color:var(--ink-deep);cursor:pointer;
+  }
+  .auth-submit:hover{background:var(--gold-bright);}
+  .modal-switch{margin-top:16px;text-align:center;font-size:12px;color:var(--text-dim);}
+  .modal-switch a{color:var(--gold-bright);font-weight:600;}
+  .modal-switch a:hover{text-decoration:underline;}
 
--- Le trigger existant (on_auth_user_created) pointe déjà vers cette fonction,
--- pas besoin de le recréer.
+  main{max-width:1280px;margin:0 auto;padding:0 28px 80px;}
+  .hero{padding:44px 0 30px;border-bottom:1px solid var(--border);margin-bottom:28px;}
+  .hero .eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold);margin-bottom:12px;}
+  .hero h1{font-family:var(--font-display);font-weight:600;font-size:36px;line-height:1.1;margin:0 0 12px;max-width:680px;}
+  .hero p{color:var(--text-dim);font-size:15px;max-width:560px;line-height:1.5;margin:0;}
+  .data-status{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);margin-top:12px;}
+  .data-status.error{color:var(--red);}
+
+  .section-title{font-family:var(--font-display);font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:space-between;margin:0 0 18px;}
+  .section-title .count{font-family:var(--font-mono);font-size:12px;color:var(--text-faint);font-weight:400;}
+  .view-toggle{display:flex;gap:4px;}
+  .view-toggle-btn{
+    font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;
+    padding:6px 12px;border:1px solid var(--border);border-radius:20px;background:transparent;
+    color:var(--text-dim);cursor:pointer;transition:all .15s;
+  }
+  .view-toggle-btn:hover{border-color:var(--gold);color:var(--text);}
+  .view-toggle-btn.active{background:var(--gold);border-color:var(--gold);color:var(--ink-deep);font-weight:600;}
+
+  .grid.list-mode{display:flex;flex-direction:column;gap:8px;}
+  .card-row{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:8px 14px;cursor:pointer;transition:border-color .15s;}
+  .card-row:hover{border-color:var(--gold);}
+  .row-thumb{width:44px;height:44px;flex-shrink:0;border-radius:2px;overflow:hidden;background:linear-gradient(135deg,#2b3a55,#c9a227 130%);display:flex;align-items:center;justify-content:center;}
+  .row-thumb img{width:100%;height:100%;object-fit:contain;}
+  .row-thumb .glyph{font-size:18px;}
+  .row-info{display:flex;flex-direction:column;gap:2px;min-width:0;}
+  .row-name{font-family:var(--font-display);font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .row-set{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:20px;}
+  .card-tile{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:border-color .15s, transform .15s;}
+  .card-tile:hover{border-color:var(--gold);transform:translateY(-2px);}
+  .art{height:150px;position:relative;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--border);background:linear-gradient(135deg,#2b3a55,#c9a227 130%);}
+  .art .glyph{font-size:44px;opacity:0.85;}
+  .art .art-img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;padding:12px;}
+  .art .set-tag{position:absolute;top:8px;left:8px;font-family:var(--font-mono);font-size:9px;text-transform:uppercase;background:rgba(13,14,21,0.7);padding:3px 7px;border-radius:12px;color:var(--text-dim);z-index:2;}
+  .tile-body{padding:12px 14px 14px;}
+  .tile-body .tcg-label{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;}
+  .tile-body h3{font-family:var(--font-display);font-size:16px;margin:4px 0 0;font-weight:600;line-height:1.25;}
+
+  .load-more{width:100%;padding:12px;margin-bottom:48px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;}
+  .load-more:hover{border-color:var(--gold);color:var(--text);}
+  .load-more:disabled{opacity:0.5;cursor:default;}
+
+  .breadcrumb{font-family:var(--font-mono);font-size:12px;color:var(--text-faint);margin:24px 0 20px;}
+  .breadcrumb a:hover{color:var(--gold);}
+  .detail-top{display:grid;grid-template-columns:300px 1fr;gap:36px;margin-bottom:40px;}
+  .slab{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:14px;}
+  .slab-art{height:340px;border:1px solid var(--border);border-radius:2px;display:flex;align-items:center;justify-content:center;position:relative;}
+  .slab-art .glyph{font-size:80px;opacity:.9;}
+  .slab-art .art-img{width:100%;height:100%;object-fit:contain;padding:14px;}
+  .buy-buttons{display:flex;flex-direction:column;gap:8px;margin-top:16px;}
+  .buy-btn{display:flex;align-items:center;gap:10px;background:var(--panel-light);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;font-size:13px;font-weight:600;transition:border-color .15s, background .15s;}
+  .buy-btn:hover{background:var(--panel);}
+  .buy-btn .arrow{margin-left:auto;font-family:var(--font-mono);color:var(--gold);}
+  .buy-badge{font-family:var(--font-mono);font-size:10px;font-weight:700;color:#fff;padding:4px 7px;border-radius:3px;flex-shrink:0;}
+  .buy-btn.cardmarket{border-left:3px solid #1479c9;}
+  .buy-btn.cardmarket:hover{border-color:#1479c9;}
+  .buy-btn.cardmarket .buy-badge{background:#1479c9;}
+  .buy-btn.ebay{border-left:3px solid #0064d2;}
+  .buy-btn.ebay:hover{border-color:#0064d2;}
+  .buy-btn.ebay .buy-badge{background:linear-gradient(90deg,#e53238 0 25%,#0064d2 25% 50%,#f5af02 50% 75%,#86b817 75% 100%);}
+
+  .detail-info h1{font-family:var(--font-display);font-size:30px;margin:0 0 6px;font-weight:600;}
+  .detail-meta{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-bottom:22px;text-transform:uppercase;}
+  .market-placeholder{background:var(--panel);border:1px dashed var(--border);border-radius:var(--radius);padding:32px 24px;text-align:center;color:var(--text-dim);}
+  .market-placeholder .icon{font-size:28px;margin-bottom:10px;}
+  .market-placeholder h4{font-family:var(--font-display);font-size:16px;color:var(--text);margin:0 0 6px;}
+  .market-placeholder p{font-size:13px;line-height:1.5;margin:0;max-width:420px;margin:0 auto;}
+
+  .empty-state{padding:40px 10px;text-align:center;color:var(--text-faint);font-family:var(--font-mono);font-size:12px;}
+  footer{border-top:1px solid var(--border);padding:28px;text-align:center;color:var(--text-faint);font-family:var(--font-mono);font-size:11px;}
+  .view{display:none;} .view.active{display:block;}
+  @media (max-width:860px){ .detail-top{grid-template-columns:1fr;} .hero h1{font-size:28px;} }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="header-inner">
+    <div class="brand" onclick="navigateHome()"><span class="mark">◆</span>CartaBourse</div>
+    <div class="search-wrap">
+      <span class="search-icon">⌕</span>
+      <input id="global-search" type="text" placeholder="Rechercher une carte ou une extension… (Entrée pour lancer)" onkeydown="onSearchKeydown(event)">
+    </div>
+    <div class="auth-area" id="auth-area">
+      <button class="auth-btn" onclick="openAuthModal()">Se connecter</button>
+    </div>
+  </div>
+</header>
+
+<div class="modal-overlay" id="auth-modal-overlay" onclick="if(event.target===this)closeAuthModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeAuthModal()">×</button>
+    <h3 id="auth-modal-title">Connexion</h3>
+
+    <button class="google-btn" onclick="signInWithGoogle()">
+      <span class="google-icon">G</span> Continuer avec Google
+    </button>
+
+    <div class="modal-divider"><span>ou</span></div>
+
+    <input type="email" id="auth-email" placeholder="Adresse email" autocomplete="email">
+    <input type="password" id="auth-password" placeholder="Mot de passe" autocomplete="current-password">
+    <div class="auth-error" id="auth-error"></div>
+    <button class="auth-submit" id="auth-submit-btn" onclick="handleEmailAuth()">Se connecter</button>
+
+    <div class="modal-switch">
+      <span id="auth-switch-text">Pas encore de compte ?</span>
+      <a href="#" onclick="toggleAuthMode();return false;" id="auth-switch-link">Créer un compte</a>
+    </div>
+  </div>
+</div>
+
+<main>
+  <section id="view-home" class="view active">
+    <div class="hero">
+      <div class="eyebrow">Marché européen · Pokémon</div>
+      <h1>Le catalogue, connecté à la vraie base.</h1>
+      <p>Ces fiches viennent directement de Supabase — plus de données d'exemple. Les prix et annonces arriveront à l'étape suivante (collecte du marché).</p>
+      <div id="data-status" class="data-status">Chargement du catalogue...</div>
+    </div>
+    <div class="section-title">
+      <span>Cartes <span class="count" id="grid-count"></span></span>
+      <div class="view-toggle">
+        <button id="view-grid-btn" class="view-toggle-btn active" onclick="setViewMode('grid')">Grille</button>
+        <button id="view-list-btn" class="view-toggle-btn" onclick="setViewMode('list')">Liste</button>
+      </div>
+    </div>
+    <div class="grid" id="card-grid"></div>
+    <button class="load-more" id="load-more-btn" onclick="loadMoreCards()">Charger plus de cartes</button>
+  </section>
+
+  <section id="view-card" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / <span id="bc-name"></span></div>
+    <div class="detail-top">
+      <div class="slab">
+        <div class="slab-art" id="detail-art"></div>
+        <div class="buy-buttons" id="buy-buttons"></div>
+      </div>
+      <div class="detail-info">
+        <h1 id="detail-name"></h1>
+        <div class="detail-meta" id="detail-meta"></div>
+        <div class="market-placeholder">
+          <div class="icon">📈</div>
+          <h4>Données de marché à venir</h4>
+          <p>L'historique de prix et les exemplaires en vente s'afficheront ici une fois la collecte du marché (Cardmarket, eBay) mise en place. Pour l'instant, utilisez les boutons ci-contre pour consulter les offres directement.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="view-account" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Mon compte</div>
+    <div class="account-panel">
+      <h2>Mon compte</h2>
+      <div id="account-content">Chargement...</div>
+    </div>
+  </section>
+</main>
+
+<footer>CartaBourse — Connecté à Supabase. Catalogue Pokémon en cours de complétion.</footer>
+
+<script>
+/* ============================================================
+   CONFIGURATION — à renseigner avant de publier le site
+   ============================================================ */
+const SUPABASE_URL = "https://yxtkigoxixxuvudjumfw.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4dGtpZ294aXh4dXZ1ZGp1bWZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MzkzMDksImV4cCI6MjEwMTAxNTMwOX0.ZLWmbFUw34kLghouphKDGUvn9YA8Vz7kziX7zFZ4Ric";
+
+const PAGE_SIZE = 40; // plus petit = premier affichage plus rapide ; "Charger plus" complète ensuite
+
+function detectLang(){
+  const l = ((navigator.language || "en") + "").slice(0,2).toLowerCase();
+  return (l === "fr" || l === "de") ? l : "en";
+}
+const LANG = detectLang();
+
+function slugify(str){
+  return (str || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")  // retire les accents
+    .replace(/[^a-zA-Z0-9\s-]/g, "")
+    .trim().replace(/\s+/g, "-");
+}
+
+/* Les images sont stockées en haute résolution (.../high.png) — utile pour
+   la fiche détail, mais beaucoup trop lourd pour de petites vignettes dans
+   une grille. TCGdex propose une variante basse résolution WebP nettement
+   plus légère ; on la dérive à la volée pour la grille. */
+function toThumbUrl(url){
+  if (!url) return url;
+  return url.replace(/\/high\.(png|webp|jpg)$/, "/low.webp");
+}
+
+async function supabaseSelect(path){
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
+  });
+  if (!resp.ok) throw new Error(`Erreur Supabase (${resp.status}) sur ${path}`);
+  return resp.json();
+}
+
+/* ============================================================
+   AUTHENTIFICATION
+   Utilise supabase-js (chargé via CDN) uniquement pour l'authentification :
+   ça gère proprement la redirection Google et la session, sans toucher
+   à la façon dont le reste du site interroge déjà les données (fetch brut,
+   inchangé au-dessus). On récupère "createClient" depuis la bibliothèque
+   AVANT de nommer notre propre client, pour ne rien écraser.
+   ============================================================ */
+const { createClient } = supabase;
+const supabaseClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let authMode = "signin"; // "signin" | "signup"
+
+function openAuthModal(){
+  document.getElementById("auth-modal-overlay").classList.add("active");
+}
+function closeAuthModal(){
+  document.getElementById("auth-modal-overlay").classList.remove("active");
+  document.getElementById("auth-error").textContent = "";
+  document.getElementById("auth-error").className = "auth-error";
+}
+
+function toggleAuthMode(){
+  authMode = authMode === "signin" ? "signup" : "signin";
+  const isSignup = authMode === "signup";
+  document.getElementById("auth-modal-title").textContent = isSignup ? "Créer un compte" : "Connexion";
+  document.getElementById("auth-submit-btn").textContent = isSignup ? "Créer mon compte" : "Se connecter";
+  document.getElementById("auth-switch-text").textContent = isSignup ? "Déjà un compte ?" : "Pas encore de compte ?";
+  document.getElementById("auth-switch-link").textContent = isSignup ? "Se connecter" : "Créer un compte";
+  document.getElementById("auth-error").textContent = "";
+}
+
+async function signInWithGoogle(){
+  await supabaseClient.auth.signInWithOAuth({
+    provider: "google",
+    options: { redirectTo: window.location.origin + window.location.pathname }
+  });
+}
+
+async function handleEmailAuth(){
+  const email = document.getElementById("auth-email").value.trim();
+  const password = document.getElementById("auth-password").value;
+  const errorEl = document.getElementById("auth-error");
+  errorEl.className = "auth-error";
+  errorEl.textContent = "";
+
+  if (!email || !password){
+    errorEl.textContent = "Renseignez un email et un mot de passe.";
+    return;
+  }
+
+  try {
+    if (authMode === "signup"){
+      const { error } = await supabaseClient.auth.signUp({ email, password });
+      if (error) throw error;
+      errorEl.className = "auth-error success";
+      errorEl.textContent = "Compte créé — vérifiez vos emails pour confirmer votre inscription.";
+    } else {
+      const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      closeAuthModal();
+    }
+  } catch (e) {
+    errorEl.textContent = e.message;
+  }
+}
+
+async function signOut(){
+  await supabaseClient.auth.signOut();
+}
+
+/* Requête Supabase authentifiée : utilise le jeton de l'utilisateur connecté
+   (nécessaire pour lire/modifier SA propre ligne dans "profiles", protégée
+   par RLS) au lieu de la clé anonyme utilisée pour les données publiques. */
+async function supabaseAuthedFetch(path, options = {}){
+  const { data } = await supabaseClient.auth.getSession();
+  const token = data.session ? data.session.access_token : SUPABASE_ANON_KEY;
+  const resp = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+      ...(options.method && options.method !== "GET" ? { Prefer: "return=representation" } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  if (!resp.ok){
+    let msg = `Erreur Supabase (${resp.status})`;
+    try { const body = await resp.json(); if (body.message) msg = body.message; } catch (_) {}
+    throw new Error(msg);
+  }
+  return resp.status === 204 ? null : resp.json();
+}
+
+async function renderAuthArea(session){
+  const area = document.getElementById("auth-area");
+  if (session && session.user){
+    let label = session.user.email;
+    try {
+      const rows = await supabaseAuthedFetch(`profiles?id=eq.${session.user.id}&select=display_name`);
+      if (rows && rows[0] && rows[0].display_name) label = rows[0].display_name;
+    } catch (_) { /* on garde l'email en repli si le profil n'est pas encore accessible */ }
+    area.innerHTML = `
+      <span class="auth-user" onclick="navigateAccount()" title="Mon compte">${label}</span>
+      <button class="auth-btn" onclick="signOut()">Se déconnecter</button>
+    `;
+  } else {
+    area.innerHTML = `<button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
+  }
+}
+
+supabaseClient.auth.onAuthStateChange((_event, session) => renderAuthArea(session));
+supabaseClient.auth.getSession().then(({ data }) => renderAuthArea(data.session));
+
+/* ============================================================
+   PAGE COMPTE
+   ============================================================ */
+async function renderAccountPage(){
+  const container = document.getElementById("account-content");
+  container.textContent = "Chargement...";
+
+  const { data } = await supabaseClient.auth.getSession();
+  const session = data.session;
+
+  if (!session){
+    container.innerHTML = `
+      <p style="color:var(--text-dim);font-size:14px;margin-bottom:16px;">Vous devez être connecté pour accéder à cette page.</p>
+      <button class="auth-btn" onclick="openAuthModal()">Se connecter</button>
+    `;
+    return;
+  }
+
+  try {
+    const rows = await supabaseAuthedFetch(`profiles?id=eq.${session.user.id}&select=display_name,email,created_at`);
+    const profile = rows[0] || {};
+    container.innerHTML = `
+      <div class="account-field">
+        <label>Pseudo</label>
+        <input type="text" id="account-username" value="${profile.display_name || ""}" maxlength="24">
+      </div>
+      <div class="account-field">
+        <label>Email</label>
+        <input type="text" value="${profile.email || session.user.email}" disabled>
+      </div>
+      <div class="auth-error" id="account-error"></div>
+      <button class="auth-submit" onclick="saveUsername()">Enregistrer</button>
+      <p class="account-hint">Votre pseudo est visible par les autres utilisateurs du site. Il doit être unique — s'il est déjà pris, choisissez-en un autre.</p>
+    `;
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--red);font-size:13px;">Erreur de chargement du profil : ${e.message}</p>`;
+  }
+}
+
+async function saveUsername(){
+  const input = document.getElementById("account-username");
+  const errorEl = document.getElementById("account-error");
+  const newName = input.value.trim();
+  errorEl.className = "auth-error";
+  errorEl.textContent = "";
+
+  if (newName.length < 3){
+    errorEl.textContent = "Le pseudo doit contenir au moins 3 caractères.";
+    return;
+  }
+
+  try {
+    const { data } = await supabaseClient.auth.getSession();
+    await supabaseAuthedFetch(`profiles?id=eq.${data.session.user.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ display_name: newName }),
+    });
+    errorEl.className = "auth-error success";
+    errorEl.textContent = "Pseudo mis à jour.";
+    renderAuthArea(data.session);
+  } catch (e) {
+    errorEl.textContent = e.message.toLowerCase().includes("duplicate")
+      ? "Ce pseudo est déjà pris — choisissez-en un autre."
+      : e.message;
+  }
+}
+
+/* Choisit le nom dans la langue du site, avec repli sur l'anglais puis
+   sur la première valeur disponible */
+function pickLocalized(names, lang){
+  const list = names || [];
+  const match = list.find(n => n.locale === lang) || list.find(n => n.locale === "en") || list[0];
+  return match ? match.name : null;
+}
+
+/* Transforme une ligne brute Supabase (avec ses card_names/card_images
+   imbriqués) en objet prêt à afficher */
+function shapeCard(row){
+  const names = row.card_names || [];
+  const nameObj = names.find(n => n.locale === LANG) || names.find(n => n.locale === "en") || names[0];
+  const nameEn = (names.find(n => n.locale === "en") || nameObj || {}).name || "?";
+  const image = (row.card_images && row.card_images[0]) ? row.card_images[0].image_url : null;
+  const setName = row.sets ? (pickLocalized(row.sets.set_names, LANG) || row.sets.name_en) : "";
+  return {
+    id: row.id,
+    name: nameObj ? nameObj.name : nameEn,
+    nameEn,
+    setName,
+    image,
+  };
+}
+
+let offset = 0;
+let allLoadedCards = [];
+let isSearching = false;
+let searchResults = [];
+let viewMode = "grid"; // "grid" | "list"
+const SEARCH_RESULTS_LIMIT = 200;
+
+async function fetchCardsPage(){
+  const rows = await supabaseSelect(
+    `cards?select=id,card_number,sets(name_en,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)` +
+    `&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
+  );
+  return rows.map(shapeCard);
+}
+
+async function loadMoreCards(){
+  const btn = document.getElementById("load-more-btn");
+  btn.disabled = true;
+  btn.textContent = "Chargement...";
+  try {
+    const newCards = await fetchCardsPage();
+    allLoadedCards = allLoadedCards.concat(newCards);
+    offset += PAGE_SIZE;
+    renderGrid();
+    btn.disabled = newCards.length < PAGE_SIZE;
+    btn.textContent = btn.disabled ? "Tout est chargé" : "Charger plus de cartes";
+  } catch (e) {
+    showStatus(`Impossible de charger les cartes : ${e.message}`, true);
+    btn.disabled = true;
+  }
+}
+
+function showStatus(msg, isError){
+  const el = document.getElementById("data-status");
+  el.textContent = msg;
+  el.className = "data-status" + (isError ? " error" : "");
+}
+
+/* Recherche sur toute la base (pas seulement les cartes déjà chargées),
+   à la fois sur le nom de la carte ET sur le nom de l'extension.
+   Pour l'extension, on interroge à la fois set_names (traductions, si
+   déjà renseignées) et sets.name_en directement (toujours renseigné,
+   lui, depuis l'import initial) — pour ne jamais dépendre uniquement
+   d'une table de traduction qui peut être incomplète. */
+async function searchCardsRemote(term){
+  const pattern = `*${term.replace(/\*/g, "**")}*`; // échappe un "*" littéral avant de l'utiliser comme joker PostgREST
+  const encPattern = encodeURIComponent(pattern);
+
+  const [nameMatches, setNameMatches, setEnMatches] = await Promise.all([
+    supabaseSelect(`card_names?select=card_id&name=ilike.${encPattern}&limit=500`),
+    supabaseSelect(`set_names?select=set_id&name=ilike.${encPattern}&limit=100`),
+    supabaseSelect(`sets?select=id&name_en=ilike.${encPattern}&limit=100`),
+  ]);
+
+  const ids = new Set(nameMatches.map(m => m.card_id));
+  const setIds = new Set([
+    ...setNameMatches.map(m => m.set_id),
+    ...setEnMatches.map(m => m.id),
+  ]);
+
+  if (setIds.size > 0){
+    const cardsInSets = await supabaseSelect(`cards?set_id=in.(${[...setIds].join(",")})&select=id&limit=500`);
+    cardsInSets.forEach(c => ids.add(c.id));
+  }
+
+  const idList = [...ids].slice(0, SEARCH_RESULTS_LIMIT);
+  if (idList.length === 0) return [];
+
+  const rows = await supabaseSelect(
+    `cards?id=in.(${idList.join(",")})&select=id,card_number,sets(name_en,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
+  );
+  return rows.map(shapeCard);
+}
+
+function setViewMode(mode){
+  viewMode = mode;
+  document.getElementById("view-grid-btn").classList.toggle("active", mode === "grid");
+  document.getElementById("view-list-btn").classList.toggle("active", mode === "list");
+  renderGrid();
+}
+
+function cardTileHtml(c){
+  return `
+    <div class="card-tile" onclick="navigateCard(${c.id})">
+      <div class="art">
+        <span class="set-tag">${c.setName}</span>
+        ${c.image
+          ? `<img class="art-img" src="${toThumbUrl(c.image)}" alt="${c.name}" loading="lazy" decoding="async" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'glyph',textContent:'⚡'}))">`
+          : `<span class="glyph">⚡</span>`}
+      </div>
+      <div class="tile-body">
+        <div class="tcg-label">${c.setName}</div>
+        <h3>${c.name}</h3>
+      </div>
+    </div>`;
+}
+
+function cardRowHtml(c){
+  return `
+    <div class="card-row" onclick="navigateCard(${c.id})">
+      <div class="row-thumb">
+        ${c.image
+          ? `<img src="${toThumbUrl(c.image)}" alt="${c.name}" loading="lazy" decoding="async" onerror="this.remove()">`
+          : `<span class="glyph">⚡</span>`}
+      </div>
+      <div class="row-info">
+        <span class="row-name">${c.name}</span>
+        <span class="row-set">${c.setName}</span>
+      </div>
+    </div>`;
+}
+
+function renderGrid(){
+  const grid = document.getElementById("card-grid");
+  const visible = isSearching ? searchResults : allLoadedCards;
+  const loadMoreBtn = document.getElementById("load-more-btn");
+  loadMoreBtn.style.display = isSearching ? "none" : "block";
+
+  document.getElementById("grid-count").textContent = `— ${visible.length} carte${visible.length > 1 ? "s" : ""}`;
+  grid.className = "grid" + (viewMode === "list" ? " list-mode" : "");
+
+  if (visible.length === 0){
+    grid.innerHTML = isSearching
+      ? `<div class="empty-state">Aucune carte ni extension ne correspond à cette recherche dans toute la base.</div>`
+      : `<div class="empty-state">Aucune carte chargée pour l'instant.</div>`;
+    return;
+  }
+
+  grid.innerHTML = visible.map(viewMode === "list" ? cardRowHtml : cardTileHtml).join("");
+}
+
+function onSearchKeydown(e){
+  if (e.key !== "Enter") return;
+  const term = e.target.value.trim();
+  if (!term){ navigateHome(); return; }
+  navigateSearch(term);
+}
+
+async function performSearch(term){
+  isSearching = true;
+  showStatus(`Recherche de "${term}" dans toute la base...`);
+  try {
+    searchResults = await searchCardsRemote(term);
+    showStatus(`${searchResults.length} résultat${searchResults.length > 1 ? "s" : ""} pour "${term}".`);
+    renderGrid();
+  } catch (err) {
+    showStatus(`Recherche impossible : ${err.message}`, true);
+  }
+}
+
+/* ============================================================
+   ROUTAGE
+   La recherche vit dans l'URL (#/search/terme) : un rechargement de page
+   ou un lien partagé la retrouve telle quelle, au lieu de repartir à zéro.
+   ============================================================ */
+function navigateHome(){ location.hash = "#/"; }
+function navigateCard(id){ location.hash = "#/card/" + id; }
+function navigateSearch(term){ location.hash = "#/search/" + encodeURIComponent(term); }
+function navigateAccount(){ location.hash = "#/account"; }
+
+window.addEventListener("hashchange", route);
+window.addEventListener("DOMContentLoaded", init);
+
+async function init(){
+  try {
+    await loadMoreCards();
+    showStatus(`${allLoadedCards.length}+ cartes chargées depuis Supabase.`);
+  } catch (e) {
+    showStatus(`Connexion à Supabase impossible : ${e.message}. Vérifiez SUPABASE_URL / SUPABASE_ANON_KEY en haut du fichier.`, true);
+  }
+  route();
+}
+
+function route(){
+  const hash = location.hash || "#/";
+  const cardMatch = hash.match(/^#\/card\/(\d+)$/);
+  const searchMatch = hash.match(/^#\/search\/(.+)$/);
+  const isAccount = hash === "#/account";
+
+  document.getElementById("view-home").classList.remove("active");
+  document.getElementById("view-card").classList.remove("active");
+  document.getElementById("view-account").classList.remove("active");
+
+  if (cardMatch){
+    document.getElementById("view-card").classList.add("active");
+    renderCardDetail(parseInt(cardMatch[1], 10));
+  } else if (isAccount){
+    document.getElementById("view-account").classList.add("active");
+    renderAccountPage();
+  } else if (searchMatch){
+    document.getElementById("view-home").classList.add("active");
+    const term = decodeURIComponent(searchMatch[1]);
+    document.getElementById("global-search").value = term;
+    performSearch(term);
+  } else {
+    document.getElementById("view-home").classList.add("active");
+    document.getElementById("global-search").value = "";
+    if (isSearching){
+      isSearching = false;
+      searchResults = [];
+      renderGrid();
+    }
+  }
+}
+
+async function renderCardDetail(id){
+  document.getElementById("detail-name").textContent = "Chargement...";
+  try {
+    const rows = await supabaseSelect(
+      `cards?id=eq.${id}&select=id,card_number,sets(name_en,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
+    );
+    if (!rows.length){
+      document.getElementById("detail-name").textContent = "Carte introuvable";
+      return;
+    }
+    const card = shapeCard(rows[0]);
+
+    document.getElementById("bc-name").textContent = card.name;
+    document.getElementById("detail-name").textContent = card.name;
+    document.getElementById("detail-meta").textContent = `Pokémon · Extension : ${card.setName}`;
+
+    const art = document.getElementById("detail-art");
+    art.innerHTML = card.image
+      ? `<img class="art-img" src="${card.image}" alt="${card.name}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'glyph',textContent:'⚡'}))">`
+      : `<span class="glyph">⚡</span>`;
+
+    const cmSet = slugify(card.setName);
+    const cmCard = slugify(card.nameEn);
+    const cardmarketUrl = `https://www.cardmarket.com/${LANG}/Pokemon/Products/Singles/${cmSet}/${cmCard}`;
+    const ebayDomain = LANG === "fr" ? "www.ebay.fr" : (LANG === "de" ? "www.ebay.de" : "www.ebay.com");
+    const ebayUrl = `https://${ebayDomain}/sch/i.html?_nkw=${encodeURIComponent(card.nameEn)}`;
+
+    document.getElementById("buy-buttons").innerHTML = `
+      <a class="buy-btn cardmarket" href="${cardmarketUrl}" target="_blank" rel="noopener"><span class="buy-badge">CM</span>Voir sur Cardmarket<span class="arrow">→</span></a>
+      <a class="buy-btn ebay" href="${ebayUrl}" target="_blank" rel="noopener"><span class="buy-badge">eBay</span>Voir sur eBay<span class="arrow">→</span></a>
+    `;
+  } catch (e) {
+    document.getElementById("detail-name").textContent = "Erreur de chargement";
+    console.error(e);
+  }
+}
+</script>
+</body>
+</html>
