@@ -64,8 +64,8 @@ SEARCH_LOCALE = MARKETPLACE_LOCALE.get(EBAY_MARKETPLACE, "en")
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
-CARD_BATCH_SIZE = int(os.environ.get("CARD_BATCH_SIZE", "4500"))  # 1 carte cherchée = 1 appel eBay ; marge de sécurité sous la limite de 5000/jour
-RESULTS_PER_CARD = 15  # annonces récupérées par carte (n'affecte PAS le nombre d'appels : toujours 1 par carte)
+CARD_BATCH_SIZE = int(os.environ.get("CARD_BATCH_SIZE", "10"))  # 1 carte cherchée = 1 appel eBay ; marge de sécurité sous la limite de 5000/jour
+RESULTS_PER_CARD = 30  # annonces récupérées par carte (n'affecte PAS le nombre d'appels : toujours 1 par carte)
 
 if not all([EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_KEY]):
     sys.exit("Erreur : EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, SUPABASE_URL et SUPABASE_SERVICE_KEY "
