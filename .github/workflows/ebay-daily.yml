@@ -1,11 +1,11 @@
 name: Collecte quotidienne des annonces eBay
 
-on:
-  schedule:
+# on:
+  # schedule:
     # 6h00 UTC — décalé d'une heure par rapport à la collecte Cardmarket,
     # pour ne pas faire tourner les deux exécutions en même temps
-    - cron: "0 6 * * *"
-  workflow_dispatch: {}   # permet aussi un lancement manuel depuis l'onglet Actions
+    # - cron: "0 6 * * *"
+  # workflow_dispatch: {}   # permet aussi un lancement manuel depuis l'onglet Actions
 
 jobs:
   collecte:
