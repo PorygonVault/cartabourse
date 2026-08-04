@@ -73,7 +73,7 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 # appels par carte. Le lot par défaut est calculé pour rester sous la limite
 # de 5000 appels/jour avec une marge de sécurité, quel que soit le nombre de
 # marketplaces configurées.
-_default_batch = max(1, (120 // max(1, len(EBAY_MARKETPLACES))) - 100)
+_default_batch = max(1, (240 // max(1, len(EBAY_MARKETPLACES))) - 100)
 CARD_BATCH_SIZE = int(os.environ.get("CARD_BATCH_SIZE", str(_default_batch)))
 RESULTS_PER_CARD = 15  # annonces récupérées par carte et par marketplace
 
@@ -250,6 +250,20 @@ def build_number_pattern(card_number, total_cards):
     return re.compile(rf"(?:\b0*{bare_number}\s*/|#\s*0*{bare_number}\b)")
 
 
+def mark_inactive(ids):
+    """Désactive en une seule requête les annonces qui n'ont pas été
+    retrouvées cette fois-ci (probablement vendues ou retirées)."""
+    if not ids:
+        return
+    id_list = ",".join(str(i) for i in ids)
+    resp = requests.patch(
+        f"{SUPABASE_URL}/rest/v1/listings?id=in.({id_list})",
+        headers=SUPABASE_HEADERS, json={"is_active": False},
+    )
+    if resp.status_code not in (200, 204):
+        print(f"    Erreur désactivation : {resp.status_code} — {resp.text[:200]}")
+
+
 def main():
     # Nécessaire sur GitHub Actions (et plus généralement dès que le script
     # n'est pas lancé depuis son propre dossier) : sans ça, le fichier de
@@ -284,6 +298,9 @@ def main():
     print(f"{len(cards)} carte(s) à traiter cette fois-ci "
           f"(marketplaces : {', '.join(EBAY_MARKETPLACES)}), à partir de l'id {last_id}.")
 
+    run_totals = {"added": 0, "modified": 0, "unchanged": 0, "removed": 0}
+    run_totals_by_marketplace = {m: 0 for m in EBAY_MARKETPLACES}
+
     for i, card in enumerate(cards, 1):
         names = card["card_names"]
         set_info = card["sets"] or {}
@@ -291,6 +308,14 @@ def main():
         set_names_by_locale = {n["locale"]: n["name"] for n in set_names}
         set_names_by_locale.setdefault("en", set_info.get("name_en", ""))
 
+        # Annonces déjà connues et actives pour cette carte, AVANT cette
+        # exécution — sert de référence pour calculer ajouts/retraits/modifs.
+        existing = supabase_get(
+            f"listings?card_id=eq.{card['id']}&site_id=eq.{site_id}&is_active=eq.true&select=id,external_ref,price"
+        )
+        existing_by_ref = {row["external_ref"]: row for row in existing if row["external_ref"]}
+
+        marketplace_counts = {}
         all_rows = []
         for marketplace in EBAY_MARKETPLACES:
             locale = MARKETPLACE_LOCALE.get(marketplace, "en")
@@ -298,6 +323,7 @@ def main():
             card_name = next((n["name"] for n in names if n["locale"] == locale), None) \
                 or next((n["name"] for n in names if n["locale"] == "en"), None)
             if not card_name:
+                marketplace_counts[marketplace] = 0
                 continue
 
             set_name = set_names_by_locale.get(locale) or set_info.get("name_en", "")
@@ -316,6 +342,7 @@ def main():
                 it for it in items
                 if card_name_lower in it.get("title", "").lower() and number_pattern.search(it.get("title", ""))
             ]
+            marketplace_counts[marketplace] = len(items)
 
             for item in items:
                 title = item.get("title", "")
@@ -339,23 +366,57 @@ def main():
             time.sleep(0.2)
 
         # Une même annonce peut ressortir sur plusieurs marketplaces (un
-        # vendeur français visible aussi depuis EBAY_GB, par ex.) — dédoublonnée
-        # ici avant l'envoi, en plus de la contrainte en base.
-        deduped = {}
-        for row in all_rows:
-            deduped[row["external_ref"]] = row
+        # vendeur français visible aussi depuis EBAY_GB, par ex.)
+        deduped = {row["external_ref"]: row for row in all_rows}
+        found_refs = set(deduped.keys())
+        existing_refs = set(existing_by_ref.keys())
+
+        added_refs = found_refs - existing_refs
+        kept_refs = found_refs & existing_refs
+        removed_refs = existing_refs - found_refs
+
+        modified_count = 0
+        unchanged_count = 0
+        for ref in kept_refs:
+            old_price, new_price = existing_by_ref[ref].get("price"), deduped[ref].get("price")
+            try:
+                changed = old_price is None or new_price is None or float(old_price) != float(new_price)
+            except (TypeError, ValueError):
+                changed = True
+            if changed:
+                modified_count += 1
+            else:
+                unchanged_count += 1
 
         supabase_upsert("listings", list(deduped.values()), on_conflict="dedupe_key")
-        print(f"  {len(deduped)} annonce(s) unique(s) trouvée(s) sur {len(EBAY_MARKETPLACES)} marketplace(s).")
-        time.sleep(0.3)
+        mark_inactive([existing_by_ref[ref]["id"] for ref in removed_refs])
+
+        for m, c in marketplace_counts.items():
+            run_totals_by_marketplace[m] += c
+        run_totals["added"] += len(added_refs)
+        run_totals["modified"] += modified_count
+        run_totals["unchanged"] += unchanged_count
+        run_totals["removed"] += len(removed_refs)
+
+        print("  Résultat pour cette carte :")
+        for m in EBAY_MARKETPLACES:
+            print(f"    {m} : {marketplace_counts.get(m, 0)} annonce(s) trouvée(s)")
+        print(f"    Total unique : {len(found_refs)}  |  Ajoutées : {len(added_refs)}  |  "
+              f"Modifiées : {modified_count}  |  Inchangées : {unchanged_count}  |  "
+              f"Retirées (vendues/terminées probables) : {len(removed_refs)}")
 
     with open(progress_file, "w", encoding="utf-8") as f:
         f.write(str(cards[-1]["id"]))
 
-    print("\nCollecte terminée pour ce lot.")
-    print(f"Relancez le script pour traiter la suite du catalogue à partir de l'id {cards[-1]['id']} "
-          "(pensez à automatiser ça avec une tâche planifiée une fois validé manuellement).")
+    print("\n=== Résumé de cette exécution ===")
+    for m in EBAY_MARKETPLACES:
+        print(f"  {m} : {run_totals_by_marketplace[m]} annonce(s) trouvée(s) au total")
+    print(f"  Ajoutées : {run_totals['added']}  |  Modifiées : {run_totals['modified']}  |  "
+          f"Inchangées : {run_totals['unchanged']}  |  Retirées (vendues/terminées probables) : {run_totals['removed']}")
+    print(f"\nRelancez le script pour continuer à partir de l'id {cards[-1]['id']}.")
 
 
+if __name__ == "__main__":
+    main()
 if __name__ == "__main__":
     main()
