@@ -168,6 +168,27 @@
   .price-chart-wrap svg{width:100%;height:140px;overflow:visible;}
   .price-chart-source{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-top:10px;text-align:right;}
 
+  .listing-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;}
+  .listing-table thead th{
+    text-align:left;font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;
+    letter-spacing:0.05em;color:var(--text-faint);border-bottom:1px solid var(--border);
+    padding:0 10px 10px;font-weight:500;
+  }
+  .listing-table tbody td{padding:12px 10px;border-bottom:1px solid var(--border);vertical-align:middle;}
+  .listing-table tbody tr:hover{background:var(--panel);}
+  .grade-pill{
+    font-family:var(--font-mono);font-size:11px;padding:3px 8px;border-radius:12px;
+    background:var(--panel-light);border:1px solid var(--border);display:inline-block;
+  }
+  .grade-pill.graded{color:var(--gold-bright);border-color:var(--gold);}
+  .lang-tag{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-transform:uppercase;}
+  .listing-price{font-family:var(--font-mono);font-weight:600;color:var(--gold-bright);}
+  .row-buy{
+    font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:var(--text-dim);
+    border:1px solid var(--border);padding:5px 10px;border-radius:var(--radius);white-space:nowrap;
+  }
+  tr:hover .row-buy{border-color:var(--gold);color:var(--gold-bright);}
+
   .empty-state{padding:40px 10px;text-align:center;color:var(--text-faint);font-family:var(--font-mono);font-size:12px;}
   footer{border-top:1px solid var(--border);padding:28px;text-align:center;color:var(--text-faint);font-family:var(--font-mono);font-size:11px;}
   .view{display:none;} .view.active{display:block;}
@@ -248,6 +269,11 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <div class="section-title">Exemplaires référencés <span class="count" id="listings-count"></span></div>
+    <div id="listings-section">
+      <div class="empty-state">Chargement...</div>
     </div>
   </section>
 
@@ -746,6 +772,7 @@ async function renderCardDetail(id){
     `;
 
     renderMarketSection(id);
+    renderListingsSection(id);
   } catch (e) {
     document.getElementById("detail-name").textContent = "Erreur de chargement";
     console.error(e);
@@ -818,6 +845,56 @@ function drawPriceChart(history){
       <path d="${areaPath}" fill="url(#pc-gradient)"></path>
       <path d="${linePath}" fill="none" stroke="#e3c15a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
     </svg>`;
+}
+
+async function renderListingsSection(cardId){
+  const section = document.getElementById("listings-section");
+  try {
+    const listings = await supabaseSelect(
+      `listings?card_id=eq.${cardId}&is_active=eq.true` +
+      `&select=seller_name,price,currency,is_graded,grade,language,listing_url,grading_companies(name)` +
+      `&order=price.asc`
+    );
+
+    document.getElementById("listings-count").textContent = `— ${listings.length} exemplaire${listings.length > 1 ? "s" : ""}`;
+
+    if (!listings.length){
+      section.innerHTML = `<div class="empty-state">Aucun exemplaire référencé pour cette carte pour l'instant.</div>`;
+      return;
+    }
+
+    section.innerHTML = `
+      <table class="listing-table">
+        <thead>
+          <tr>
+            <th>Vendeur</th>
+            <th>État / Grade</th>
+            <th>Langue</th>
+            <th>Prix</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${listings.map(l => {
+            const pill = l.is_graded
+              ? `<span class="grade-pill graded">${l.grading_companies ? l.grading_companies.name : "Gradée"} ${l.grade ?? ""}</span>`
+              : `<span class="grade-pill">Non gradée</span>`;
+            const lang = l.language ? `<span class="lang-tag">${l.language}</span>` : `<span class="lang-tag">—</span>`;
+            const price = l.price != null ? `${Number(l.price).toFixed(2)} ${l.currency || "EUR"}` : "—";
+            return `
+              <tr>
+                <td>${l.seller_name || "—"}</td>
+                <td>${pill}</td>
+                <td>${lang}</td>
+                <td class="listing-price">${price}</td>
+                <td><a class="row-buy" href="${l.listing_url}" target="_blank" rel="noopener">Voir sur eBay →</a></td>
+              </tr>`;
+          }).join("")}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    section.innerHTML = `<div class="empty-state">Impossible de charger les exemplaires : ${e.message}</div>`;
+  }
 }
 </script>
 </body>
