@@ -73,7 +73,7 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 # appels par carte. Le lot par défaut est calculé pour rester sous la limite
 # de 5000 appels/jour avec une marge de sécurité, quel que soit le nombre de
 # marketplaces configurées.
-_default_batch = max(1, (240 // max(1, len(EBAY_MARKETPLACES))) - 100)
+_default_batch = max(1, (450 // max(1, len(EBAY_MARKETPLACES))) - 100)
 CARD_BATCH_SIZE = int(os.environ.get("CARD_BATCH_SIZE", str(_default_batch)))
 RESULTS_PER_CARD = 15  # annonces récupérées par carte et par marketplace
 
