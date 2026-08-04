@@ -27,6 +27,11 @@
   .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:13px;}
 
   .auth-area{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .currency-select{
+    font-family:var(--font-mono);font-size:12px;background:var(--panel);border:1px solid var(--border);
+    color:var(--text-dim);padding:7px 10px;border-radius:20px;cursor:pointer;flex-shrink:0;
+  }
+  .currency-select:hover{border-color:var(--gold);color:var(--text);}
   .auth-btn{
     font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.04em;
     padding:8px 16px;border:1px solid var(--border);border-radius:20px;background:transparent;
@@ -204,6 +209,10 @@
       <span class="search-icon">⌕</span>
       <input id="global-search" type="text" placeholder="Rechercher une carte ou une extension… (Entrée pour lancer)" onkeydown="onSearchKeydown(event)">
     </div>
+    <select class="currency-select" id="currency-select" onchange="setCurrency(this.value)">
+      <option value="EUR">€ EUR</option>
+      <option value="GBP">£ GBP</option>
+    </select>
     <div class="auth-area" id="auth-area">
       <button class="auth-btn" onclick="openAuthModal()">Se connecter</button>
     </div>
@@ -302,6 +311,49 @@ function detectLang(){
   return (l === "fr" || l === "de") ? l : "en";
 }
 const LANG = detectLang();
+
+/* ============================================================
+   DEVISE D'AFFICHAGE
+   Conversion à l'affichage uniquement — les prix restent stockés dans
+   leur devise d'origine en base, jamais modifiés.
+   ============================================================ */
+let preferredCurrency = localStorage.getItem("preferredCurrency") || "EUR";
+let eurToGbpRate = null;
+
+async function loadExchangeRate(){
+  try {
+    const resp = await fetch("https://api.frankfurter.app/latest?from=EUR&to=GBP");
+    const data = await resp.json();
+    eurToGbpRate = data.rates.GBP;
+  } catch (e) {
+    console.error("Taux de change indisponible, conversion désactivée :", e);
+  }
+}
+
+function setCurrency(value){
+  preferredCurrency = value;
+  localStorage.setItem("preferredCurrency", value);
+  // Réaffiche la fiche carte courante si on y est, pour appliquer la conversion immédiatement
+  if (location.hash.startsWith("#/card/")) route();
+}
+
+/* Convertit un prix (dans sa devise d'origine) vers la devise préférée de
+   l'utilisateur. Repli sur la devise d'origine si le taux n'a pas pu être
+   récupéré, plutôt que d'afficher un montant faux. */
+function displayPrice(value, fromCurrency){
+  if (value == null) return "—";
+  let amount = Number(value);
+  let currency = fromCurrency || "EUR";
+
+  if (currency !== preferredCurrency && eurToGbpRate){
+    if (currency === "EUR" && preferredCurrency === "GBP") amount *= eurToGbpRate;
+    else if (currency === "GBP" && preferredCurrency === "EUR") amount /= eurToGbpRate;
+    currency = preferredCurrency;
+  }
+
+  const symbol = currency === "GBP" ? "£" : "€";
+  return `${amount.toFixed(2)} ${symbol}`;
+}
 
 function slugify(str){
   return (str || "")
@@ -698,6 +750,8 @@ window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", init);
 
 async function init(){
+  document.getElementById("currency-select").value = preferredCurrency;
+  loadExchangeRate(); // en tâche de fond, ne bloque pas l'affichage initial
   try {
     await loadMoreCards();
     showStatus(`${allLoadedCards.length}+ cartes chargées depuis Supabase.`);
@@ -804,8 +858,8 @@ async function renderMarketSection(cardId){
     section.innerHTML = `
       <div class="price-chart-wrap">
         <div class="price-stat-row">
-          <div class="price-stat"><div class="label">Prix moyen actuel</div><div class="value">${latest.avg_price != null ? latest.avg_price.toFixed(2) + " " + currency : "—"}</div></div>
-          <div class="price-stat"><div class="label">Prix bas observé</div><div class="value">${isFinite(low) ? low.toFixed(2) + " " + currency : "—"}</div></div>
+          <div class="price-stat"><div class="label">Prix moyen actuel</div><div class="value">${latest.avg_price != null ? displayPrice(latest.avg_price, currency) : "—"}</div></div>
+          <div class="price-stat"><div class="label">Prix bas observé</div><div class="value">${isFinite(low) ? displayPrice(low, currency) : "—"}</div></div>
         </div>
         <div id="price-chart-svg"></div>
         <div class="price-chart-source">Source : Cardmarket, via TCGdex — mis à jour quotidiennement</div>
@@ -848,6 +902,8 @@ function drawPriceChart(history){
 }
 
 async function renderListingsSection(cardId){
+  const LANGUAGE_FLAGS = { fr: "🇫🇷", de: "🇩🇪", en: "🇬🇧", ja: "🇯🇵", es: "🇪🇸", it: "🇮🇹" };
+  const LANGUAGE_NAMES = { fr: "Français", de: "Allemand", en: "Anglais", ja: "Japonais", es: "Espagnol", it: "Italien" };
   const section = document.getElementById("listings-section");
   try {
     const listings = await supabaseSelect(
@@ -879,13 +935,14 @@ async function renderListingsSection(cardId){
             const pill = l.is_graded
               ? `<span class="grade-pill graded">${l.grading_companies ? l.grading_companies.name : "Gradée"} ${l.grade ?? ""}</span>`
               : `<span class="grade-pill">Non gradée</span>`;
-            const lang = l.language ? `<span class="lang-tag">${l.language}</span>` : `<span class="lang-tag">—</span>`;
-            const price = l.price != null ? `${Number(l.price).toFixed(2)} ${l.currency || "EUR"}` : "—";
+            const lang = LANGUAGE_FLAGS[l.language] || "🏳️";
+            const langLabel = LANGUAGE_NAMES[l.language] || "Langue inconnue";
+            const price = displayPrice(l.price, l.currency);
             return `
               <tr>
                 <td>${l.seller_name || "—"}</td>
                 <td>${pill}</td>
-                <td>${lang}</td>
+                <td><span class="lang-tag" title="${langLabel}">${lang}</span></td>
                 <td class="listing-price">${price}</td>
                 <td><a class="row-buy" href="${l.listing_url}" target="_blank" rel="noopener">Voir sur eBay →</a></td>
               </tr>`;
