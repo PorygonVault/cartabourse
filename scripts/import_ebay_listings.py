@@ -7,17 +7,19 @@ Prérequis :
   3. pip install requests
 
 Utilisation :
-  EBAY_CLIENT_ID=... EBAY_CLIENT_SECRET=... EBAY_ENV=sandbox EBAY_MARKETPLACE=EBAY_FR \
+  EBAY_CLIENT_ID=... EBAY_CLIENT_SECRET=... EBAY_ENV=sandbox EBAY_MARKETPLACES=EBAY_FR,EBAY_DE,EBAY_GB \
   SUPABASE_URL=https://xxxx.supabase.co SUPABASE_SERVICE_KEY=... \
   python import_ebay_listings.py
 
 Ce script :
-  - traite un LOT LIMITÉ de cartes à chaque exécution (CARD_BATCH_SIZE),
-    pas tout le catalogue d'un coup — pour rester sous la limite d'appels
-    quotidienne de l'API eBay (voir configuration-ebay-api.md). Chaque carte
-    cherchée = 1 appel, quel que soit le nombre de résultats qu'elle ramène.
-  - pour chaque carte, cherche sur eBay par nom de carte + nom d'extension
-    + numéro, dans la langue correspondant à la marketplace ciblée
+  - interroge plusieurs marketplaces européennes pour chaque carte (par
+    défaut EBAY_FR, EBAY_DE, EBAY_GB — réglable via EBAY_MARKETPLACES),
+    chacune dans sa langue, pour couvrir le marché européen dans son
+    ensemble. Chaque marketplace interrogée = 1 appel de plus par carte :
+    CARD_BATCH_SIZE est calculé automatiquement pour rester sous la limite
+    de 5000 appels/jour quel que soit le nombre de marketplaces configurées.
+  - traite un LOT LIMITÉ de cartes à chaque exécution, pas tout le catalogue
+    d'un coup (voir configuration-ebay-api.md)
   - ne garde que les annonces dont le TITRE contient vraiment le nom ET le
     numéro de la carte cherchée (tolérant aux variations d'écriture du
     numéro : zéros de tête, espaces, '#'...) — élimine les lots multi-cartes
@@ -53,19 +55,27 @@ import requests
 EBAY_CLIENT_ID = os.environ.get("EBAY_CLIENT_ID")
 EBAY_CLIENT_SECRET = os.environ.get("EBAY_CLIENT_SECRET")
 EBAY_ENV = os.environ.get("EBAY_ENV", "sandbox")  # "sandbox" ou "production"
-EBAY_MARKETPLACE = os.environ.get("EBAY_MARKETPLACE", "EBAY_US")  # pas de "global" chez eBay : EBAY_US est le catalogue le plus fourni
+
+# Pas de marketplace "Europe" chez eBay : on interroge plusieurs marketplaces
+# européennes l'une après l'autre pour chaque carte. Ça MULTIPLIE le nombre
+# d'appels par carte (3 ici) — voir l'ajustement de CARD_BATCH_SIZE plus bas.
+EBAY_MARKETPLACES = [m.strip() for m in os.environ.get("EBAY_MARKETPLACES", "EBAY_FR,EBAY_DE,EBAY_GB").split(",") if m.strip()]
 
 # Langue à utiliser pour construire la requête de recherche, selon la
-# marketplace ciblée — un nom de carte en français cherche mieux sur EBAY_FR
-# qu'un nom anglais, et inversement.
+# marketplace ciblée à ce moment-là — un nom de carte en français cherche
+# mieux sur EBAY_FR qu'un nom anglais, et inversement.
 MARKETPLACE_LOCALE = {"EBAY_FR": "fr", "EBAY_DE": "de"}
-SEARCH_LOCALE = MARKETPLACE_LOCALE.get(EBAY_MARKETPLACE, "en")
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 
-CARD_BATCH_SIZE = int(os.environ.get("CARD_BATCH_SIZE", "10"))  # 1 carte cherchée = 1 appel eBay ; marge de sécurité sous la limite de 5000/jour
-RESULTS_PER_CARD = 30  # annonces récupérées par carte (n'affecte PAS le nombre d'appels : toujours 1 par carte)
+# 1 carte cherchée = 1 appel PAR MARKETPLACE interrogée, donc len(EBAY_MARKETPLACES)
+# appels par carte. Le lot par défaut est calculé pour rester sous la limite
+# de 5000 appels/jour avec une marge de sécurité, quel que soit le nombre de
+# marketplaces configurées.
+_default_batch = max(1, (120 // max(1, len(EBAY_MARKETPLACES))) - 100)
+CARD_BATCH_SIZE = int(os.environ.get("CARD_BATCH_SIZE", str(_default_batch)))
+RESULTS_PER_CARD = 15  # annonces récupérées par carte et par marketplace
 
 if not all([EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, SUPABASE_URL, SUPABASE_SERVICE_KEY]):
     sys.exit("Erreur : EBAY_CLIENT_ID, EBAY_CLIENT_SECRET, SUPABASE_URL et SUPABASE_SERVICE_KEY "
@@ -125,13 +135,13 @@ def get_ebay_token():
     return _ebay_token["value"]
 
 
-def search_ebay(query, limit=RESULTS_PER_CARD):
+def search_ebay(query, marketplace, limit=RESULTS_PER_CARD):
     token = get_ebay_token()
     resp = get_with_retry(
         "GET", f"{EBAY_BASE}/buy/browse/v1/item_summary/search",
         headers={
             "Authorization": f"Bearer {token}",
-            "X-EBAY-C-MARKETPLACE-ID": EBAY_MARKETPLACE,
+            "X-EBAY-C-MARKETPLACE-ID": marketplace,
         },
         # Enchères volontairement exclues pour l'instant (choix du 03/08) : le
         # prix d'une enchère en cours n'est pas comparable à un prix affiché
@@ -140,7 +150,7 @@ def search_ebay(query, limit=RESULTS_PER_CARD):
         params={"q": query, "limit": limit, "filter": "buyingOptions:{FIXED_PRICE}"},
     )
     if resp.status_code != 200:
-        print(f"    Erreur recherche eBay ({resp.status_code}) pour \"{query}\" : {resp.text[:200]}")
+        print(f"    Erreur recherche eBay ({resp.status_code}) pour \"{query}\" sur {marketplace} : {resp.text[:200]}")
         return []
     return resp.json().get("itemSummaries", [])
 
@@ -191,13 +201,18 @@ def detect_grading(title, pattern, grading_companies_by_name):
 # ---------------------------------------------------------------
 # Détection basique de la langue de l'exemplaire, sur le même principe
 # ---------------------------------------------------------------
+# Important : pas de jetons courts ambigus comme "en" ou "de" seuls — ce
+# sont aussi des mots français très courants ("carte EN français", "Dracaufeu
+# DE base"), qui provoquaient des faux positifs EN/DE sur des annonces
+# pourtant clairement françaises. Seuls des mots suffisamment longs et non
+# ambigus sont utilisés.
 LANGUAGE_KEYWORDS = {
-    "fr": r"\b(fr|fra|fran[cç]ais|francais|french)\b",
-    "de": r"\b(de|deu|deutsch|german)\b",
-    "en": r"\b(en|eng|english|anglais)\b",
-    "ja": r"\b(jp|jpn|japanese|japonais|japan)\b",
-    "es": r"\b(es|esp|spanish|espa[nñ]ol)\b",
-    "it": r"\b(it|ita|italian|italiano)\b",
+    "fr": r"\b(fra|fran[cç]ais|francais|french)\b",
+    "de": r"\b(deu|deutsch|german)\b",
+    "en": r"\b(eng|english|anglais)\b",
+    "ja": r"\b(jpn|japanese|japonais|japan)\b",
+    "es": r"\b(esp|spanish|espa[nñ]ol)\b",
+    "it": r"\b(ita|italian|italiano)\b",
 }
 LANGUAGE_PATTERNS = {locale: re.compile(pattern, re.IGNORECASE) for locale, pattern in LANGUAGE_KEYWORDS.items()}
 
@@ -205,14 +220,16 @@ LANGUAGE_PATTERNS = {locale: re.compile(pattern, re.IGNORECASE) for locale, patt
 def detect_language(title, set_names_by_locale=None):
     # 1. Indice fort : le nom de l'extension, tel qu'il varie d'une langue à
     # l'autre, mentionné dans le titre (ex. "Set de Base" ne s'écrit qu'en
-    # français) — plus fiable qu'un simple mot-clé générique.
+    # français) — plus fiable qu'un simple mot-clé générique. Recherché en
+    # tant que MOT ENTIER (limites de mots), pas comme simple sous-chaîne,
+    # pour éviter qu'un nom très court ne matche par coïncidence.
     if set_names_by_locale:
-        title_lower = title.lower()
         for locale, name in set_names_by_locale.items():
-            if name and locale in LANGUAGE_KEYWORDS and name.lower() in title_lower:
-                return locale
+            if name and len(name) >= 4 and locale in LANGUAGE_KEYWORDS:
+                if re.search(rf"\b{re.escape(name)}\b", title, re.IGNORECASE):
+                    return locale
 
-    # 2. Repli : mots-clés génériques de langue
+    # 2. Repli : mots-clés génériques de langue, non ambigus
     for locale, pattern in LANGUAGE_PATTERNS.items():
         if pattern.search(title):
             return locale
@@ -264,60 +281,72 @@ def main():
             f.write("0")
         return
 
-    print(f"{len(cards)} carte(s) à traiter cette fois-ci (marketplace : {EBAY_MARKETPLACE}), à partir de l'id {last_id}.")
+    print(f"{len(cards)} carte(s) à traiter cette fois-ci "
+          f"(marketplaces : {', '.join(EBAY_MARKETPLACES)}), à partir de l'id {last_id}.")
 
     for i, card in enumerate(cards, 1):
         names = card["card_names"]
-        card_name = next((n["name"] for n in names if n["locale"] == SEARCH_LOCALE), None) \
-            or next((n["name"] for n in names if n["locale"] == "en"), None)
-        if not card_name:
-            continue
-
         set_info = card["sets"] or {}
         set_names = set_info.get("set_names") or []
         set_names_by_locale = {n["locale"]: n["name"] for n in set_names}
         set_names_by_locale.setdefault("en", set_info.get("name_en", ""))
-        set_name = set_names_by_locale.get(SEARCH_LOCALE) or set_info.get("name_en", "")
 
-        number_part = f"{card['card_number']}/{set_info['total_cards']}" if set_info.get("total_cards") else card["card_number"]
-        query = f"{card_name} {set_name} {number_part}".strip()
+        all_rows = []
+        for marketplace in EBAY_MARKETPLACES:
+            locale = MARKETPLACE_LOCALE.get(marketplace, "en")
 
-        print(f"[{i}/{len(cards)}] {query}...")
-        items = search_ebay(query)
+            card_name = next((n["name"] for n in names if n["locale"] == locale), None) \
+                or next((n["name"] for n in names if n["locale"] == "en"), None)
+            if not card_name:
+                continue
 
-        # Ne garde que les annonces dont le titre contient vraiment le nom
-        # ET le numéro de la carte cherchée — élimine les lots multi-cartes,
-        # les autres cartes du même Pokémon dans d'autres extensions, etc.
-        card_name_lower = card_name.lower()
-        number_pattern = build_number_pattern(card["card_number"], set_info.get("total_cards"))
-        items = [
-            it for it in items
-            if card_name_lower in it.get("title", "").lower() and number_pattern.search(it.get("title", ""))
-        ]
+            set_name = set_names_by_locale.get(locale) or set_info.get("name_en", "")
+            number_part = f"{card['card_number']}/{set_info['total_cards']}" if set_info.get("total_cards") else card["card_number"]
+            query = f"{card_name} {set_name} {number_part}".strip()
 
-        rows = []
-        for item in items:
-            title = item.get("title", "")
-            grading_company_id, grade = detect_grading(title, grading_pattern, grading_companies_by_name)
-            price = item.get("price", {})
-            rows.append({
-                "card_id": card["id"],
-                "site_id": site_id,
-                "seller_name": item.get("seller", {}).get("username"),
-                "price": price.get("value"),
-                "currency": price.get("currency", "EUR"),
-                "is_graded": grading_company_id is not None,
-                "grading_company_id": grading_company_id,
-                "grade": grade,
-                "condition": None,  # eBay ne fournit pas de correspondance fiable avec NM/EX/GD/PL
-                "language": detect_language(title, set_names_by_locale),
-                "listing_url": item.get("itemWebUrl"),
-                "external_ref": item.get("itemId"),
-                "is_active": True,
-            })
+            print(f"[{i}/{len(cards)}] ({marketplace}) {query}...")
+            items = search_ebay(query, marketplace)
 
-        supabase_upsert("listings", rows, on_conflict="dedupe_key")
-        print(f"  {len(rows)} annonce(s) trouvée(s).")
+            # Ne garde que les annonces dont le titre contient vraiment le nom
+            # ET le numéro de la carte cherchée — élimine les lots multi-cartes,
+            # les autres cartes du même Pokémon dans d'autres extensions, etc.
+            card_name_lower = card_name.lower()
+            number_pattern = build_number_pattern(card["card_number"], set_info.get("total_cards"))
+            items = [
+                it for it in items
+                if card_name_lower in it.get("title", "").lower() and number_pattern.search(it.get("title", ""))
+            ]
+
+            for item in items:
+                title = item.get("title", "")
+                grading_company_id, grade = detect_grading(title, grading_pattern, grading_companies_by_name)
+                price = item.get("price", {})
+                all_rows.append({
+                    "card_id": card["id"],
+                    "site_id": site_id,
+                    "seller_name": item.get("seller", {}).get("username"),
+                    "price": price.get("value"),
+                    "currency": price.get("currency", "EUR"),
+                    "is_graded": grading_company_id is not None,
+                    "grading_company_id": grading_company_id,
+                    "grade": grade,
+                    "condition": None,  # eBay ne fournit pas de correspondance fiable avec NM/EX/GD/PL
+                    "language": detect_language(title, set_names_by_locale),
+                    "listing_url": item.get("itemWebUrl"),
+                    "external_ref": item.get("itemId"),
+                    "is_active": True,
+                })
+            time.sleep(0.2)
+
+        # Une même annonce peut ressortir sur plusieurs marketplaces (un
+        # vendeur français visible aussi depuis EBAY_GB, par ex.) — dédoublonnée
+        # ici avant l'envoi, en plus de la contrainte en base.
+        deduped = {}
+        for row in all_rows:
+            deduped[row["external_ref"]] = row
+
+        supabase_upsert("listings", list(deduped.values()), on_conflict="dedupe_key")
+        print(f"  {len(deduped)} annonce(s) unique(s) trouvée(s) sur {len(EBAY_MARKETPLACES)} marketplace(s).")
         time.sleep(0.3)
 
     with open(progress_file, "w", encoding="utf-8") as f:
