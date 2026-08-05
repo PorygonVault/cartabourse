@@ -903,7 +903,7 @@ function drawPriceChart(history){
 }
 
 async function renderListingsSection(cardId){
-  const LANGUAGE_FLAGS = { fr: "fr", de: "de", en: "gb", ja: "jp", es: "es", it: "it" };
+  const LANGUAGE_FLAGS = { fr: "france", de: "germany", en: "united-kingdom", es: "spain", it: "italy" };
   const LANGUAGE_NAMES = { fr: "Français", de: "Allemand", en: "Anglais", ja: "Japonais", es: "Espagnol", it: "Italien" };
   const section = document.getElementById("listings-section");
   try {
@@ -939,7 +939,7 @@ async function renderListingsSection(cardId){
             const countryCode = LANGUAGE_FLAGS[l.language];
             const langLabel = LANGUAGE_NAMES[l.language] || "Langue inconnue";
             const lang = countryCode
-              ? `<img src="https://flagcdn.com/w20/${countryCode}.png" srcset="https://flagcdn.com/w40/${countryCode}.png 2x" width="20" alt="${langLabel}">`
+              ? `<img src="assets/flags/${countryCode}.png" width="16" height="16" alt="${langLabel}">`
               : `<span style="color:var(--text-faint);">—</span>`;
             const price = displayPrice(l.price, l.currency);
             return `
