@@ -186,7 +186,8 @@
     background:var(--panel-light);border:1px solid var(--border);display:inline-block;
   }
   .grade-pill.graded{color:var(--gold-bright);border-color:var(--gold);}
-  .lang-tag{font-family:var(--font-mono);font-size:11px;color:var(--text-dim);text-transform:uppercase;}
+  .lang-tag{display:inline-flex;align-items:center;}
+  .lang-tag img{display:block;border-radius:2px;box-shadow:0 0 0 1px var(--border);}
   .listing-price{font-family:var(--font-mono);font-weight:600;color:var(--gold-bright);}
   .row-buy{
     font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:var(--text-dim);
@@ -902,7 +903,7 @@ function drawPriceChart(history){
 }
 
 async function renderListingsSection(cardId){
-  const LANGUAGE_FLAGS = { fr: "🇫🇷", de: "🇩🇪", en: "🇬🇧", ja: "🇯🇵", es: "🇪🇸", it: "🇮🇹" };
+  const LANGUAGE_FLAGS = { fr: "fr", de: "de", en: "gb", ja: "jp", es: "es", it: "it" };
   const LANGUAGE_NAMES = { fr: "Français", de: "Allemand", en: "Anglais", ja: "Japonais", es: "Espagnol", it: "Italien" };
   const section = document.getElementById("listings-section");
   try {
@@ -935,8 +936,11 @@ async function renderListingsSection(cardId){
             const pill = l.is_graded
               ? `<span class="grade-pill graded">${l.grading_companies ? l.grading_companies.name : "Gradée"} ${l.grade ?? ""}</span>`
               : `<span class="grade-pill">Non gradée</span>`;
-            const lang = LANGUAGE_FLAGS[l.language] || "🏳️";
+            const countryCode = LANGUAGE_FLAGS[l.language];
             const langLabel = LANGUAGE_NAMES[l.language] || "Langue inconnue";
+            const lang = countryCode
+              ? `<img src="https://flagcdn.com/w20/${countryCode}.png" srcset="https://flagcdn.com/w40/${countryCode}.png 2x" width="20" alt="${langLabel}">`
+              : `<span style="color:var(--text-faint);">—</span>`;
             const price = displayPrice(l.price, l.currency);
             return `
               <tr>
