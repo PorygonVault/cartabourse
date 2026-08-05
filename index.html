@@ -332,10 +332,11 @@ async function loadExchangeRate(){
 }
 
 function setCurrency(value){
-  preferredCurrency = value;
   localStorage.setItem("preferredCurrency", value);
-  // Réaffiche la fiche carte courante si on y est, pour appliquer la conversion immédiatement
-  if (location.hash.startsWith("#/card/")) route();
+  // Rechargement complet plutôt qu'un simple réaffichage : garantit que le
+  // taux de change est bien chargé et appliqué avant que quoi que ce soit
+  // ne s'affiche, sans dépendre du bon timing d'un appel en arrière-plan.
+  location.reload();
 }
 
 /* Convertit un prix (dans sa devise d'origine) vers la devise préférée de
@@ -347,12 +348,19 @@ function displayPrice(value, fromCurrency){
   let currency = fromCurrency || "EUR";
 
   if (currency !== preferredCurrency && eurToGbpRate){
-    if (currency === "EUR" && preferredCurrency === "GBP") amount *= eurToGbpRate;
-    else if (currency === "GBP" && preferredCurrency === "EUR") amount /= eurToGbpRate;
-    currency = preferredCurrency;
+    if (currency === "EUR" && preferredCurrency === "GBP"){
+      amount *= eurToGbpRate;
+      currency = "GBP";
+    } else if (currency === "GBP" && preferredCurrency === "EUR"){
+      amount /= eurToGbpRate;
+      currency = "EUR";
+    }
+    // Autre devise sans taux connu (ex. USD) : on garde la devise d'origine
+    // telle quelle plutôt que d'afficher un montant non converti sous une
+    // étiquette de devise qui ne correspondrait plus au calcul réel.
   }
 
-  const symbol = currency === "GBP" ? "£" : "€";
+  const symbol = currency === "GBP" ? "£" : (currency === "EUR" ? "€" : currency);
   return `${amount.toFixed(2)} ${symbol}`;
 }
 
@@ -752,7 +760,10 @@ window.addEventListener("DOMContentLoaded", init);
 
 async function init(){
   document.getElementById("currency-select").value = preferredCurrency;
-  loadExchangeRate(); // en tâche de fond, ne bloque pas l'affichage initial
+  // Attendu (pas juste lancé en arrière-plan) : garantit que le taux est
+  // disponible avant tout affichage de prix, sinon la conversion pouvait
+  // rester silencieusement désactivée si une fiche carte s'ouvrait trop vite.
+  await loadExchangeRate();
   try {
     await loadMoreCards();
     showStatus(`${allLoadedCards.length}+ cartes chargées depuis Supabase.`);
@@ -903,7 +914,7 @@ function drawPriceChart(history){
 }
 
 async function renderListingsSection(cardId){
-  const LANGUAGE_FLAGS = { fr: "france", de: "germany", en: "united-kingdom", es: "spain", it: "italy" };
+  const LANGUAGE_FLAGS = { fr: "france", de: "germany", en: "united-kingdom", es: "spain", it: "italy", ja: "japan" };
   const LANGUAGE_NAMES = { fr: "Français", de: "Allemand", en: "Anglais", ja: "Japonais", es: "Espagnol", it: "Italien" };
   const section = document.getElementById("listings-section");
   try {
