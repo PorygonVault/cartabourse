@@ -195,6 +195,33 @@
   }
   tr:hover .row-buy{border-color:var(--gold);color:var(--gold-bright);}
 
+  .listings-tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:1px solid var(--border);}
+  .tab-btn{
+    font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.04em;
+    padding:9px 16px;border:none;background:transparent;color:var(--text-dim);cursor:pointer;
+    border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;
+  }
+  .tab-btn:hover{color:var(--text);}
+  .tab-btn.active{color:var(--gold-bright);border-bottom-color:var(--gold);font-weight:600;}
+
+  .listings-body{display:grid;grid-template-columns:200px 1fr;gap:24px;margin-bottom:48px;}
+  .filters{
+    background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);
+    padding:16px;align-self:start;
+  }
+  .filters h4{
+    font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.08em;
+    color:var(--gold);margin:0 0 14px;
+  }
+  .filter-group{margin-bottom:16px;}
+  .filter-group:last-child{margin-bottom:0;}
+  .filter-group .fg-title{display:block;font-size:12px;font-weight:600;margin-bottom:6px;color:var(--text);}
+  .filter-group select{
+    width:100%;background:var(--panel-light);border:1px solid var(--border);color:var(--text);
+    padding:7px 9px;border-radius:var(--radius);font-family:var(--font-body);font-size:12.5px;
+  }
+  @media (max-width:700px){ .listings-body{grid-template-columns:1fr;} }
+
   .empty-state{padding:40px 10px;text-align:center;color:var(--text-faint);font-family:var(--font-mono);font-size:12px;}
   footer{border-top:1px solid var(--border);padding:28px;text-align:center;color:var(--text-faint);font-family:var(--font-mono);font-size:11px;}
   .view{display:none;} .view.active{display:block;}
@@ -282,8 +309,41 @@
     </div>
 
     <div class="section-title">Exemplaires référencés <span class="count" id="listings-count"></span></div>
-    <div id="listings-section">
-      <div class="empty-state">Chargement...</div>
+
+    <div class="listings-tabs" id="listings-tabs">
+      <button class="tab-btn active" data-tab="all" onclick="setListingsTab('all')">Tous les listings</button>
+      <button class="tab-btn" data-tab="shops" onclick="setListingsTab('shops')">Shops</button>
+      <button class="tab-btn" data-tab="ebay" onclick="setListingsTab('ebay')">eBay</button>
+      <button class="tab-btn" data-tab="cardtrader" onclick="setListingsTab('cardtrader')">CardTrader</button>
+    </div>
+
+    <div class="listings-body">
+      <aside class="filters">
+        <h4>Filtrer</h4>
+        <div class="filter-group">
+          <label class="fg-title">Langue</label>
+          <select id="filter-language" onchange="renderListingsTable()">
+            <option value="">Toutes</option>
+            <option value="fr">Français</option>
+            <option value="de">Allemand</option>
+            <option value="en">Anglais</option>
+            <option value="ja">Japonais</option>
+            <option value="es">Espagnol</option>
+            <option value="it">Italien</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label class="fg-title">Qualité</label>
+          <select id="filter-quality" onchange="renderListingsTable()">
+            <option value="">Toutes</option>
+            <option value="graded">Gradée</option>
+            <option value="ungraded">Non gradée</option>
+          </select>
+        </div>
+      </aside>
+      <div id="listings-table-container">
+        <div class="empty-state">Chargement...</div>
+      </div>
     </div>
   </section>
 
@@ -936,60 +996,101 @@ function drawPriceChart(history){
     </svg>`;
 }
 
+const LANGUAGE_FLAGS = { fr: "france", de: "germany", en: "united-kingdom", es: "spain", it: "italy", ja: "japan" };
+const LANGUAGE_NAMES = { fr: "Français", de: "Allemand", en: "Anglais", ja: "Japonais", es: "Espagnol", it: "Italien" };
+
+let currentListings = [];
+let currentListingsTab = "all";
+
 async function renderListingsSection(cardId){
-  const LANGUAGE_FLAGS = { fr: "france", de: "germany", en: "united-kingdom", es: "spain", it: "italy", ja: "japan" };
-  const LANGUAGE_NAMES = { fr: "Français", de: "Allemand", en: "Anglais", ja: "Japonais", es: "Espagnol", it: "Italien" };
-  const section = document.getElementById("listings-section");
+  const container = document.getElementById("listings-table-container");
+  container.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  currentListingsTab = "all";
+  document.querySelectorAll("#listings-tabs .tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === "all"));
+  document.getElementById("filter-language").value = "";
+  document.getElementById("filter-quality").value = "";
+
   try {
-    const listings = await supabaseSelect(
+    currentListings = await supabaseSelect(
       `listings?card_id=eq.${cardId}&is_active=eq.true` +
-      `&select=seller_name,price,currency,is_graded,grade,language,listing_url,grading_companies(name)` +
+      `&select=seller_name,price,currency,is_graded,grade,language,listing_url,grading_companies(name),sites(name)` +
       `&order=price.asc`
     );
+    renderListingsTable();
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state">Impossible de charger les exemplaires : ${e.message}</div>`;
+  }
+}
 
-    document.getElementById("listings-count").textContent = `— ${listings.length} exemplaire${listings.length > 1 ? "s" : ""}`;
+function setListingsTab(tab){
+  currentListingsTab = tab;
+  document.querySelectorAll("#listings-tabs .tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tab));
+  renderListingsTable();
+}
 
-    if (!listings.length){
-      section.innerHTML = `<div class="empty-state">Aucun exemplaire référencé pour cette carte pour l'instant.</div>`;
-      return;
-    }
+function matchesTab(listing, tab){
+  const siteName = (listing.sites && listing.sites.name) || "";
+  if (tab === "all") return true;
+  if (tab === "ebay") return siteName === "eBay";
+  if (tab === "cardtrader") return siteName.toLowerCase() === "cardtrader";
+  if (tab === "shops") return siteName !== "eBay" && siteName.toLowerCase() !== "cardtrader";
+  return true;
+}
 
-    section.innerHTML = `
-      <table class="listing-table">
-        <thead>
-          <tr>
-            <th>Vendeur</th>
-            <th>État / Grade</th>
-            <th>Langue</th>
-            <th>Prix</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody>
-          ${listings.map(l => {
-            const pill = l.is_graded
-              ? `<span class="grade-pill graded">${l.grading_companies ? l.grading_companies.name : "Gradée"} ${l.grade ?? ""}</span>`
-              : `<span class="grade-pill">Non gradée</span>`;
-            const countryCode = LANGUAGE_FLAGS[l.language];
-            const langLabel = LANGUAGE_NAMES[l.language] || "Langue inconnue";
-            const lang = countryCode
-              ? `<img src="assets/flags/${countryCode}.png" width="16" height="16" alt="${langLabel}">`
-              : `<span style="color:var(--text-faint);">—</span>`;
-            const price = displayPrice(l.price, l.currency);
-            return `
-              <tr>
-                <td>${l.seller_name || "—"}</td>
-                <td>${pill}</td>
-                <td><span class="lang-tag" title="${langLabel}">${lang}</span></td>
-                <td class="listing-price">${price}</td>
-                <td><a class="row-buy" href="${l.listing_url}" target="_blank" rel="noopener">Voir sur eBay →</a></td>
+function renderListingsTable(){
+  const container = document.getElementById("listings-table-container");
+  const languageFilter = document.getElementById("filter-language").value;
+  const qualityFilter = document.getElementById("filter-quality").value;
+
+  const filtered = currentListings.filter(l => {
+    if (!matchesTab(l, currentListingsTab)) return false;
+    if (languageFilter && l.language !== languageFilter) return false;
+    if (qualityFilter === "graded" && !l.is_graded) return false;
+    if (qualityFilter === "ungraded" && l.is_graded) return false;
+    return true;
+  });
+
+  document.getElementById("listings-count").textContent = `— ${filtered.length} exemplaire${filtered.length > 1 ? "s" : ""}`;
+
+  if (!filtered.length){
+    container.innerHTML = `<div class="empty-state">Aucun exemplaire ne correspond à ces filtres.</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <table class="listing-table">
+      <thead>
+        <tr>
+          <th>Vendeur</th>
+          <th>État / Grade</th>
+          <th>Langue</th>
+          <th>Prix</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        ${filtered.map(l => {
+          const pill = l.is_graded
+            ? `<span class="grade-pill graded">${l.grading_companies ? l.grading_companies.name : "Gradée"} ${l.grade ?? ""}</span>`
+            : `<span class="grade-pill">Non gradée</span>`;
+          const countryCode = LANGUAGE_FLAGS[l.language];
+          const langLabel = LANGUAGE_NAMES[l.language] || "Langue inconnue";
+          const lang = countryCode
+            ? `<img src="assets/flags/${countryCode}.png" width="16" height="16" alt="${langLabel}">`
+            : `<span style="color:var(--text-faint);">—</span>`;
+          const price = displayPrice(l.price, l.currency);
+          const siteName = (l.sites && l.sites.name) || "";
+          return `
+            <tr>
+              <td>${l.seller_name || "—"}</td>
+              <td>${pill}</td>
+              <td><span class="lang-tag" title="${langLabel}">${lang}</span></td>
+              <td class="listing-price">${price}</td>
+              <td><a class="row-buy" href="${l.listing_url}" target="_blank" rel="noopener">Voir sur ${siteName || "le site"} →</a></td>
               </tr>`;
           }).join("")}
         </tbody>
       </table>`;
-  } catch (e) {
-    section.innerHTML = `<div class="empty-state">Impossible de charger les exemplaires : ${e.message}</div>`;
-  }
 }
 </script>
 </body>
