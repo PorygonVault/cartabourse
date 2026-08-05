@@ -321,14 +321,37 @@ const LANG = detectLang();
 let preferredCurrency = localStorage.getItem("preferredCurrency") || "EUR";
 let eurToGbpRate = null;
 
+// Taux de secours, mis à jour approximativement (à réviser de temps en
+// temps) : garantit que la conversion fonctionne toujours, même si aucune
+// des sources en ligne ci-dessous n'est joignable (blocage CORS, panne...).
+const FALLBACK_EUR_TO_GBP = 0.87;
+
 async function loadExchangeRate(){
-  try {
-    const resp = await fetch("https://api.frankfurter.app/latest?from=EUR&to=GBP");
-    const data = await resp.json();
-    eurToGbpRate = data.rates.GBP;
-  } catch (e) {
-    console.error("Taux de change indisponible, conversion désactivée :", e);
+  // Plusieurs sources tentées dans l'ordre : si l'une est bloquée (CORS,
+  // panne...), la suivante prend le relais avant de retomber sur le taux
+  // de secours fixe en tout dernier recours.
+  const sources = [
+    { url: "https://api.frankfurter.app/latest?from=EUR&to=GBP", extract: (d) => d.rates.GBP },
+    { url: "https://open.er-api.com/v6/latest/EUR", extract: (d) => d.rates.GBP },
+  ];
+
+  for (const source of sources) {
+    try {
+      const resp = await fetch(source.url);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      const rate = source.extract(data);
+      if (rate){
+        eurToGbpRate = rate;
+        return;
+      }
+    } catch (e) {
+      console.warn(`Source de taux de change indisponible (${source.url}) :`, e.message);
+    }
   }
+
+  console.warn("Aucune source de taux de change en ligne joignable — utilisation du taux de secours fixe.");
+  eurToGbpRate = FALLBACK_EUR_TO_GBP;
 }
 
 function setCurrency(value){
