@@ -96,26 +96,35 @@ def process_page(cards, today):
     no_pricing = 0
 
     for i, card in enumerate(cards, 1):
-        set_code = card["sets"]["code"] if card["sets"] else None
-        if not set_code:
-            continue
-        tcgdex_id = f"{set_code}-{card['card_number']}"
+        try:
+            set_code = card["sets"]["code"] if card["sets"] else None
+            if not set_code:
+                continue
+            tcgdex_id = f"{set_code}-{card['card_number']}"
 
-        detail = get_with_retry(f"{TCGDEX_BASE}/en/cards/{tcgdex_id}")
-        cardmarket = (detail or {}).get("pricing", {}).get("cardmarket")
+            detail = get_with_retry(f"{TCGDEX_BASE}/en/cards/{tcgdex_id}")
+            # (detail or {}).get("pricing", {}) plantait si "pricing" était
+            # présent mais valait null (le défaut {} ne s'applique que si la
+            # clé est absente, pas si elle vaut explicitement None) — corrigé.
+            pricing = (detail or {}).get("pricing") or {}
+            cardmarket = pricing.get("cardmarket")
 
-        if not cardmarket:
+            if not cardmarket:
+                no_pricing += 1
+                continue
+
+            rows.append({
+                "card_id": card["id"],
+                "period_date": today,
+                "avg_price": cardmarket.get("avg"),
+                "min_price": cardmarket.get("low"),
+                "max_price": None,  # Cardmarket ne fournit pas de "haut" agrégé, seulement bas/moyenne/tendance
+                "currency": cardmarket.get("unit", "EUR"),
+            })
+        except Exception as e:
+            print(f"    Erreur inattendue sur la carte id={card.get('id')} ({e}) — carte ignorée, poursuite du script.")
             no_pricing += 1
             continue
-
-        rows.append({
-            "card_id": card["id"],
-            "period_date": today,
-            "avg_price": cardmarket.get("avg"),
-            "min_price": cardmarket.get("low"),
-            "max_price": None,  # Cardmarket ne fournit pas de "haut" agrégé, seulement bas/moyenne/tendance
-            "currency": cardmarket.get("unit", "EUR"),
-        })
 
         if i % 100 == 0:
             print(f"    [{i}/{len(cards)}] traité...")
@@ -126,8 +135,12 @@ def process_page(cards, today):
 
 
 def main():
-    last_id = 0
+    # Nécessaire sur GitHub Actions (et plus généralement dès que le script
+    # n'est pas lancé depuis son propre dossier) : sans ça, le fichier de
+    # progression seraient cherché/écrit au mauvais endroit.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    last_id = 0
     if os.path.exists(PROGRESS_FILE):
         with open(PROGRESS_FILE, encoding="utf-8") as f:
             last_id = int(f.read().strip() or 0)
