@@ -1,0 +1,27 @@
+name: Mise à jour quotidienne du taux de change
+
+on:
+  schedule:
+    - cron: "0 4 * * *"   # 4h UTC — avant les collectes Cardmarket (5h) et eBay (6h)
+  workflow_dispatch: {}
+
+jobs:
+  update-rate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Installer les dépendances
+        run: pip install requests
+
+      - name: Récupérer et enregistrer le taux de change
+        run: python scripts/fetch_exchange_rates.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
