@@ -446,13 +446,22 @@ function slugify(str){
     .trim().replace(/\s+/g, "-");
 }
 
-/* Les images sont stockées en haute résolution (.../high.png) — utile pour
-   la fiche détail, mais beaucoup trop lourd pour de petites vignettes dans
-   une grille. TCGdex propose une variante basse résolution WebP nettement
-   plus légère ; on la dérive à la volée pour la grille. */
-function toThumbUrl(url){
-  if (!url) return url;
-  return url.replace(/\/high\.(png|webp|jpg)$/, "/low.webp");
+/* Les images sont stockées en haute résolution (.../high.png). On sert du
+   WebP en priorité (bien plus léger, notamment pour les vignettes de la
+   grille), avec un repli automatique vers le .png d'origine si jamais la
+   variante WebP n'existe pas pour une image donnée. */
+function imageVariants(url, quality){
+  if (!url) return null;
+  const base = url.replace(/\/(high|low)\.(png|webp|jpg)$/, `/${quality}`);
+  return { webp: `${base}.webp`, png: `${base}.png` };
+}
+
+/* Construit une balise <img> avec repli png intégré (via data-fallback),
+   et un dernier repli sur le glyphe si même le .png échoue. */
+function cardImgTag(url, quality, cssClass, altText, extraAttrs = ""){
+  const variants = imageVariants(url, quality);
+  if (!variants) return `<span class="glyph">⚡</span>`;
+  return `<img class="${cssClass}" src="${variants.webp}" alt="${altText}" ${extraAttrs} data-fallback="${variants.png}" onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute('data-fallback');}else{this.replaceWith(Object.assign(document.createElement('span'),{className:'glyph',textContent:'⚡'}))}">`;
 }
 
 async function supabaseSelect(path){
@@ -757,7 +766,7 @@ function cardTileHtml(c){
       <div class="art">
         <span class="set-tag">${c.setName}</span>
         ${c.image
-          ? `<img class="art-img" src="${toThumbUrl(c.image)}" alt="${c.name}" loading="lazy" decoding="async" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'glyph',textContent:'⚡'}))">`
+          ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"')
           : `<span class="glyph">⚡</span>`}
       </div>
       <div class="tile-body">
@@ -772,7 +781,7 @@ function cardRowHtml(c){
     <div class="card-row" onclick="navigateCard(${c.id})">
       <div class="row-thumb">
         ${c.image
-          ? `<img src="${toThumbUrl(c.image)}" alt="${c.name}" loading="lazy" decoding="async" onerror="this.remove()">`
+          ? (() => { const v = imageVariants(c.image, "low"); return `<img src="${v.webp}" alt="${c.name}" loading="lazy" decoding="async" data-fallback="${v.png}" onerror="if(this.dataset.fallback){this.src=this.dataset.fallback;this.removeAttribute('data-fallback');}else{this.remove();}">`; })()
           : `<span class="glyph">⚡</span>`}
       </div>
       <div class="row-info">
@@ -898,7 +907,7 @@ async function renderCardDetail(id){
 
     const art = document.getElementById("detail-art");
     art.innerHTML = card.image
-      ? `<img class="art-img" src="${card.image}" alt="${card.name}" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'glyph',textContent:'⚡'}))">`
+      ? cardImgTag(card.image, "high", "art-img", card.name)
       : `<span class="glyph">⚡</span>`;
 
     const cmSet = slugify(card.setName);
