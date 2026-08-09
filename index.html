@@ -387,30 +387,22 @@ let eurToGbpRate = null;
 const FALLBACK_EUR_TO_GBP = 0.87;
 
 async function loadExchangeRate(){
-  // Plusieurs sources tentées dans l'ordre : si l'une est bloquée (CORS,
-  // panne...), la suivante prend le relais avant de retomber sur le taux
-  // de secours fixe en tout dernier recours.
-  const sources = [
-    { url: "https://api.frankfurter.app/latest?from=EUR&to=GBP", extract: (d) => d.rates.GBP },
-    { url: "https://open.er-api.com/v6/latest/EUR", extract: (d) => d.rates.GBP },
-  ];
-
-  for (const source of sources) {
-    try {
-      const resp = await fetch(source.url);
-      if (!resp.ok) continue;
-      const data = await resp.json();
-      const rate = source.extract(data);
-      if (rate){
-        eurToGbpRate = rate;
-        return;
-      }
-    } catch (e) {
-      console.warn(`Source de taux de change indisponible (${source.url}) :`, e.message);
+  // Lu depuis Supabase (alimenté chaque jour par fetch_exchange_rates.py)
+  // plutôt qu'appelé directement depuis le navigateur — évite au passage
+  // le blocage CORS rencontré avec l'appel direct à une API externe.
+  try {
+    const rows = await supabaseSelect(
+      `exchange_rates?base_currency=eq.EUR&target_currency=eq.GBP&select=rate`
+    );
+    if (rows.length && rows[0].rate){
+      eurToGbpRate = Number(rows[0].rate);
+      return;
     }
+  } catch (e) {
+    console.warn("Taux de change indisponible depuis Supabase :", e.message);
   }
 
-  console.warn("Aucune source de taux de change en ligne joignable — utilisation du taux de secours fixe.");
+  console.warn("Aucun taux de change en base — utilisation du taux de secours fixe.");
   eurToGbpRate = FALLBACK_EUR_TO_GBP;
 }
 
