@@ -167,10 +167,20 @@
   .market-placeholder h4{font-family:var(--font-display);font-size:16px;color:var(--text);margin:0 0 6px;}
   .market-placeholder p{font-size:13px;line-height:1.5;margin:0;max-width:420px;margin:0 auto;}
   .price-chart-wrap{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:20px;}
+  #price-chart-svg{position:relative;}
   .price-stat-row{display:flex;gap:28px;margin-bottom:16px;flex-wrap:wrap;}
   .price-stat .label{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;margin-bottom:3px;}
   .price-stat .value{font-family:var(--font-mono);font-size:19px;color:var(--gold-bright);font-weight:600;}
-  .price-chart-wrap svg{width:100%;height:140px;overflow:visible;}
+  .price-chart-wrap svg{width:100%;height:220px;overflow:visible;}
+  .pc-grid{stroke:#242839;stroke-width:1;}
+  .pc-axis-label{fill:#666a80;font-family:'IBM Plex Mono',monospace;font-size:9.5px;}
+  .pc-hover-dot{fill:#e3c15a;stroke:#14161f;stroke-width:2;opacity:0;pointer-events:none;}
+  .pc-hover-line{stroke:#333749;stroke-width:1;stroke-dasharray:3 3;opacity:0;pointer-events:none;}
+  .pc-tooltip{
+    position:absolute;pointer-events:none;background:#0d0e15;border:1px solid var(--gold);
+    border-radius:3px;padding:5px 9px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;
+    color:#ede9e0;white-space:nowrap;opacity:0;transform:translate(-50%,-130%);transition:opacity .1s;
+  }
   .price-chart-source{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-top:10px;text-align:right;}
 
   .listing-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;}
@@ -968,33 +978,104 @@ async function renderMarketSection(cardId){
 }
 
 function drawPriceChart(history){
-  const W = 600, H = 140, padL = 4, padR = 4, padT = 8, padB = 8;
+  const currency = history[history.length - 1].currency || "EUR";
+  const W = 640, H = 220;
+  const padL = 50, padR = 10, padT = 14, padB = 26;
   const plotW = W - padL - padR, plotH = H - padT - padB;
-  const points = history.map(h => h.avg_price).filter(p => p != null);
-  const minP = Math.min(...points), maxP = Math.max(...points);
-  const span = (maxP - minP) || 1;
-  const niceMin = minP - span * 0.15, niceMax = maxP + span * 0.15;
 
-  const coords = history.map((h, i) => {
-    const x = padL + (i / (history.length - 1)) * plotW;
-    const y = padT + plotH - (((h.avg_price ?? minP) - niceMin) / (niceMax - niceMin)) * plotH;
-    return [x, y];
-  });
+  const prices = history.map(h => h.avg_price).filter(p => p != null);
+  const minP = Math.min(...prices), maxP = Math.max(...prices);
+  const span = (maxP - minP) || Math.max(minP * 0.1, 1);
+  // Marge dynamique : proportionnelle à l'échelle réelle de la carte, pas
+  // une valeur fixe — une carte à 2€ et une carte à 2000€ ont chacune une
+  // graduation adaptée à leur propre amplitude de prix.
+  const niceMin = Math.max(0, minP - span * 0.12);
+  const niceMax = maxP + span * 0.12;
+  const niceSpan = (niceMax - niceMin) || 1;
 
+  const xFor = (i) => padL + (i / (history.length - 1)) * plotW;
+  const yFor = (p) => padT + plotH - (((p ?? minP) - niceMin) / niceSpan) * plotH;
+
+  const coords = history.map((h, i) => [xFor(i), yFor(h.avg_price)]);
   const linePath = coords.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const areaPath = linePath + ` L${coords[coords.length-1][0].toFixed(1)} ${H-padB} L${coords[0][0].toFixed(1)} ${H-padB} Z`;
 
+  // 4 lignes de graduation horizontales, réparties sur l'amplitude réelle
+  // de CETTE carte (pas une échelle fixe partagée par toutes les cartes)
+  const gridLines = [0, 1, 2, 3].map(i => {
+    const y = padT + (plotH / 3) * i;
+    const value = niceMax - (niceSpan / 3) * i;
+    return `<line class="pc-grid" x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}"></line>
+      <text class="pc-axis-label" x="4" y="${y + 3}">${displayPrice(value, currency)}</text>`;
+  }).join("");
+
+  const xLabelIdx = [0, Math.floor((history.length - 1) / 2), history.length - 1];
+  const xLabels = xLabelIdx.map(i => {
+    const d = new Date(history[i].period_date);
+    const label = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+    const anchor = i === 0 ? "start" : (i === history.length - 1 ? "end" : "middle");
+    return `<text class="pc-axis-label" x="${xFor(i)}" y="${H - 6}" text-anchor="${anchor}">${label}</text>`;
+  }).join("");
+
   document.getElementById("price-chart-svg").innerHTML = `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" id="pc-svg">
       <defs>
         <linearGradient id="pc-gradient" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stop-color="#c9a227" stop-opacity="0.3"></stop>
           <stop offset="100%" stop-color="#c9a227" stop-opacity="0"></stop>
         </linearGradient>
       </defs>
+      ${gridLines}
+      ${xLabels}
       <path d="${areaPath}" fill="url(#pc-gradient)"></path>
       <path d="${linePath}" fill="none" stroke="#e3c15a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
-    </svg>`;
+      <line class="pc-hover-line" id="pc-hover-line" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}"></line>
+      <circle class="pc-hover-dot" id="pc-hover-dot" r="4"></circle>
+      <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" id="pc-hit-area"></rect>
+    </svg>
+    <div class="pc-tooltip" id="pc-tooltip"></div>`;
+
+  const wrap = document.getElementById("price-chart-svg");
+  const hitArea = document.getElementById("pc-hit-area");
+  const hoverDot = document.getElementById("pc-hover-dot");
+  const hoverLine = document.getElementById("pc-hover-line");
+  const tooltip = document.getElementById("pc-tooltip");
+  const svgEl = document.getElementById("pc-svg");
+
+  function showPoint(i){
+    i = Math.max(0, Math.min(coords.length - 1, i));
+    const [x, y] = coords[i];
+    hoverDot.setAttribute("cx", x); hoverDot.setAttribute("cy", y); hoverDot.style.opacity = 1;
+    hoverLine.setAttribute("x1", x); hoverLine.setAttribute("x2", x); hoverLine.style.opacity = 1;
+
+    const rect = wrap.getBoundingClientRect();
+    tooltip.style.left = `${(x / W) * rect.width}px`;
+    tooltip.style.top = `${(y / H) * rect.height}px`;
+    tooltip.style.opacity = 1;
+    const d = new Date(history[i].period_date);
+    const dateLabel = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
+    const priceLabel = history[i].avg_price != null ? displayPrice(history[i].avg_price, currency) : "—";
+    tooltip.textContent = `${dateLabel} · ${priceLabel}`;
+  }
+  function hidePoint(){
+    hoverDot.style.opacity = 0; hoverLine.style.opacity = 0; tooltip.style.opacity = 0;
+  }
+  hitArea.addEventListener("mousemove", (e) => {
+    const rect = svgEl.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * W;
+    const idx = Math.round(((relX - padL) / plotW) * (coords.length - 1));
+    showPoint(idx);
+  });
+  hitArea.addEventListener("mouseleave", hidePoint);
+  hitArea.addEventListener("touchstart", (e) => {
+    const touch = e.touches[0];
+    const rect = svgEl.getBoundingClientRect();
+    const relX = ((touch.clientX - rect.left) / rect.width) * W;
+    const idx = Math.round(((relX - padL) / plotW) * (coords.length - 1));
+    showPoint(idx);
+  }, { passive: true });
+
+  showPoint(coords.length - 1); // point le plus récent visible par défaut
 }
 
 const LANGUAGE_FLAGS = { fr: "france", de: "germany", en: "united-kingdom", es: "spain", it: "italy", ja: "japan" };
