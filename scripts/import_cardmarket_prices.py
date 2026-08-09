@@ -11,6 +11,12 @@ vendeur individuelles. Ça alimente price_history (le futur graphique de
 prix), pas listings (le tableau "exemplaires référencés", qui restera lié
 à eBay et à une éventuelle collecte Cardmarket au niveau vendeur plus tard).
 
+Utilise le prix moyen sur 1 jour (avg1), pas la moyenne globale.
+
+Purge automatique : à chaque exécution, les points de prix vieux de plus
+de 2 semaines sont supprimés — price_history ne garde qu'un historique
+récent, pas une accumulation illimitée.
+
 Prérequis :
   1. price-history-fix.sql exécuté dans Supabase
   2. pip install requests
@@ -28,6 +34,7 @@ import requests
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
+RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "14"))
 # Supabase (PostgREST) plafonne chaque requête à 1000 lignes par défaut,
 # quelle que soit la valeur demandée dans "limit" — inutile de monter plus
 # haut, ça serait silencieusement ramené à 1000 de toute façon. Le script
@@ -116,7 +123,7 @@ def process_page(cards, today):
             rows.append({
                 "card_id": card["id"],
                 "period_date": today,
-                "avg_price": cardmarket.get("avg"),
+                "avg_price": cardmarket.get("avg1"),
                 "min_price": cardmarket.get("low"),
                 "max_price": None,  # Cardmarket ne fournit pas de "haut" agrégé, seulement bas/moyenne/tendance
                 "currency": cardmarket.get("unit", "EUR"),
@@ -134,11 +141,25 @@ def process_page(cards, today):
     return len(rows), no_pricing
 
 
+def purge_old_prices():
+    cutoff = (datetime.date.today() - datetime.timedelta(days=RETENTION_DAYS)).isoformat()
+    resp = requests.delete(
+        f"{SUPABASE_URL}/rest/v1/price_history?period_date=lt.{cutoff}",
+        headers=SUPABASE_HEADERS,
+    )
+    if resp.status_code not in (200, 204):
+        print(f"Erreur lors de la purge des anciens prix : {resp.status_code} — {resp.text[:300]}")
+        return
+    print(f"Purge : points de prix antérieurs au {cutoff} supprimés ({RETENTION_DAYS} jours de rétention).")
+
+
 def main():
     # Nécessaire sur GitHub Actions (et plus généralement dès que le script
     # n'est pas lancé depuis son propre dossier) : sans ça, le fichier de
     # progression seraient cherché/écrit au mauvais endroit.
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+    purge_old_prices()
 
     last_id = 0
     if os.path.exists(PROGRESS_FILE):
