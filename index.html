@@ -162,6 +162,9 @@
 
   .detail-info h1{font-family:var(--font-display);font-size:30px;margin:0 0 6px;font-weight:600;}
   .detail-meta{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-bottom:22px;text-transform:uppercase;}
+  .detail-number{font-family:var(--font-mono);font-size:16px;color:var(--text-faint);font-weight:400;}
+  .set-link{color:var(--gold-bright);cursor:pointer;}
+  .set-link:hover{text-decoration:underline;}
   .market-placeholder{background:var(--panel);border:1px dashed var(--border);border-radius:var(--radius);padding:32px 24px;text-align:center;color:var(--text-dim);}
   .market-placeholder .icon{font-size:28px;margin-bottom:10px;}
   .market-placeholder h4{font-family:var(--font-display);font-size:16px;color:var(--text);margin:0 0 6px;}
@@ -686,6 +689,8 @@ function shapeCard(row){
     nameEn,
     setName,
     image,
+    cardNumber: row.card_number || null,
+    setTotalCards: row.sets ? row.sets.total_cards : null,
   };
 }
 
@@ -698,7 +703,7 @@ const SEARCH_RESULTS_LIMIT = 200;
 
 async function fetchCardsPage(){
   const rows = await supabaseSelect(
-    `cards?select=id,card_number,sets(name_en,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)` +
+    `cards?select=id,card_number,sets(name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)` +
     `&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
   );
   return rows.map(shapeCard);
@@ -758,7 +763,7 @@ async function searchCardsRemote(term){
   if (idList.length === 0) return [];
 
   const rows = await supabaseSelect(
-    `cards?id=in.(${idList.join(",")})&select=id,card_number,sets(name_en,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
+    `cards?id=in.(${idList.join(",")})&select=id,card_number,sets(name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
   );
   return rows.map(shapeCard);
 }
@@ -903,7 +908,7 @@ async function renderCardDetail(id){
   document.getElementById("detail-name").textContent = "Chargement...";
   try {
     const rows = await supabaseSelect(
-      `cards?id=eq.${id}&select=id,card_number,sets(name_en,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
+      `cards?id=eq.${id}&select=id,card_number,sets(name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
     );
     if (!rows.length){
       document.getElementById("detail-name").textContent = "Carte introuvable";
@@ -912,8 +917,11 @@ async function renderCardDetail(id){
     const card = shapeCard(rows[0]);
 
     document.getElementById("bc-name").textContent = card.name;
-    document.getElementById("detail-name").textContent = card.name;
-    document.getElementById("detail-meta").textContent = `Pokémon · Extension : ${card.setName}`;
+    const numberSuffix = card.cardNumber ? ` <span class="detail-number">${card.cardNumber}${card.setTotalCards ? "/" + card.setTotalCards : ""}</span>` : "";
+    document.getElementById("detail-name").innerHTML = `${card.name}${numberSuffix}`;
+    document.getElementById("detail-meta").innerHTML = card.setName
+      ? `<a href="#" class="set-link" onclick="navigateSearch('${card.setName.replace(/'/g, "\\'")}');return false;">${card.setName}</a>`
+      : "";
 
     const art = document.getElementById("detail-art");
     art.innerHTML = card.image
