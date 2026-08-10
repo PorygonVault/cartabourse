@@ -159,6 +159,15 @@
   .buy-btn.ebay{border-left:3px solid #0064d2;}
   .buy-btn.ebay:hover{border-color:#0064d2;}
   .buy-btn.ebay .buy-badge{background:linear-gradient(90deg,#e53238 0 25%,#0064d2 25% 50%,#f5af02 50% 75%,#86b817 75% 100%);}
+  .buy-btn.voggt{border-left:3px solid #7b5cf0;}
+  .buy-btn.voggt:hover{border-color:#7b5cf0;}
+  .buy-btn.voggt .buy-badge{background:#7b5cf0;}
+  .buy-btn.whatnot{border-left:3px solid #fdd130;}
+  .buy-btn.whatnot:hover{border-color:#fdd130;}
+  .buy-btn.whatnot .buy-badge{background:#fdd130;color:#14161f;}
+  .buy-btn.cardtrader.disabled{opacity:0.45;cursor:not-allowed;border-left:3px solid var(--border);}
+  .buy-btn.cardtrader.disabled .buy-badge{background:var(--panel);color:var(--text-faint);}
+  .buy-btn.cardtrader.disabled:hover{background:var(--panel-light);}
 
   .detail-info h1{font-family:var(--font-display);font-size:30px;margin:0 0 6px;font-weight:600;}
   .detail-meta{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-bottom:22px;text-transform:uppercase;}
@@ -1002,12 +1011,29 @@ async function renderCardDetail(id){
     const cmSet = slugify(card.setName);
     const cmCard = slugify(card.nameEn);
     const cardmarketUrl = `https://www.cardmarket.com/${LANG}/Pokemon/Products/Singles/${cmSet}/${cmCard}`;
+
+    // Requête localisée commune à eBay/Voggt/Whatnot : nom + numéro/total
+    // + extension, tous dans la langue détectée du site (LANG).
+    const localeCode = LANG.toUpperCase(); // FR / EN / DE
+    const numberPart = card.cardNumber ? (card.setTotalCards ? `${card.cardNumber}/${card.setTotalCards}` : card.cardNumber) : "";
+    const searchQuery = [card.name, numberPart, card.setName].filter(Boolean).join(" ");
+    const encodedQuery = encodeURIComponent(searchQuery);
+
     const ebayDomain = LANG === "fr" ? "www.ebay.fr" : (LANG === "de" ? "www.ebay.de" : "www.ebay.com");
-    const ebayUrl = `https://${ebayDomain}/sch/i.html?_nkw=${encodeURIComponent(card.nameEn)}`;
+    const ebayUrl = `https://${ebayDomain}/sch/i.html?_nkw=${encodedQuery}`;
+
+    const voggtPath = LANG === "fr" ? "/fr/search" : (LANG === "de" ? "/de/search" : "/search");
+    const voggtUrl = `https://voggt.com${voggtPath}?key=${encodedQuery}`;
+
+    const whatnotLocale = LANG === "fr" ? "fr-FR" : (LANG === "de" ? "de-DE" : "en-GB");
+    const whatnotUrl = `https://www.whatnot.com/${whatnotLocale}/search?query=${encodedQuery}&referringSource=typed&searchVertical=PRODUCT`;
 
     document.getElementById("buy-buttons").innerHTML = `
       <a class="buy-btn cardmarket" href="${cardmarketUrl}" target="_blank" rel="noopener"><span class="buy-badge">CM</span>Voir sur Cardmarket<span class="arrow">→</span></a>
-      <a class="buy-btn ebay" href="${ebayUrl}" target="_blank" rel="noopener"><span class="buy-badge">eBay</span>Voir sur eBay<span class="arrow">→</span></a>
+      <a class="buy-btn ebay" href="${ebayUrl}" target="_blank" rel="noopener"><span class="buy-badge">eBay ${localeCode}</span>Voir sur eBay<span class="arrow">→</span></a>
+      <a class="buy-btn voggt" href="${voggtUrl}" target="_blank" rel="noopener"><span class="buy-badge">Voggt ${localeCode}</span>Voir sur Voggt<span class="arrow">→</span></a>
+      <a class="buy-btn whatnot" href="${whatnotUrl}" target="_blank" rel="noopener"><span class="buy-badge">WN ${localeCode}</span>Voir sur Whatnot<span class="arrow">→</span></a>
+      <span class="buy-btn cardtrader disabled" title="Identifiant CardTrader pas encore disponible en base"><span class="buy-badge">CT</span>CardTrader — bientôt<span class="arrow">—</span></span>
     `;
 
     renderMarketSection(id);
