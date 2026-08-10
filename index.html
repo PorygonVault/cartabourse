@@ -165,6 +165,37 @@
   .detail-number{font-family:var(--font-mono);font-size:16px;color:var(--text-faint);font-weight:400;}
   .set-link{color:var(--gold-bright);cursor:pointer;}
   .set-link:hover{text-decoration:underline;}
+
+  .set-banner{
+    display:grid;grid-template-columns:auto 1fr 320px;gap:28px;align-items:center;
+    background:var(--panel);border:1px solid var(--border);border-radius:6px;
+    padding:24px 28px;margin:24px 0 32px;
+  }
+  .set-banner-logo{max-height:80px;max-width:180px;object-fit:contain;}
+  .set-banner-info h1{font-family:var(--font-display);font-size:26px;font-weight:600;margin:0 0 14px;}
+  .set-banner-stats{display:flex;gap:32px;}
+  .set-stat .label{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;margin-bottom:3px;}
+  .set-stat .value{font-family:var(--font-mono);font-size:18px;color:var(--text);font-weight:600;}
+  .set-banner-chart-title{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;margin-bottom:6px;}
+  .set-banner-chart svg{width:100%;height:90px;overflow:visible;}
+
+  .set-movers-row{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:40px;}
+  .set-movers-title{font-family:var(--font-display);font-size:16px;font-weight:600;margin:0 0 12px;display:flex;align-items:baseline;gap:8px;}
+  .set-movers-title.rising{color:var(--green);}
+  .set-movers-title.falling{color:var(--red);}
+  .set-movers-sub{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);font-weight:400;text-transform:none;}
+  .mover-row{
+    display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--border);
+    border-radius:var(--radius);padding:8px 12px;margin-bottom:8px;cursor:pointer;transition:border-color .15s;
+  }
+  .mover-row:hover{border-color:var(--gold);}
+  .mover-thumb{width:36px;height:36px;flex-shrink:0;border-radius:2px;overflow:hidden;background:linear-gradient(135deg,#2b3a55,#c9a227 130%);display:flex;align-items:center;justify-content:center;}
+  .mover-thumb img{width:100%;height:100%;object-fit:contain;}
+  .mover-name{font-family:var(--font-display);font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .mover-change{font-family:var(--font-mono);font-size:13px;font-weight:600;flex-shrink:0;}
+  .mover-change.up{color:var(--green);}
+  .mover-change.down{color:var(--red);}
+  @media (max-width:860px){ .set-banner{grid-template-columns:1fr;} .set-movers-row{grid-template-columns:1fr;} }
   .market-placeholder{background:var(--panel);border:1px dashed var(--border);border-radius:var(--radius);padding:32px 24px;text-align:center;color:var(--text-dim);}
   .market-placeholder .icon{font-size:28px;margin-bottom:10px;}
   .market-placeholder h4{font-family:var(--font-display);font-size:16px;color:var(--text);margin:0 0 6px;}
@@ -358,6 +389,39 @@
         <div class="empty-state">Chargement...</div>
       </div>
     </div>
+  </section>
+
+  <section id="view-set" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / <span id="set-bc-name"></span></div>
+
+    <div class="set-banner">
+      <img id="set-banner-logo" class="set-banner-logo" alt="" style="display:none;">
+      <div class="set-banner-info">
+        <h1 id="set-banner-name">Chargement...</h1>
+        <div class="set-banner-stats">
+          <div class="set-stat"><div class="label">Cartes</div><div class="value" id="set-stat-count">—</div></div>
+          <div class="set-stat"><div class="label">Date de parution</div><div class="value" id="set-stat-date">—</div></div>
+        </div>
+      </div>
+      <div class="set-banner-chart">
+        <div class="set-banner-chart-title">Valeur totale de l'extension</div>
+        <div id="set-total-chart"></div>
+      </div>
+    </div>
+
+    <div class="set-movers-row">
+      <div class="set-movers-col">
+        <h3 class="set-movers-title rising">📈 Rising stars <span class="set-movers-sub">(14 jours)</span></h3>
+        <div id="set-risers"><div class="empty-state">Chargement...</div></div>
+      </div>
+      <div class="set-movers-col">
+        <h3 class="set-movers-title falling">📉 Bons plans <span class="set-movers-sub">(14 jours)</span></h3>
+        <div id="set-fallers"><div class="empty-state">Chargement...</div></div>
+      </div>
+    </div>
+
+    <div class="section-title">Toutes les cartes <span class="count" id="set-cards-count"></span></div>
+    <div class="grid" id="set-cards-grid"><div class="empty-state">Chargement...</div></div>
   </section>
 
   <section id="view-account" class="view">
@@ -691,6 +755,7 @@ function shapeCard(row){
     image,
     cardNumber: row.card_number || null,
     setTotalCards: row.sets ? row.sets.total_cards : null,
+    setId: row.sets ? row.sets.id : null,
   };
 }
 
@@ -703,7 +768,7 @@ const SEARCH_RESULTS_LIMIT = 200;
 
 async function fetchCardsPage(){
   const rows = await supabaseSelect(
-    `cards?select=id,card_number,sets(name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)` +
+    `cards?select=id,card_number,sets(id,name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)` +
     `&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
   );
   return rows.map(shapeCard);
@@ -763,7 +828,7 @@ async function searchCardsRemote(term){
   if (idList.length === 0) return [];
 
   const rows = await supabaseSelect(
-    `cards?id=in.(${idList.join(",")})&select=id,card_number,sets(name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
+    `cards?id=in.(${idList.join(",")})&select=id,card_number,sets(id,name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
   );
   return rows.map(shapeCard);
 }
@@ -853,6 +918,7 @@ function navigateHome(){ location.hash = "#/"; }
 function navigateCard(id){ location.hash = "#/card/" + id; }
 function navigateSearch(term){ location.hash = "#/search/" + encodeURIComponent(term); }
 function navigateAccount(){ location.hash = "#/account"; }
+function navigateSet(id){ location.hash = "#/set/" + id; }
 
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", init);
@@ -875,16 +941,21 @@ async function init(){
 function route(){
   const hash = location.hash || "#/";
   const cardMatch = hash.match(/^#\/card\/(\d+)$/);
+  const setMatch = hash.match(/^#\/set\/(\d+)$/);
   const searchMatch = hash.match(/^#\/search\/(.+)$/);
   const isAccount = hash === "#/account";
 
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
+  document.getElementById("view-set").classList.remove("active");
   document.getElementById("view-account").classList.remove("active");
 
   if (cardMatch){
     document.getElementById("view-card").classList.add("active");
     renderCardDetail(parseInt(cardMatch[1], 10));
+  } else if (setMatch){
+    document.getElementById("view-set").classList.add("active");
+    renderSetPage(parseInt(setMatch[1], 10));
   } else if (isAccount){
     document.getElementById("view-account").classList.add("active");
     renderAccountPage();
@@ -908,7 +979,7 @@ async function renderCardDetail(id){
   document.getElementById("detail-name").textContent = "Chargement...";
   try {
     const rows = await supabaseSelect(
-      `cards?id=eq.${id}&select=id,card_number,sets(name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
+      `cards?id=eq.${id}&select=id,card_number,sets(id,name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
     );
     if (!rows.length){
       document.getElementById("detail-name").textContent = "Carte introuvable";
@@ -919,9 +990,9 @@ async function renderCardDetail(id){
     document.getElementById("bc-name").textContent = card.name;
     const numberSuffix = card.cardNumber ? ` <span class="detail-number">${card.cardNumber}${card.setTotalCards ? "/" + card.setTotalCards : ""}</span>` : "";
     document.getElementById("detail-name").innerHTML = `${card.name}${numberSuffix}`;
-    document.getElementById("detail-meta").innerHTML = card.setName
-      ? `<a href="#" class="set-link" onclick="navigateSearch('${card.setName.replace(/'/g, "\\'")}');return false;">${card.setName}</a>`
-      : "";
+    document.getElementById("detail-meta").innerHTML = (card.setName && card.setId)
+      ? `<a href="#" class="set-link" onclick="navigateSet(${card.setId});return false;">${card.setName}</a>`
+      : (card.setName || "");
 
     const art = document.getElementById("detail-art");
     art.innerHTML = card.image
@@ -1181,6 +1252,181 @@ function renderListingsTable(){
           }).join("")}
         </tbody>
       </table>`;
+}
+
+/* ============================================================
+   PAGE SÉRIE
+   ============================================================ */
+async function renderSetPage(setId){
+  document.getElementById("set-banner-name").textContent = "Chargement...";
+  document.getElementById("set-cards-grid").innerHTML = `<div class="empty-state">Chargement...</div>`;
+  document.getElementById("set-risers").innerHTML = `<div class="empty-state">Chargement...</div>`;
+  document.getElementById("set-fallers").innerHTML = `<div class="empty-state">Chargement...</div>`;
+
+  try {
+    const setRows = await supabaseSelect(
+      `sets?id=eq.${setId}&select=id,name_en,total_cards,release_date,logo_url,set_names(locale,name)`
+    );
+    if (!setRows.length){
+      document.getElementById("set-banner-name").textContent = "Extension introuvable";
+      return;
+    }
+    const set = setRows[0];
+    const setName = pickLocalized(set.set_names, LANG) || set.name_en;
+
+    document.getElementById("set-bc-name").textContent = setName;
+    document.getElementById("set-banner-name").textContent = setName;
+    document.getElementById("set-stat-count").textContent = set.total_cards || "—";
+    document.getElementById("set-stat-date").textContent = set.release_date
+      ? new Date(set.release_date).toLocaleDateString("fr-FR", { day: "2-digit", month: "long", year: "numeric" })
+      : "Inconnue";
+
+    const logo = document.getElementById("set-banner-logo");
+    if (set.logo_url){
+      logo.src = set.logo_url;
+      logo.style.display = "block";
+      logo.onerror = () => { logo.style.display = "none"; };
+    } else {
+      logo.style.display = "none";
+    }
+
+    // Toutes les cartes du set
+    const cards = await supabaseSelect(
+      `cards?set_id=eq.${setId}&select=id,card_number,card_names(locale,name),card_images(image_url,variant)&limit=1000`
+    );
+    cards.sort((a, b) => {
+      const na = parseInt(a.card_number, 10), nb = parseInt(b.card_number, 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return (a.card_number || "").localeCompare(b.card_number || "");
+    });
+
+    const shaped = cards.map(c => {
+      const names = c.card_names || [];
+      const nameObj = names.find(n => n.locale === LANG) || names.find(n => n.locale === "en") || names[0];
+      const image = (c.card_images && c.card_images[0]) ? c.card_images[0].image_url : null;
+      return { id: c.id, name: nameObj ? nameObj.name : "?", cardNumber: c.card_number, image };
+    });
+
+    document.getElementById("set-cards-count").textContent = `— ${shaped.length} carte${shaped.length > 1 ? "s" : ""}`;
+    document.getElementById("set-cards-grid").innerHTML = shaped.map(c => `
+      <div class="card-tile" onclick="navigateCard(${c.id})">
+        <div class="art">
+          <span class="set-tag">${c.cardNumber || ""}</span>
+          ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
+        </div>
+        <div class="tile-body">
+          <h3>${c.name}</h3>
+        </div>
+      </div>`).join("");
+
+    // Historique de prix de toutes les cartes du set, pour le graphique
+    // total et les classements — une seule requête plutôt qu'une par carte
+    if (cards.length){
+      const cardIds = cards.map(c => c.id);
+      const history = await supabaseSelect(
+        `price_history?card_id=in.(${cardIds.join(",")})&select=card_id,period_date,avg_price,currency&order=period_date.asc`
+      );
+      renderSetTotalChart(history);
+      renderSetMovers(history, shaped);
+    } else {
+      document.getElementById("set-total-chart").innerHTML = `<div class="empty-state">Pas encore de données.</div>`;
+      document.getElementById("set-risers").innerHTML = `<div class="empty-state">Pas encore de données.</div>`;
+      document.getElementById("set-fallers").innerHTML = `<div class="empty-state">Pas encore de données.</div>`;
+    }
+  } catch (e) {
+    document.getElementById("set-banner-name").textContent = "Erreur de chargement";
+    console.error(e);
+  }
+}
+
+function renderSetTotalChart(history){
+  const container = document.getElementById("set-total-chart");
+  if (!history.length){
+    container.innerHTML = `<div class="empty-state">Pas encore de données de prix.</div>`;
+    return;
+  }
+
+  // Somme des prix moyens de toutes les cartes, par jour
+  const byDate = {};
+  const currency = history[0].currency || "EUR";
+  for (const row of history){
+    if (row.avg_price == null) continue;
+    byDate[row.period_date] = (byDate[row.period_date] || 0) + Number(row.avg_price);
+  }
+  const dates = Object.keys(byDate).sort();
+  if (dates.length < 2){
+    container.innerHTML = `<div class="empty-state">Pas encore assez de jours de données pour un graphique.</div>`;
+    return;
+  }
+
+  const W = 280, H = 90, pad = 4;
+  const values = dates.map(d => byDate[d]);
+  const minV = Math.min(...values), maxV = Math.max(...values);
+  const span = (maxV - minV) || 1;
+  const coords = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (W - pad * 2);
+    const y = pad + (H - pad * 2) - ((v - minV) / span) * (H - pad * 2);
+    return [x, y];
+  });
+  const linePath = coords.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <path d="${linePath}" fill="none" stroke="#e3c15a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+    </svg>
+    <div class="price-chart-source">${displayPrice(values[values.length-1], currency)} au total aujourd'hui</div>`;
+}
+
+function renderSetMovers(history, shapedCards){
+  const cardById = {};
+  shapedCards.forEach(c => cardById[c.id] = c);
+
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const byCard = {};
+  for (const row of history){
+    if (row.avg_price == null || row.period_date < cutoffStr) continue;
+    (byCard[row.card_id] = byCard[row.card_id] || []).push(row);
+  }
+
+  const changes = [];
+  for (const cardId in byCard){
+    const points = byCard[cardId].sort((a, b) => a.period_date.localeCompare(b.period_date));
+    if (points.length < 2) continue;
+    const first = Number(points[0].avg_price), last = Number(points[points.length - 1].avg_price);
+    if (!first) continue;
+    const pct = ((last - first) / first) * 100;
+    changes.push({ cardId: Number(cardId), pct, currency: points[points.length - 1].currency, lastPrice: last });
+  }
+
+  changes.sort((a, b) => b.pct - a.pct);
+  const risers = changes.slice(0, 3);
+  const fallers = changes.slice(-3).reverse();
+
+  function renderMoverList(list, targetId){
+    const target = document.getElementById(targetId);
+    if (!list.length){
+      target.innerHTML = `<div class="empty-state">Pas assez de données sur 14 jours.</div>`;
+      return;
+    }
+    target.innerHTML = list.map(m => {
+      const card = cardById[m.cardId];
+      if (!card) return "";
+      const dir = m.pct >= 0 ? "up" : "down";
+      const arrow = m.pct >= 0 ? "▲" : "▼";
+      return `
+        <div class="mover-row" onclick="navigateCard(${m.cardId})">
+          <div class="mover-thumb">${card.image ? `<img src="${imageVariants(card.image,'low').webp}" alt="${card.name}" loading="lazy">` : ""}</div>
+          <span class="mover-name">${card.name}</span>
+          <span class="mover-change ${dir}">${arrow} ${Math.abs(m.pct).toFixed(1)}%</span>
+        </div>`;
+    }).join("");
+  }
+
+  renderMoverList(risers, "set-risers");
+  renderMoverList(fallers, "set-fallers");
 }
 </script>
 </body>
