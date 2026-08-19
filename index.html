@@ -107,6 +107,45 @@
     padding:5px 9px;font-size:13px;cursor:pointer;line-height:1;
   }
   .report-flag-btn:hover{border-color:var(--red);color:var(--red);}
+
+  .binder-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:24px;}
+  .binder-page-nav{display:flex;align-items:center;gap:10px;}
+  .binder-page-nav span{font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);min-width:64px;text-align:center;}
+
+  .binder-card-tile{
+    background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:16px;margin-bottom:14px;
+    cursor:pointer;transition:border-color .15s;
+  }
+  .binder-card-tile:hover{border-color:var(--gold);}
+  .binder-card-tile .name{font-family:var(--font-display);font-weight:600;font-size:15px;margin-bottom:4px;}
+  .binder-card-tile .meta{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
+
+  /* Page de classeur : grille de cases au format carte à jouer, avec
+     bordure autour et entre chaque case. La couleur du fond change selon
+     le thème choisi (noir/blanc/gris), la case elle-même reste neutre. */
+  .binder-page{
+    display:grid;gap:10px;padding:20px;border-radius:8px;max-width:900px;
+  }
+  .binder-page.color-black{background:#0a0a0d;border:1px solid #2a2a30;}
+  .binder-page.color-white{background:#e8e6e0;border:1px solid #c9c6bc;}
+  .binder-page.color-gray{background:#4a4c56;border:1px solid #63656f;}
+
+  .binder-slot{
+    aspect-ratio:2.5/3.5;border-radius:4px;border:2px solid rgba(255,255,255,0.12);
+    display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;position:relative;
+    background:rgba(255,255,255,0.04);transition:border-color .15s;
+  }
+  .color-white .binder-slot{border-color:rgba(0,0,0,0.15);background:rgba(0,0,0,0.03);}
+  .binder-slot:hover{border-color:var(--gold);}
+  .binder-slot img{width:100%;height:100%;object-fit:cover;}
+  .binder-slot .slot-plus{font-family:var(--font-mono);font-size:26px;color:rgba(255,255,255,0.25);}
+  .color-white .binder-slot .slot-plus{color:rgba(0,0,0,0.25);}
+  .binder-slot-remove{
+    position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;
+    background:rgba(13,14,21,0.85);border:1px solid var(--border);color:#fff;font-size:12px;
+    display:flex;align-items:center;justify-content:center;line-height:1;z-index:2;
+  }
+  .binder-slot-remove:hover{border-color:var(--red);color:var(--red);}
   .modal-switch a{color:var(--gold-bright);font-weight:600;}
   .modal-switch a:hover{text-decoration:underline;}
 
@@ -454,6 +493,19 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="slot-picker-overlay" onclick="if(event.target===this)closeSlotPicker()">
+  <div class="modal" style="max-width:440px;">
+    <button class="modal-close" onclick="closeSlotPicker()">×</button>
+    <h3>Choisir une carte</h3>
+    <div class="search-wrap collection-search-wrap" style="margin-top:12px;">
+      <span class="search-icon">⌕</span>
+      <input id="slot-picker-search" type="text" placeholder="Nom de la carte... (Entrée)"
+             onkeydown="if(event.key==='Enter')slotPickerSearch(this.value)">
+    </div>
+    <div id="slot-picker-results" style="margin-top:14px;max-height:340px;overflow-y:auto;"></div>
+  </div>
+</div>
+
 <main>
   <section id="view-home" class="view active">
     <div class="hero">
@@ -574,6 +626,56 @@
     </div>
 
     <div id="collection-content"><div class="empty-state">Chargement...</div></div>
+  </section>
+
+  <section id="view-binders" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Mes classeurs</div>
+
+    <div class="account-panel" style="max-width:460px;margin:0 0 32px;">
+      <h2 style="font-size:18px;">Nouveau classeur</h2>
+      <div class="account-field"><label>Nom</label>
+        <input type="text" id="new-binder-name" placeholder="ex: Set de Base complet"></div>
+      <div class="account-field"><label>Format</label>
+        <select id="new-binder-format">
+          <option value="2x2">2×2</option>
+          <option value="2x3">2×3</option>
+          <option value="3x3" selected>3×3</option>
+          <option value="3x4">3×4</option>
+          <option value="4x4">4×4</option>
+          <option value="4x5">4×5</option>
+          <option value="5x5">5×5</option>
+        </select></div>
+      <div class="account-field"><label>Couleur</label>
+        <select id="new-binder-color">
+          <option value="black">Noir</option>
+          <option value="white">Blanc</option>
+          <option value="gray">Gris</option>
+        </select></div>
+      <div class="auth-error" id="new-binder-error"></div>
+      <button class="auth-submit" onclick="createBinder()">Créer le classeur</button>
+    </div>
+
+    <div class="section-title">Vos classeurs</div>
+    <div id="binders-list"><div class="empty-state">Chargement...</div></div>
+  </section>
+
+  <section id="view-binder" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / <a href="#" onclick="navigateBinders();return false;">Mes classeurs</a> / <span id="binder-bc-name"></span></div>
+
+    <div class="binder-toolbar">
+      <h1 id="binder-title" style="font-family:var(--font-display);font-size:22px;font-weight:600;margin:0;"></h1>
+      <div class="binder-page-nav">
+        <button class="qty-btn" onclick="changeBinderPage(-1)">←</button>
+        <span>Page</span>
+        <input type="number" id="binder-page-input" min="1" style="width:56px;text-align:center;"
+               onchange="jumpToBinderPage(this.value)" onkeydown="if(event.key==='Enter')this.blur()">
+        <span id="binder-page-total"> / 1</span>
+        <button class="qty-btn" onclick="changeBinderPage(1)">→</button>
+        <button class="collection-btn" onclick="addBinderPage()">+ Page</button>
+      </div>
+    </div>
+
+    <div id="binder-page-view"><div class="empty-state">Chargement...</div></div>
   </section>
 
   <section id="view-admin" class="view">
@@ -868,6 +970,7 @@ async function renderAuthArea(session){
     } catch (_) { /* on garde l'email en repli si le profil n'est pas encore accessible */ }
     area.innerHTML = `
       <a href="#" class="auth-btn" onclick="navigateCollection();return false;">Ma collection</a>
+      <a href="#" class="auth-btn" onclick="navigateBinders();return false;">Mes classeurs</a>
       ${role === "admin" ? `<a href="#" class="auth-btn" onclick="navigateAdmin();return false;">Admin</a>` : ""}
       <span class="auth-user" onclick="navigateAccount()" title="Mon compte">${label}</span>
       <button class="auth-btn" onclick="signOut()">Se déconnecter</button>
@@ -1209,6 +1312,8 @@ function navigateSet(id){ location.hash = "#/set/" + id; }
 function navigateCollection(){ location.hash = "#/collection"; }
 function navigateFavorites(){ location.hash = "#/favorites"; }
 function navigateAdmin(tab = "cards"){ location.hash = "#/admin/" + tab; }
+function navigateBinders(){ location.hash = "#/binders"; }
+function navigateBinder(id){ location.hash = "#/binder/" + id; }
 
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", init);
@@ -1238,6 +1343,8 @@ function route(){
   const isFavorites = hash === "#/favorites";
   const adminMatch = hash.match(/^#\/admin\/(cards|listings|members)$/);
   const isAdminRoot = hash === "#/admin";
+  const isBindersList = hash === "#/binders";
+  const binderMatch = hash.match(/^#\/binder\/(\d+)$/);
 
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
@@ -1245,6 +1352,8 @@ function route(){
   document.getElementById("view-account").classList.remove("active");
   document.getElementById("view-collection").classList.remove("active");
   document.getElementById("view-admin").classList.remove("active");
+  document.getElementById("view-binders").classList.remove("active");
+  document.getElementById("view-binder").classList.remove("active");
 
   if (cardMatch){
     document.getElementById("view-card").classList.add("active");
@@ -1261,6 +1370,12 @@ function route(){
   } else if (adminMatch || isAdminRoot){
     document.getElementById("view-admin").classList.add("active");
     renderAdminPage(adminMatch ? adminMatch[1] : "cards");
+  } else if (isBindersList){
+    document.getElementById("view-binders").classList.add("active");
+    renderBindersListPage();
+  } else if (binderMatch){
+    document.getElementById("view-binder").classList.add("active");
+    renderBinderPage(parseInt(binderMatch[1], 10));
   } else if (searchMatch){
     document.getElementById("view-home").classList.add("active");
     const term = decodeURIComponent(searchMatch[1]);
@@ -2661,6 +2776,226 @@ async function adminChangeRole(userId, newRole){
   } catch (e) {
     alert(`Impossible de modifier le rôle : ${e.message}`);
     renderAdminMembers();
+  }
+}
+
+/* ============================================================
+   CLASSEURS / BINDERS
+   ============================================================ */
+const BINDER_COLOR_LABELS = { black: "Noir", white: "Blanc", gray: "Gris" };
+
+async function renderBindersListPage(){
+  const list = document.getElementById("binders-list");
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){
+    list.innerHTML = `<p style="color:var(--text-dim);">Connectez-vous pour créer et consulter vos classeurs.</p>`;
+    return;
+  }
+  list.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const binders = await supabaseAuthedFetch(`binders?select=id,name,format,color,page_count&order=created_at.desc`);
+    if (!binders.length){
+      list.innerHTML = `<div class="empty-state">Aucun classeur pour l'instant — créez le premier ci-dessus.</div>`;
+      return;
+    }
+    list.innerHTML = binders.map(b => `
+      <div class="binder-card-tile" onclick="navigateBinder(${b.id})">
+        <div class="name">${b.name}</div>
+        <div class="meta">Format ${b.format} · ${BINDER_COLOR_LABELS[b.color] || b.color} · ${b.page_count} page${b.page_count > 1 ? "s" : ""}</div>
+      </div>`).join("");
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function createBinder(){
+  const errorEl = document.getElementById("new-binder-error");
+  errorEl.className = "auth-error";
+  errorEl.textContent = "";
+
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){ openAuthModal(); return; }
+
+  const name = document.getElementById("new-binder-name").value.trim();
+  if (!name){
+    errorEl.textContent = "Le nom du classeur est obligatoire.";
+    return;
+  }
+  const format = document.getElementById("new-binder-format").value;
+  const color = document.getElementById("new-binder-color").value;
+
+  try {
+    const created = await supabaseAuthedFetch("binders", {
+      method: "POST",
+      body: JSON.stringify({ user_id: data.session.user.id, name, format, color }),
+    });
+    navigateBinder(created[0].id);
+  } catch (e) {
+    errorEl.textContent = e.message;
+  }
+}
+
+let currentBinder = null;
+let currentBinderPage = 1;
+let currentBinderSlots = {}; // slot_index -> {id, card_id, name, image}
+
+async function renderBinderPage(binderId){
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){
+    document.getElementById("binder-page-view").innerHTML = `<p style="color:var(--text-dim);">Connectez-vous pour accéder à ce classeur.</p>`;
+    return;
+  }
+  try {
+    const rows = await supabaseAuthedFetch(`binders?id=eq.${binderId}&select=id,name,format,color,page_count`);
+    if (!rows.length){
+      document.getElementById("binder-page-view").innerHTML = `<div class="empty-state">Classeur introuvable.</div>`;
+      return;
+    }
+    currentBinder = rows[0];
+    currentBinderPage = 1;
+    document.getElementById("binder-bc-name").textContent = currentBinder.name;
+    document.getElementById("binder-title").textContent = currentBinder.name;
+    await loadAndRenderBinderPage();
+  } catch (e) {
+    document.getElementById("binder-page-view").innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function loadAndRenderBinderPage(){
+  document.getElementById("binder-page-input").value = currentBinderPage;
+  document.getElementById("binder-page-input").max = currentBinder.page_count;
+  document.getElementById("binder-page-total").textContent = ` / ${currentBinder.page_count}`;
+  const view = document.getElementById("binder-page-view");
+  view.innerHTML = `<div class="empty-state">Chargement...</div>`;
+
+  try {
+    const slotRows = await supabaseAuthedFetch(
+      `binder_slots?binder_id=eq.${currentBinder.id}&page_number=eq.${currentBinderPage}` +
+      `&select=id,slot_index,card_id,cards(card_names(locale,name),card_images(image_url,variant))`
+    );
+    currentBinderSlots = {};
+    for (const row of slotRows){
+      const names = row.cards ? row.cards.card_names : [];
+      const nameObj = names.find(n => n.locale === LANG) || names.find(n => n.locale === "en") || names[0];
+      const image = row.cards && row.cards.card_images && row.cards.card_images[0] ? row.cards.card_images[0].image_url : null;
+      currentBinderSlots[row.slot_index] = { id: row.id, card_id: row.card_id, name: nameObj ? nameObj.name : "?", image };
+    }
+
+    const [rows, cols] = currentBinder.format.split("x").map(Number);
+    const totalSlots = rows * cols;
+
+    let html = `<div class="binder-page color-${currentBinder.color}" style="grid-template-columns:repeat(${cols},1fr);">`;
+    for (let i = 0; i < totalSlots; i++){
+      const filled = currentBinderSlots[i];
+      if (filled){
+        html += `
+          <div class="binder-slot" onclick="navigateCard(${filled.card_id})">
+            <button class="binder-slot-remove" title="Retirer" onclick="event.stopPropagation();removeBinderSlot(${filled.id}, ${i})">×</button>
+            ${filled.image ? `<img src="${imageVariants(filled.image,'low').webp}" alt="${filled.name}">` : `<span class="glyph">⚡</span>`}
+          </div>`;
+      } else {
+        html += `<div class="binder-slot" onclick="openSlotPicker(${i})"><span class="slot-plus">+</span></div>`;
+      }
+    }
+    html += `</div>`;
+    view.innerHTML = html;
+  } catch (e) {
+    view.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+function changeBinderPage(delta){
+  const next = currentBinderPage + delta;
+  if (next < 1 || next > currentBinder.page_count) return;
+  currentBinderPage = next;
+  loadAndRenderBinderPage();
+}
+
+function jumpToBinderPage(value){
+  const target = parseInt(value, 10);
+  if (isNaN(target) || target < 1 || target > currentBinder.page_count){
+    document.getElementById("binder-page-input").value = currentBinderPage; // valeur invalide : on revient à la page actuelle
+    return;
+  }
+  currentBinderPage = target;
+  loadAndRenderBinderPage();
+}
+
+async function addBinderPage(){
+  try {
+    const newCount = currentBinder.page_count + 1;
+    await supabaseAuthedFetch(`binders?id=eq.${currentBinder.id}`, {
+      method: "PATCH", body: JSON.stringify({ page_count: newCount }),
+    });
+    currentBinder.page_count = newCount;
+    currentBinderPage = newCount;
+    loadAndRenderBinderPage();
+  } catch (e) {
+    alert(`Impossible d'ajouter une page : ${e.message}`);
+  }
+}
+
+async function removeBinderSlot(slotRowId, slotIndex){
+  try {
+    await supabaseAuthedFetch(`binder_slots?id=eq.${slotRowId}`, { method: "DELETE" });
+    delete currentBinderSlots[slotIndex];
+    loadAndRenderBinderPage();
+  } catch (e) {
+    alert(`Impossible de retirer cette carte : ${e.message}`);
+  }
+}
+
+let slotPickerTargetIndex = null;
+
+function openSlotPicker(slotIndex){
+  slotPickerTargetIndex = slotIndex;
+  document.getElementById("slot-picker-search").value = "";
+  document.getElementById("slot-picker-results").innerHTML = "";
+  document.getElementById("slot-picker-overlay").classList.add("active");
+}
+function closeSlotPicker(){
+  document.getElementById("slot-picker-overlay").classList.remove("active");
+  slotPickerTargetIndex = null;
+}
+
+async function slotPickerSearch(term){
+  const results = document.getElementById("slot-picker-results");
+  results.innerHTML = `<div class="empty-state">Recherche...</div>`;
+  try {
+    const rows = await supabaseSelect(
+      `cards?select=id,card_names!inner(locale,name),card_images(image_url,variant),sets(name_en)` +
+      `&card_names.name=ilike.*${encodeURIComponent(term)}*&limit=20`
+    );
+    if (!rows.length){
+      results.innerHTML = `<div class="empty-state">Aucune carte trouvée.</div>`;
+      return;
+    }
+    results.innerHTML = rows.map(r => {
+      const name = (r.card_names.find(n=>n.locale===LANG) || r.card_names.find(n=>n.locale==="en") || r.card_names[0]).name;
+      const image = r.card_images && r.card_images[0] ? r.card_images[0].image_url : null;
+      return `
+        <div class="mover-row" onclick="assignCardToSlot(${r.id})">
+          <div class="mover-thumb">${image ? `<img src="${imageVariants(image,'low').webp}" alt="${name}">` : ""}</div>
+          <span class="mover-name">${name}</span>
+          <span class="mover-change" style="color:var(--text-faint);">${r.sets ? r.sets.name_en : ""}</span>
+        </div>`;
+    }).join("");
+  } catch (e) {
+    results.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function assignCardToSlot(cardId){
+  try {
+    await supabaseAuthedFetch("binder_slots", {
+      method: "POST",
+      body: JSON.stringify({ binder_id: currentBinder.id, page_number: currentBinderPage, slot_index: slotPickerTargetIndex, card_id: cardId }),
+      headers: { Prefer: "resolution=merge-duplicates" },
+    });
+    closeSlotPicker();
+    loadAndRenderBinderPage();
+  } catch (e) {
+    alert(`Impossible de placer cette carte : ${e.message}`);
   }
 }
 </script>
