@@ -446,6 +446,7 @@
     <div class="report-reason-list">
       <label class="report-reason"><input type="radio" name="report-reason" value="wrong_card"> Mauvaise carte</label>
       <label class="report-reason"><input type="radio" name="report-reason" value="wrong_condition"> Mauvaise condition</label>
+      <label class="report-reason"><input type="radio" name="report-reason" value="wrong_language"> Mauvaise langue</label>
       <label class="report-reason"><input type="radio" name="report-reason" value="sold_or_unavailable"> Carte vendue ou indisponible</label>
     </div>
     <div class="auth-error" id="report-error"></div>
@@ -2502,83 +2503,107 @@ async function adminDeleteCard(cardId){
 }
 
 /* ---------- Listings ---------- */
+const REPORT_REASON_LABELS = {
+  wrong_card: "Mauvaise carte",
+  wrong_condition: "Mauvaise condition",
+  wrong_language: "Mauvaise langue",
+  sold_or_unavailable: "Vendue / indisponible",
+};
+
 async function renderAdminListings(){
   const content = document.getElementById("admin-content");
   content.innerHTML = `<div class="empty-state">Chargement...</div>`;
   try {
     const rows = await supabaseAuthedFetch(
-      `listings?is_active=eq.true&select=id,card_id,seller_name,price,currency,language,listing_url,` +
-      `cards(card_number,card_names(locale,name),sets(name_en)),sites(name)&order=id.desc&limit=100`
+      `listing_reports?select=id,reason,created_at,` +
+      `listings(id,card_id,seller_name,price,currency,language,condition,listing_url,` +
+      `cards(card_number,card_names(locale,name),sets(name_en)),sites(name))` +
+      `&order=created_at.desc&limit=100`
     );
-    if (!rows.length){
-      content.innerHTML = `<div class="empty-state">Aucun listing actif.</div>`;
+    const withListing = rows.filter(r => r.listings);
+    if (!withListing.length){
+      content.innerHTML = `<div class="empty-state">Aucune annonce signalée pour l'instant.</div>`;
       return;
     }
     content.innerHTML = `
       <p style="color:var(--text-faint);font-family:var(--font-mono);font-size:11px;margin-bottom:14px;">
-        100 plus récents listings actifs. Le signalement par les membres (produit expiré/incorrect) viendra compléter cette vue plus tard.
+        100 signalements les plus récents. "Marquer comme traité" retire uniquement le signalement — l'annonce
+        elle-même reste active tant que vous ne la désactivez/supprimez pas explicitement.
       </p>
-      <table class="listing-table"><thead><tr><th>Carte</th><th>Extension / N°</th><th>Site</th><th>Vendeur</th><th>Langue</th><th>Prix</th><th></th></tr></thead>
+      <table class="listing-table"><thead><tr><th>Carte</th><th>Extension / N°</th><th>Site</th><th>Raison</th><th>Langue</th><th>État</th><th></th></tr></thead>
       <tbody id="admin-listings-tbody">
-        ${rows.map(r => adminListingRowHtml(r)).join("")}
+        ${withListing.map(r => adminReportRowHtml(r)).join("")}
       </tbody></table>`;
   } catch (e) {
     content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
 }
 
-function adminListingRowHtml(r){
-  const name = r.cards && r.cards.card_names ? (r.cards.card_names.find(n=>n.locale==="en")||r.cards.card_names[0]||{}).name : "?";
-  const setName = r.cards && r.cards.sets ? r.cards.sets.name_en : "—";
-  const cardNumber = r.cards ? r.cards.card_number : "—";
+function adminReportRowHtml(r){
+  const l = r.listings;
+  const name = l.cards && l.cards.card_names ? (l.cards.card_names.find(n=>n.locale==="en")||l.cards.card_names[0]||{}).name : "?";
+  const setName = l.cards && l.cards.sets ? l.cards.sets.name_en : "—";
+  const cardNumber = l.cards ? l.cards.card_number : "—";
   return `
-    <tr id="admin-listing-row-${r.id}">
+    <tr id="admin-report-row-${r.id}">
       <td>${name || "?"}</td>
       <td class="site-tag">${setName} · ${cardNumber}</td>
-      <td class="site-tag">${r.sites ? r.sites.name : "—"}</td>
-      <td>${r.seller_name || "—"}</td>
-      <td>${r.language || "—"}</td>
-      <td class="listing-price">${r.price} ${r.currency}</td>
+      <td class="site-tag">${l.sites ? l.sites.name : "—"}</td>
+      <td><span class="grade-pill">${REPORT_REASON_LABELS[r.reason] || r.reason}</span></td>
+      <td>${l.language || "—"}</td>
+      <td>${l.condition || "—"}</td>
       <td style="display:flex;gap:6px;flex-wrap:wrap;">
-        <a class="row-buy" href="${r.listing_url}" target="_blank" rel="noopener">Voir ↗</a>
-        <button class="row-buy" onclick="adminEditListing(${r.id}, ${r.card_id}, '${r.language || ""}', ${r.price})">Modifier</button>
-        <button class="row-buy" onclick="adminDeactivateListing(${r.id})">Désactiver</button>
-        <button class="row-buy" onclick="adminDeleteListing(${r.id})">Supprimer</button>
+        <a class="row-buy" href="${l.listing_url}" target="_blank" rel="noopener">Voir ↗</a>
+        <button class="row-buy" onclick="adminEditListing(${r.id}, ${l.id}, ${l.card_id}, '${l.language || ""}', '${l.condition || ""}')">Modifier</button>
+        <button class="row-buy" onclick="adminDismissReport(${r.id})">Marquer comme traité</button>
+        <button class="row-buy" onclick="adminDeactivateListing(${l.id}, ${r.id})">Désactiver</button>
+        <button class="row-buy" onclick="adminDeleteListing(${l.id}, ${r.id})">Supprimer</button>
       </td>
     </tr>`;
 }
 
-function adminEditListing(id, cardId, language, price){
-  const row = document.getElementById(`admin-listing-row-${id}`);
+function adminEditListing(reportId, listingId, cardId, language, condition){
+  const row = document.getElementById(`admin-report-row-${reportId}`);
   row.innerHTML = `
     <td colspan="7">
       <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:8px 0;">
         <div><label style="display:block;font-size:10px;color:var(--text-faint);margin-bottom:3px;">ID de la bonne carte</label>
-          <input type="number" id="edit-listing-card-${id}" value="${cardId}" style="width:100px;"></div>
+          <input type="number" id="edit-listing-card-${listingId}" value="${cardId}" style="width:100px;"></div>
         <div><label style="display:block;font-size:10px;color:var(--text-faint);margin-bottom:3px;">Langue</label>
-          <select id="edit-listing-lang-${id}">
+          <select id="edit-listing-lang-${listingId}">
             ${["", "fr", "de", "en", "ja", "es", "it"].map(l => `<option value="${l}" ${l===language?"selected":""}>${l || "—"}</option>`).join("")}
           </select></div>
-        <div><label style="display:block;font-size:10px;color:var(--text-faint);margin-bottom:3px;">Prix</label>
-          <input type="number" step="0.01" id="edit-listing-price-${id}" value="${price}" style="width:90px;"></div>
-        <button class="row-buy" onclick="adminSaveListing(${id})">Enregistrer</button>
+        <div><label style="display:block;font-size:10px;color:var(--text-faint);margin-bottom:3px;">État</label>
+          <select id="edit-listing-condition-${listingId}">
+            ${["", "NM", "EX", "GD", "PL"].map(c => `<option value="${c}" ${c===condition?"selected":""}>${c || "—"}</option>`).join("")}
+          </select></div>
+        <button class="row-buy" onclick="adminSaveListing(${reportId}, ${listingId})">Enregistrer</button>
         <button class="row-buy" onclick="renderAdminListings()">Annuler</button>
       </div>
     </td>`;
 }
 
-async function adminSaveListing(id){
+async function adminSaveListing(reportId, listingId){
   try {
-    const cardId = document.getElementById(`edit-listing-card-${id}`).value;
-    const language = document.getElementById(`edit-listing-lang-${id}`).value;
-    const price = document.getElementById(`edit-listing-price-${id}`).value;
-    await supabaseAuthedFetch(`listings?id=eq.${id}`, {
+    const cardId = document.getElementById(`edit-listing-card-${listingId}`).value;
+    const language = document.getElementById(`edit-listing-lang-${listingId}`).value;
+    const condition = document.getElementById(`edit-listing-condition-${listingId}`).value;
+    await supabaseAuthedFetch(`listings?id=eq.${listingId}`, {
       method: "PATCH",
-      body: JSON.stringify({ card_id: parseInt(cardId, 10), language: language || null, price: parseFloat(price) }),
+      body: JSON.stringify({ card_id: parseInt(cardId, 10), language: language || null, condition: condition || null }),
     });
     renderAdminListings();
   } catch (e) {
     alert(`Impossible d'enregistrer : ${e.message}`);
+  }
+}
+
+async function adminDismissReport(reportId){
+  try {
+    await supabaseAuthedFetch(`listing_reports?id=eq.${reportId}`, { method: "DELETE" });
+    renderAdminListings();
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
   }
 }
 
