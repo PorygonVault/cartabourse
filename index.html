@@ -672,7 +672,25 @@
         <span id="binder-page-total"> / 1</span>
         <button class="qty-btn" onclick="changeBinderPage(1)">→</button>
         <button class="collection-btn" onclick="addBinderPage()">+ Page</button>
+        <button class="collection-btn" onclick="toggleEditBinderForm()">Modifier</button>
+        <button class="collection-btn" onclick="deleteCurrentBinder()">Supprimer</button>
       </div>
+    </div>
+
+    <div id="edit-binder-form" class="account-panel" style="max-width:460px;margin:-8px 0 28px;display:none;">
+      <div class="account-field"><label>Nom</label><input type="text" id="edit-binder-name"></div>
+      <div class="account-field"><label>Format</label>
+        <select id="edit-binder-format">
+          <option value="2x2">2×2</option><option value="2x3">2×3</option><option value="3x3">3×3</option>
+          <option value="3x4">3×4</option><option value="4x4">4×4</option><option value="4x5">4×5</option>
+          <option value="5x5">5×5</option>
+        </select></div>
+      <div class="account-field"><label>Couleur</label>
+        <select id="edit-binder-color">
+          <option value="black">Noir</option><option value="white">Blanc</option><option value="gray">Gris</option>
+        </select></div>
+      <div class="auth-error" id="edit-binder-error"></div>
+      <button class="auth-submit" onclick="saveBinderEdit()">Enregistrer</button>
     </div>
 
     <div id="binder-page-view"><div class="empty-state">Chargement...</div></div>
@@ -938,14 +956,24 @@ async function signOut(){
 async function supabaseAuthedFetch(path, options = {}){
   const { data } = await supabaseClient.auth.getSession();
   const token = data.session ? data.session.access_token : SUPABASE_ANON_KEY;
+  const defaultPrefer = options.method && options.method !== "GET" ? "return=representation" : null;
+  const customHeaders = options.headers || {};
+  // Fusionne le "Prefer" (ex: "resolution=merge-duplicates") avec la
+  // valeur par défaut, au lieu de l'écraser — sinon la réponse revient
+  // vide (return=representation perdu) ET l'upsert ne fonctionne pas
+  // (resolution=merge-duplicates seul, sans return=representation combiné,
+  // ne pose pas de souci en soi, mais perdre "return=representation" fait
+  // planter la lecture de la réponse ensuite).
+  const mergedPrefer = [defaultPrefer, customHeaders.Prefer].filter(Boolean).join(",");
+
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     ...options,
     headers: {
       apikey: SUPABASE_ANON_KEY,
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",
-      ...(options.method && options.method !== "GET" ? { Prefer: "return=representation" } : {}),
-      ...(options.headers || {}),
+      ...customHeaders,
+      ...(mergedPrefer ? { Prefer: mergedPrefer } : {}),
     },
   });
   if (!resp.ok){
@@ -953,7 +981,9 @@ async function supabaseAuthedFetch(path, options = {}){
     try { const body = await resp.json(); if (body.message) msg = body.message; } catch (_) {}
     throw new Error(msg);
   }
-  return resp.status === 204 ? null : resp.json();
+  if (resp.status === 204) return null;
+  const text = await resp.text();
+  return text ? JSON.parse(text) : null; // réponse vide malgré un statut OK : ne pas planter dessus
 }
 
 async function renderAuthArea(session){
@@ -2799,7 +2829,9 @@ async function renderBindersListPage(){
       return;
     }
     list.innerHTML = binders.map(b => `
-      <div class="binder-card-tile" onclick="navigateBinder(${b.id})">
+      <div class="binder-card-tile" style="position:relative;" onclick="navigateBinder(${b.id})">
+        <button class="tile-remove-btn" style="position:absolute;top:10px;right:10px;" title="Supprimer"
+                onclick="event.stopPropagation();deleteBinderFromList(${b.id})">×</button>
         <div class="name">${b.name}</div>
         <div class="meta">Format ${b.format} · ${BINDER_COLOR_LABELS[b.color] || b.color} · ${b.page_count} page${b.page_count > 1 ? "s" : ""}</div>
       </div>`).join("");
@@ -2987,7 +3019,7 @@ async function slotPickerSearch(term){
 
 async function assignCardToSlot(cardId){
   try {
-    await supabaseAuthedFetch("binder_slots", {
+    await supabaseAuthedFetch("binder_slots?on_conflict=binder_id,page_number,slot_index", {
       method: "POST",
       body: JSON.stringify({ binder_id: currentBinder.id, page_number: currentBinderPage, slot_index: slotPickerTargetIndex, card_id: cardId }),
       headers: { Prefer: "resolution=merge-duplicates" },
@@ -2996,6 +3028,107 @@ async function assignCardToSlot(cardId){
     loadAndRenderBinderPage();
   } catch (e) {
     alert(`Impossible de placer cette carte : ${e.message}`);
+  }
+}
+
+function toggleEditBinderForm(){
+  const form = document.getElementById("edit-binder-form");
+  const isHidden = form.style.display === "none";
+  if (isHidden){
+    document.getElementById("edit-binder-name").value = currentBinder.name;
+    document.getElementById("edit-binder-format").value = currentBinder.format;
+    document.getElementById("edit-binder-color").value = currentBinder.color;
+    document.getElementById("edit-binder-error").textContent = "";
+  }
+  form.style.display = isHidden ? "block" : "none";
+}
+
+async function saveBinderEdit(){
+  const errorEl = document.getElementById("edit-binder-error");
+  errorEl.className = "auth-error";
+  errorEl.textContent = "";
+
+  const name = document.getElementById("edit-binder-name").value.trim();
+  if (!name){
+    errorEl.textContent = "Le nom est obligatoire.";
+    return;
+  }
+  const format = document.getElementById("edit-binder-format").value;
+  const color = document.getElementById("edit-binder-color").value;
+  const formatChanged = format !== currentBinder.format;
+
+  try {
+    await supabaseAuthedFetch(`binders?id=eq.${currentBinder.id}`, {
+      method: "PATCH", body: JSON.stringify({ name, color, format }),
+    });
+
+    // Changement de format : aucune carte n'est perdue — toutes sont
+    // relues dans l'ordre (page par page, case par case) puis replacées
+    // à la suite dans le nouveau format, qui peut donc avoir plus ou
+    // moins de pages qu'avant selon le nombre de cartes déjà en place.
+    if (formatChanged){
+      await reflowBinderCards(format);
+    }
+
+    currentBinder = { ...currentBinder, name, format, color };
+    document.getElementById("binder-bc-name").textContent = name;
+    document.getElementById("binder-title").textContent = name;
+    document.getElementById("edit-binder-form").style.display = "none";
+    currentBinderPage = Math.min(currentBinderPage, currentBinder.page_count);
+    loadAndRenderBinderPage();
+  } catch (e) {
+    errorEl.textContent = e.message;
+  }
+}
+
+/* Relit toutes les cartes du classeur dans l'ordre actuel (page puis
+   position), les replace à la suite dans le nouveau format — jamais de
+   carte perdue, le nombre de pages s'ajuste automatiquement au besoin. */
+async function reflowBinderCards(newFormat){
+  const [rows, cols] = newFormat.split("x").map(Number);
+  const newCapacity = rows * cols;
+
+  const existingSlots = await supabaseAuthedFetch(
+    `binder_slots?binder_id=eq.${currentBinder.id}&select=card_id&order=page_number.asc,slot_index.asc`
+  );
+  const cardIds = existingSlots.map(s => s.card_id);
+
+  await supabaseAuthedFetch(`binder_slots?binder_id=eq.${currentBinder.id}`, { method: "DELETE" });
+
+  if (cardIds.length){
+    const newSlots = cardIds.map((cardId, i) => ({
+      binder_id: currentBinder.id,
+      page_number: Math.floor(i / newCapacity) + 1,
+      slot_index: i % newCapacity,
+      card_id: cardId,
+    }));
+    await supabaseAuthedFetch("binder_slots", { method: "POST", body: JSON.stringify(newSlots) });
+  }
+
+  const newPageCount = Math.max(1, Math.ceil(cardIds.length / newCapacity));
+  await supabaseAuthedFetch(`binders?id=eq.${currentBinder.id}`, {
+    method: "PATCH", body: JSON.stringify({ page_count: newPageCount }),
+  });
+  currentBinder.page_count = newPageCount;
+}
+
+async function deleteCurrentBinder(){
+  if (!confirm(`Supprimer définitivement le classeur "${currentBinder.name}" et tout son contenu ?`)) return;
+  try {
+    await supabaseAuthedFetch(`binders?id=eq.${currentBinder.id}`, { method: "DELETE" });
+    navigateBinders();
+  } catch (e) {
+    alert(`Impossible de supprimer ce classeur : ${e.message}`);
+  }
+}
+
+async function deleteBinderFromList(binderId){
+  if (!confirm("Supprimer définitivement ce classeur et tout son contenu ?")) return;
+  try {
+    await supabaseAuthedFetch(`binders?id=eq.${binderId}`, { method: "DELETE" });
+    renderBindersListPage();
+  } catch (e) {
+    alert(`Impossible de supprimer ce classeur : ${e.message}`);
   }
 }
 </script>
