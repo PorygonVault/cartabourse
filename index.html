@@ -212,14 +212,22 @@
   .tile-remove-btn:hover{border-color:var(--red);color:var(--red);}
 
   .quick-actions{position:absolute;top:8px;right:8px;z-index:3;display:flex;gap:5px;}
-  .quick-fav-btn, .quick-add-btn{
+  .quick-fav-btn, .quick-add-btn, .quick-remove-btn{
     width:24px;height:24px;border-radius:50%;background:rgba(13,14,21,0.75);
     border:1px solid var(--border);color:var(--text-dim);font-size:13px;line-height:1;
     cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;
   }
-  .quick-fav-btn:hover, .quick-add-btn:hover{border-color:var(--gold);color:var(--gold-bright);}
+  .quick-fav-btn:hover, .quick-add-btn:hover, .quick-remove-btn:hover{border-color:var(--gold);color:var(--gold-bright);}
   .quick-fav-btn.active{background:var(--red);border-color:var(--red);color:#fff;}
   .quick-add-btn.active{background:var(--gold);border-color:var(--gold);color:var(--ink-deep);}
+  .quick-remove-btn.active{background:var(--panel-light);border-color:var(--red);color:var(--red);}
+  .quick-remove-btn:hover{border-color:var(--red);color:var(--red);}
+  .quick-remove-btn.shake{animation:quick-shake .35s;}
+  @keyframes quick-shake{
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-2px); }
+    75% { transform: translateX(2px); }
+  }
   .card-row .quick-actions{position:static;margin-left:auto;flex-shrink:0;}
 
   .detail-info h1{font-family:var(--font-display);font-size:30px;margin:0 0 6px;font-weight:600;}
@@ -915,13 +923,14 @@ function setViewMode(mode){
   renderGrid();
 }
 
-/* Icônes rapides (favoris / ajout collection), utilisées sur toutes les
-   listes de cartes (accueil, recherche, page série) — pas de vérification
-   d'état préalable par tuile (éviterait des dizaines de requêtes par
-   page) : le cœur et le "+" partent neutres, et réagissent au clic. */
+/* Icônes rapides (favoris / ajout / retrait collection), utilisées sur
+   toutes les listes de cartes (accueil, recherche, page série) — pas de
+   vérification d'état préalable par tuile (éviterait des dizaines de
+   requêtes par page) : les icônes partent neutres, et réagissent au clic. */
 function quickActionsHtml(cardId){
   return `<div class="quick-actions" onclick="event.stopPropagation()">
     <button class="quick-fav-btn" onclick="quickToggleFavorite(${cardId}, this)" title="Ajouter aux favoris">♡</button>
+    <button class="quick-remove-btn" onclick="quickRemoveFromCollection(${cardId}, this)" title="Retirer de la collection">−</button>
     <button class="quick-add-btn" onclick="quickAddToCollection(${cardId}, this)" title="Ajouter à la collection">+</button>
   </div>`;
 }
@@ -962,6 +971,25 @@ async function quickAddToCollection(cardId, btn){
     setTimeout(() => btn.classList.remove("active"), 700);
   } catch (e) {
     alert(`Impossible d'ajouter à la collection : ${e.message}`);
+  }
+}
+
+async function quickRemoveFromCollection(cardId, btn){
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){ openAuthModal(); return; }
+  try {
+    const rows = await supabaseAuthedFetch(`collection_items?card_id=eq.${cardId}&select=id&order=id.desc&limit=1`);
+    if (!rows.length){
+      // Rien à retirer : petit tremblement plutôt qu'une alerte intrusive
+      btn.classList.add("shake");
+      setTimeout(() => btn.classList.remove("shake"), 400);
+      return;
+    }
+    await supabaseAuthedFetch(`collection_items?id=eq.${rows[0].id}`, { method: "DELETE" });
+    btn.classList.add("active");
+    setTimeout(() => btn.classList.remove("active"), 700);
+  } catch (e) {
+    alert(`Impossible de retirer cet exemplaire : ${e.message}`);
   }
 }
 
