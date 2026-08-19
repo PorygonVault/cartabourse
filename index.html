@@ -1055,7 +1055,6 @@ function cardTileHtml(c){
   return `
     <div class="card-tile" onclick="navigateCard(${c.id})">
       <div class="art">
-        <span class="set-tag">${c.setName}</span>
         ${quickActionsHtml(c.id)}
         ${c.image
           ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"')
@@ -1877,7 +1876,7 @@ async function renderCollectionContent(){
     // cartes — chaque set charge les siennes à la demande, au premier clic.
     const allSets = await fetchAllPaginated(`sets?select=id,name_en,total_cards,set_names(locale,name)&order=id.asc`);
 
-    collectionCatalogState = { allSets, ownedBySet };
+    collectionCatalogState = { allSets, ownedBySet, loadedCardsBySet: {} };
     renderCollectionCatalog();
   } catch (e) {
     content.innerHTML = `<div class="empty-state">Erreur de chargement : ${e.message}</div>`;
@@ -1956,464 +1955,87 @@ async function toggleSetAccordion(setId, accordionEl){
       return (a.card_number || "").localeCompare(b.card_number || "");
     });
 
-    const owned = collectionCatalogState.ownedBySet[setId] || { cardIds: new Set(), qtyByCard: {}, badgeByCard: {}, rowIdsByCard: {} };
-
-    body.innerHTML = cards.map(cardRow => {
-      const c = shapeCard(cardRow);
-      const isOwned = owned.cardIds.has(c.id);
-      const qty = owned.qtyByCard[c.id] || 0;
-      const badge = owned.badgeByCard[c.id];
-      const lastRowId = isOwned ? owned.rowIdsByCard[c.id][owned.rowIdsByCard[c.id].length - 1] : null;
-      return `
-        <div class="card-tile collection-tile ${isOwned ? "owned" : "not-owned"}">
-          ${isOwned ? `<button class="tile-remove-btn" title="Retirer un exemplaire" onclick="event.stopPropagation();removeFromCollection(${lastRowId})">×</button>` : ""}
-          <div onclick="navigateCard(${c.id})">
-            <div class="art">
-              ${qty > 1 ? `<span class="set-tag">×${qty}</span>` : ""}
-              ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
-            </div>
-            <div class="tile-body">
-              <h3>${c.name}</h3>
-              ${isOwned && badge ? `<div class="tcg-label">${badge}</div>` : ""}
-            </div>
-          </div>
-          ${!isOwned ? `<button class="tile-quick-add-btn" title="Ajouter à la collection" onclick="event.stopPropagation();catalogAddToCollection(${c.id}, ${setId})">+</button>` : ""}
-        </div>`;
-    }).join("");
-
+    // Gardé en mémoire : permet de redessiner ce set après un ajout/retrait
+    // sans devoir re-télécharger ses cartes depuis Supabase à chaque fois.
+    collectionCatalogState.loadedCardsBySet[setId] = cards;
+    body.innerHTML = buildSetCardsHtml(setId);
     accordionEl.dataset.loaded = "1";
   } catch (e) {
     body.innerHTML = `<div class="empty-state">Erreur de chargement : ${e.message}</div>`;
   }
 }
 
-/* Recherche sur le NOM DU SET, pas sur les cartes individuelles (qui ne
-   sont chargées qu'à la demande) — instantanée, sans requête réseau. */
-function filterCollectionCatalog(term){
-  const q = term.trim().toLowerCase();
-  document.querySelectorAll(".collection-set-accordion").forEach(setEl => {
-    const matches = !q || setEl.dataset.setName.includes(q);
-    setEl.style.display = matches ? "" : "none";
-  });
-}
+/* Construit la grille de cartes d'UN set à partir de l'état déjà en
+   mémoire (cache + possession) — jamais de requête réseau ici. */
+function buildSetCardsHtml(setId){
+  const cards = collectionCatalogState.loadedCardsBySet[setId] || [];
+  const owned = collectionCatalogState.ownedBySet[setId] || { cardIds: new Set(), qtyByCard: {}, badgeByCard: {}, rowIdsByCard: {} };
 
-async function removeFromCollection(rowId){
-  try {
-    await supabaseAuthedFetch(`collection_items?id=eq.${rowId}`, { method: "DELETE" });
-    renderCollectionContent();
-  } catch (e) {
-    alert(`Impossible de retirer cette carte : ${e.message}`);
-  }
-}
-
-async function catalogAddToCollection(cardId, setId){
-  const { data } = await supabaseClient.auth.getSession();
-  if (!data.session){ openAuthModal(); return; }
-  try {
-    await supabaseAuthedFetch("collection_items", {
-      method: "POST",
-      body: JSON.stringify({
-        card_id: cardId, user_id: data.session.user.id,
-        quantity: 1, condition: "NM", is_graded: false,
-      }),
-    });
-    // Rafraîchit tout (stats, progression) mais rouvre ce set plutôt que
-    // de tout refermer, puisqu'on est en train d'y travailler.
-    await renderCollectionContent();
-    const reopened = document.querySelector(`.collection-set-accordion[data-set-id="${setId}"]`);
-    if (reopened){ reopened.dataset.loaded = ""; toggleSetAccordion(setId, reopened); }
-  } catch (e) {
-    alert(`Impossible d'ajouter à la collection : ${e.message}`);
-  }
-}
-
-
-function renderCollectionGrid(cards, emptyMessage){
-  const content = document.getElementById("collection-content");
-  if (!cards.length){
-    content.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
-    return;
-  }
-  content.innerHTML = `<div class="grid">${cards.map(c => `
-    <div class="card-tile" onclick="navigateCard(${c.id})">
-      <div class="art">
-        ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
-      </div>
-      <div class="tile-body"><h3>${c.name}</h3></div>
-    </div>`).join("")}</div>`;
-}
-
-/* ============================================================
-   ADMINISTRATION
-   La vraie sécurité est côté base (RLS + is_admin()) — cette vérification
-   ne sert qu'à l'affichage, pas de protection réelle en elle-même.
-   ============================================================ */
-let currentAdminTab = "cards";
-
-async function renderAdminPage(tab = "cards"){
-  const content = document.getElementById("admin-content");
-  const { data } = await supabaseClient.auth.getSession();
-  if (!data.session){
-    content.innerHTML = `<p style="color:var(--text-dim);">Vous devez être connecté.</p><button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
-    return;
-  }
-  try {
-    const rows = await supabaseAuthedFetch(`profiles?id=eq.${data.session.user.id}&select=role`);
-    if (!rows.length || rows[0].role !== "admin"){
-      content.innerHTML = `<p style="color:var(--text-dim);">Accès réservé aux administrateurs.</p>`;
-      return;
-    }
-  } catch (e) {
-    content.innerHTML = `<p style="color:var(--red);">Erreur de vérification des droits : ${e.message}</p>`;
-    return;
-  }
-  setAdminTab(tab);
-}
-
-function setAdminTab(tab){
-  currentAdminTab = tab;
-  document.querySelectorAll("#admin-tabs .tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tab));
-  if (tab === "cards") renderAdminCards();
-  else if (tab === "listings") renderAdminListings();
-  else renderAdminMembers();
-}
-
-/* ---------- Cartes ---------- */
-async function renderAdminCards(){
-  const content = document.getElementById("admin-content");
-  content.innerHTML = `
-    <div class="search-wrap collection-search-wrap" style="max-width:420px;">
-      <span class="search-icon">⌕</span>
-      <input id="admin-card-search" type="text" placeholder="Rechercher une carte à modifier... (Entrée)"
-             onkeydown="if(event.key==='Enter')adminSearchCards(this.value)">
-    </div>
-    <div id="admin-cards-results" style="margin-top:16px;"></div>
-
-    <div class="account-panel" style="max-width:520px;margin-top:36px;padding-top:24px;border-top:1px solid var(--border);">
-      <h2 style="font-size:18px;">Ajouter une nouvelle carte</h2>
-      <div class="account-field"><label>Extension</label>
-        <select id="admin-new-set" onchange="document.getElementById('admin-new-set-name-wrap').style.display=this.value==='__new__'?'block':'none';">
-          <option value="">Chargement des extensions...</option>
-        </select></div>
-      <div class="account-field" id="admin-new-set-name-wrap" style="display:none;">
-        <label>Nom de la nouvelle extension (EN)</label>
-        <input type="text" id="admin-new-set-name" placeholder="ex: Paldean Fates">
-        <label style="margin-top:10px;">Nombre de cartes (optionnel)</label>
-        <input type="number" id="admin-new-set-total" placeholder="ex: 102">
-        <label style="margin-top:10px;">Zone de publication</label>
-        <select id="admin-new-set-region">
-          <option value="intl">International (intl)</option>
-          <option value="jp">Japon (jp)</option>
-        </select>
-        <label style="margin-top:10px;">Abréviation (optionnel)</label>
-        <input type="text" id="admin-new-set-abbr" placeholder="ex: PAF">
-      </div>
-      <div class="account-field"><label>Numéro dans le set</label>
-        <input type="text" id="admin-new-number" placeholder="ex: 4"></div>
-      <div class="account-field"><label>Nom (EN) — obligatoire</label>
-        <input type="text" id="admin-new-name-en"></div>
-      <div class="account-field"><label>Nom (FR)</label><input type="text" id="admin-new-name-fr"></div>
-      <div class="account-field"><label>Nom (DE)</label><input type="text" id="admin-new-name-de"></div>
-      <div class="auth-error" id="admin-new-card-error"></div>
-      <button class="auth-submit" onclick="adminCreateCard()">Créer la carte</button>
-    </div>`;
-  adminLoadSetsIntoSelect();
-}
-
-async function adminLoadSetsIntoSelect(){
-  const select = document.getElementById("admin-new-set");
-  try {
-    const sets = await fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`);
-    select.innerHTML = `<option value="__new__">+ Nouvelle extension...</option>` +
-      sets.map(s => `<option value="${s.id}">${s.name_en}</option>`).join("");
-  } catch (e) {
-    select.innerHTML = `<option value="">Erreur de chargement des extensions</option>`;
-  }
-}
-
-async function adminCreateCard(){
-  const errorEl = document.getElementById("admin-new-card-error");
-  errorEl.className = "auth-error";
-  errorEl.textContent = "";
-
-  let setId = document.getElementById("admin-new-set").value;
-  const cardNumber = document.getElementById("admin-new-number").value.trim();
-  const nameEn = document.getElementById("admin-new-name-en").value.trim();
-
-  if (!setId || !cardNumber || !nameEn){
-    errorEl.textContent = "Extension, numéro et nom (EN) sont obligatoires.";
-    return;
-  }
-
-  try {
-    if (setId === "__new__"){
-      const newSetName = document.getElementById("admin-new-set-name").value.trim();
-      if (!newSetName){
-        errorEl.textContent = "Le nom de la nouvelle extension est obligatoire.";
-        return;
-      }
-      const newSetTotal = document.getElementById("admin-new-set-total").value.trim();
-      const newSetRegion = document.getElementById("admin-new-set-region").value;
-      const newSetAbbr = document.getElementById("admin-new-set-abbr").value.trim();
-      const newSetBody = {
-        game_id: 1,
-        // L'abréviation, si donnée, sert aussi de "code" (identifiant
-        // technique de l'extension) — sinon, repli sur le nom simplifié.
-        code: newSetAbbr ? newSetAbbr.toLowerCase().replace(/[^a-z0-9]+/g, "-") : newSetName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-        name_en: newSetName,
-        release_region: newSetRegion,
-      };
-      if (newSetTotal) newSetBody.total_cards = parseInt(newSetTotal, 10);
-      if (newSetAbbr) newSetBody.official_abbreviation = newSetAbbr;
-
-      const newSet = await supabaseAuthedFetch("sets", { method: "POST", body: JSON.stringify(newSetBody) });
-      setId = newSet[0].id;
-    }
-
-    const created = await supabaseAuthedFetch("cards", {
-      method: "POST",
-      body: JSON.stringify({ set_id: parseInt(setId, 10), card_number: cardNumber, variant: "normal" }),
-    });
-    const cardId = created[0].id;
-
-    const nameRows = [{ card_id: cardId, locale: "en", name: nameEn }];
-    const nameFr = document.getElementById("admin-new-name-fr").value.trim();
-    const nameDe = document.getElementById("admin-new-name-de").value.trim();
-    if (nameFr) nameRows.push({ card_id: cardId, locale: "fr", name: nameFr });
-    if (nameDe) nameRows.push({ card_id: cardId, locale: "de", name: nameDe });
-    await supabaseAuthedFetch("card_names", { method: "POST", body: JSON.stringify(nameRows) });
-
-    errorEl.className = "auth-error success";
-    errorEl.textContent = `Carte créée (id ${cardId}).`;
-    document.getElementById("admin-new-number").value = "";
-    document.getElementById("admin-new-name-en").value = "";
-    document.getElementById("admin-new-name-fr").value = "";
-    document.getElementById("admin-new-name-de").value = "";
-    document.getElementById("admin-new-set-name").value = "";
-    document.getElementById("admin-new-set-name-wrap").style.display = "none";
-    document.getElementById("admin-new-set-total").value = "";
-    document.getElementById("admin-new-set-abbr").value = "";
-    document.getElementById("admin-new-set-region").value = "intl";
-    adminLoadSetsIntoSelect(); // pour que la nouvelle extension apparaisse dans la liste dès la prochaine carte
-  } catch (e) {
-    errorEl.textContent = e.message.toLowerCase().includes("duplicate")
-      ? "Cette carte existe déjà dans ce set avec ce numéro."
-      : e.message;
-  }
-}
-
-async function adminSearchCards(term){
-  const results = document.getElementById("admin-cards-results");
-  results.innerHTML = `<div class="empty-state">Recherche...</div>`;
-  try {
-    // "!inner" est indispensable ici : sans lui, PostgREST ne filtre que
-    // les noms affichés PARMI les 30 premières cartes récupérées au
-    // hasard, pas les cartes elles-mêmes — d'où l'absence de résultats.
-    const rows = await supabaseAuthedFetch(
-      `cards?select=id,card_number,card_names!inner(id,locale,name),card_images(image_url,variant),sets(name_en)` +
-      `&card_names.name=ilike.*${encodeURIComponent(term)}*&limit=30`
-    );
-    if (!rows.length){
-      results.innerHTML = `<div class="empty-state">Aucune carte trouvée.</div>`;
-      return;
-    }
-    results.innerHTML = `<table class="listing-table"><thead><tr><th></th><th>Carte</th><th>Extension</th><th>Numéro</th><th></th></tr></thead><tbody>
-      ${rows.map(r => {
-        const img = (r.card_images && r.card_images[0]) ? r.card_images[0].image_url : null;
-        return `
-        <tr>
-          <td style="width:36px;">${img ? `<img src="${imageVariants(img,'low').webp}" alt="" width="28" style="border-radius:2px;">` : ""}</td>
-          <td>${(r.card_names.find(n=>n.locale==="en")||r.card_names[0]).name}</td>
-          <td>${r.sets ? r.sets.name_en : "—"}</td>
-          <td>${r.card_number}</td>
-          <td><button class="row-buy" onclick="adminEditCard(${r.id})">Modifier →</button></td>
-        </tr>`;
-      }).join("")}
-    </tbody></table>`;
-  } catch (e) {
-    results.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
-  }
-}
-
-async function adminEditCard(cardId){
-  const results = document.getElementById("admin-cards-results");
-  results.innerHTML = `<div class="empty-state">Chargement...</div>`;
-  try {
-    const [cardRows, variantRows] = await Promise.all([
-      supabaseAuthedFetch(`cards?id=eq.${cardId}&select=id,card_number,card_names(id,locale,name),card_images(image_url,variant)`),
-      supabaseAuthedFetch(`card_variants?card_id=eq.${cardId}&type=eq.normal&select=id,cardmarket_id,tcgplayer_id,cardtrader_id&limit=1`),
-    ]);
-    const card = cardRows[0];
-    const variant = variantRows[0] || {};
-    const img = (card.card_images && card.card_images[0]) ? card.card_images[0].image_url : null;
-
-    results.innerHTML = `
-      <div class="account-panel" style="max-width:520px;margin:0;">
-        <h2 style="font-size:20px;">Modifier la carte #${card.id}</h2>
-        ${img ? `<img src="${imageVariants(img,'high').webp}" alt="" style="max-width:140px;display:block;margin-bottom:16px;border-radius:3px;">` : ""}
-        <div class="account-field"><label>Numéro dans le set</label>
-          <input type="text" id="admin-edit-number" value="${card.card_number || ""}"></div>
-        ${["en","fr","de"].map(locale => {
-          const n = card.card_names.find(x => x.locale === locale);
-          return `<div class="account-field"><label>Nom (${locale.toUpperCase()})</label>
-            <input type="text" id="admin-edit-name-${locale}" value="${n ? n.name.replace(/"/g,"&quot;") : ""}"></div>`;
-        }).join("")}
-        <div class="account-field"><label>Identifiant Cardmarket</label>
-          <input type="text" id="admin-edit-cardmarket-id" value="${variant.cardmarket_id || ""}"></div>
-        <div class="account-field"><label>Identifiant TCGplayer</label>
-          <input type="text" id="admin-edit-tcgplayer-id" value="${variant.tcgplayer_id || ""}"></div>
-        <div class="account-field"><label>Identifiant CardTrader</label>
-          <input type="text" id="admin-edit-cardtrader-id" value="${variant.cardtrader_id || ""}"></div>
-        <div class="auth-error" id="admin-edit-error"></div>
-        <button class="auth-submit" onclick="adminSaveCard(${card.id}, ${variant.id || "null"})">Enregistrer</button>
-        <button class="reset-filters" style="margin-top:8px;" onclick="adminDeleteCard(${card.id})">Supprimer cette carte</button>
+  return cards.map(cardRow => {
+    const c = shapeCard(cardRow);
+    const isOwned = owned.cardIds.has(c.id);
+    const qty = owned.qtyByCard[c.id] || 0;
+    const badge = owned.badgeByCard[c.id];
+    const lastRowId = isOwned ? owned.rowIdsByCard[c.id][owned.rowIdsByCard[c.id].length - 1] : null;
+    return `
+      <div class="card-tile collection-tile ${isOwned ? "owned" : "not-owned"}">
+        ${isOwned ? `<button class="tile-remove-btn" title="Retirer un exemplaire" onclick="event.stopPropagation();collectionRemoveOne(${c.id}, ${setId}, ${lastRowId})">×</button>` : ""}
+        <div onclick="navigateCard(${c.id})">
+          <div class="art">
+            ${qty > 1 ? `<span class="set-tag">×${qty}</span>` : ""}
+            ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
+          </div>
+          <div class="tile-body">
+            <h3>${c.name}</h3>
+            ${isOwned && badge ? `<div class="tcg-label">${badge}</div>` : ""}
+          </div>
+        </div>
+        ${!isOwned ? `<button class="tile-quick-add-btn" title="Ajouter à la collection" onclick="event.stopPropagation();collectionAddOne(${c.id}, ${setId})">+</button>` : ""}
       </div>`;
-  } catch (e) {
-    results.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }).join("");
+}
+
+/* Redessine juste l'en-tête (progression) et le corps d'UN set, sans
+   toucher au reste de la page ni au fait qu'il soit ouvert ou fermé. */
+function refreshSetView(setId){
+  const accordionEl = document.querySelector(`.collection-set-accordion[data-set-id="${setId}"]`);
+  if (!accordionEl) return;
+
+  const set = collectionCatalogState.allSets.find(s => s.id === setId);
+  const owned = collectionCatalogState.ownedBySet[setId];
+  const ownedCount = owned ? owned.cardIds.size : 0;
+  const pct = set && set.total_cards ? Math.round((ownedCount / set.total_cards) * 100) : null;
+
+  const progressEl = accordionEl.querySelector(".collection-set-progress");
+  if (progressEl) progressEl.textContent = `${ownedCount}${set && set.total_cards ? ` / ${set.total_cards}` : ""}${pct != null ? ` (${pct}%)` : ""}`;
+  const barEl = accordionEl.querySelector(".progress-bar-fill");
+  if (barEl && pct != null) barEl.style.width = `${pct}%`;
+
+  if (accordionEl.dataset.loaded){
+    accordionEl.querySelector(".collection-set-body .grid").innerHTML = buildSetCardsHtml(setId);
   }
 }
 
-async function adminSaveCard(cardId, variantId){
-  const errorEl = document.getElementById("admin-edit-error");
-  errorEl.textContent = "";
-  try {
-    await supabaseAuthedFetch(`cards?id=eq.${cardId}`, {
-      method: "PATCH", body: JSON.stringify({ card_number: document.getElementById("admin-edit-number").value }),
-    });
-    for (const locale of ["en", "fr", "de"]){
-      const value = document.getElementById(`admin-edit-name-${locale}`).value.trim();
-      if (!value) continue;
-      await supabaseAuthedFetch("card_names", {
-        method: "POST", body: JSON.stringify({ card_id: cardId, locale, name: value }),
-        headers: { Prefer: "resolution=merge-duplicates" },
-      });
-    }
-
-    const marketplaceIds = {
-      cardmarket_id: document.getElementById("admin-edit-cardmarket-id").value.trim() || null,
-      tcgplayer_id: document.getElementById("admin-edit-tcgplayer-id").value.trim() || null,
-      cardtrader_id: document.getElementById("admin-edit-cardtrader-id").value.trim() || null,
-    };
-    if (variantId){
-      await supabaseAuthedFetch(`card_variants?id=eq.${variantId}`, { method: "PATCH", body: JSON.stringify(marketplaceIds) });
-    } else {
-      await supabaseAuthedFetch("card_variants", {
-        method: "POST", body: JSON.stringify({ card_id: cardId, variant_id: "normal", type: "normal", ...marketplaceIds }),
-      });
-    }
-
-    errorEl.className = "auth-error success";
-    errorEl.textContent = "Enregistré.";
-  } catch (e) {
-    errorEl.className = "auth-error";
-    errorEl.textContent = e.message;
+/* Recalcule seulement le nombre de cartes/uniques (instantané, en mémoire)
+   et relance en arrière-plan le calcul de la valeur estimée (seule partie
+   qui a vraiment besoin d'une requête, légère et ciblée). */
+function refreshCollectionStats(){
+  let totalCardCount = 0;
+  const uniqueIds = new Set();
+  for (const setId in collectionCatalogState.ownedBySet){
+    const bucket = collectionCatalogState.ownedBySet[setId];
+    for (const cardId of bucket.cardIds) uniqueIds.add(cardId);
+    for (const cardId in bucket.qtyByCard) totalCardCount += bucket.qtyByCard[cardId];
   }
-}
-
-async function adminDeleteCard(cardId){
-  if (!confirm("Supprimer définitivement cette carte (et tout ce qui lui est lié) ?")) return;
-  try {
-    await supabaseAuthedFetch(`cards?id=eq.${cardId}`, { method: "DELETE" });
-    document.getElementById("admin-cards-results").innerHTML = `<div class="empty-state">Carte supprimée.</div>`;
-  } catch (e) {
-    alert(`Erreur : ${e.message}`);
+  const statsRow = document.querySelector(".collection-stats-row");
+  if (statsRow){
+    statsRow.children[0].querySelector(".value").textContent = totalCardCount;
+    statsRow.children[1].querySelector(".value").textContent = uniqueIds.size;
   }
-}
 
-/* ---------- Listings ---------- */
-async function renderAdminListings(){
-  const content = document.getElementById("admin-content");
-  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
-  try {
-    const rows = await supabaseAuthedFetch(
-      `listings?is_active=eq.true&select=id,seller_name,price,currency,listing_url,cards(card_names(locale,name)),sites(name)&order=id.desc&limit=100`
-    );
-    if (!rows.length){
-      content.innerHTML = `<div class="empty-state">Aucun listing actif.</div>`;
-      return;
-    }
-    content.innerHTML = `
-      <p style="color:var(--text-faint);font-family:var(--font-mono);font-size:11px;margin-bottom:14px;">
-        100 plus récents listings actifs. Le signalement par les membres (produit expiré/incorrect) viendra compléter cette vue plus tard.
-      </p>
-      <table class="listing-table"><thead><tr><th>Carte</th><th>Site</th><th>Vendeur</th><th>Prix</th><th></th></tr></thead><tbody>
-        ${rows.map(r => {
-          const name = r.cards && r.cards.card_names ? (r.cards.card_names.find(n=>n.locale==="en")||r.cards.card_names[0]||{}).name : "?";
-          return `
-            <tr>
-              <td>${name || "?"}</td>
-              <td class="site-tag">${r.sites ? r.sites.name : "—"}</td>
-              <td>${r.seller_name || "—"}</td>
-              <td class="listing-price">${r.price} ${r.currency}</td>
-              <td style="display:flex;gap:6px;">
-                <a class="row-buy" href="${r.listing_url}" target="_blank" rel="noopener">Voir l'annonce ↗</a>
-                <button class="row-buy" onclick="adminDeactivateListing(${r.id})">Désactiver</button>
-                <button class="row-buy" onclick="adminDeleteListing(${r.id})">Supprimer</button>
-              </td>
-            </tr>`;
-        }).join("")}
-      </tbody></table>`;
-  } catch (e) {
-    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  if (!uniqueIds.size){
+    if (statsRow) statsRow.children[2].querySelector(".value").textContent = displayPrice(0, "EUR");
+    return;
   }
-}
-
-async function adminDeactivateListing(id){
-  try {
-    await supabaseAuthedFetch(`listings?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ is_active: false }) });
-    renderAdminListings();
-  } catch (e) { alert(`Erreur : ${e.message}`); }
-}
-async function adminDeleteListing(id){
-  if (!confirm("Supprimer définitivement ce listing ?")) return;
-  try {
-    await supabaseAuthedFetch(`listings?id=eq.${id}`, { method: "DELETE" });
-    renderAdminListings();
-  } catch (e) { alert(`Erreur : ${e.message}`); }
-}
-
-/* ---------- Membres ---------- */
-async function renderAdminMembers(){
-  const content = document.getElementById("admin-content");
-  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
-  try {
-    const rows = await supabaseAuthedFetch(`profiles?select=id,email,display_name,role,created_at&order=created_at.desc&limit=500`);
-    content.innerHTML = `
-      <p style="color:var(--text-faint);font-family:var(--font-mono);font-size:11px;margin-bottom:14px;">
-        La suppression d'un compte ne peut pas se faire depuis le navigateur (ça demanderait d'exposer une clé
-        sensible côté client) — à faire depuis le tableau de bord Supabase pour l'instant, ou via une fonction
-        serveur dédiée plus tard si le besoin devient fréquent.
-      </p>
-      <table class="listing-table"><thead><tr><th>Pseudo</th><th>Email</th><th>Rôle</th><th>Inscrit le</th></tr></thead><tbody>
-        ${rows.map(r => `
-          <tr>
-            <td>${r.display_name || "—"}</td>
-            <td>${r.email || "—"}</td>
-            <td>
-              ${r.role === "admin"
-                ? `<span class="grade-pill graded" title="Protégé : modifiable uniquement depuis la base directement">🔒 admin</span>`
-                : `<select onchange="adminChangeRole('${r.id}', this.value)">
-                     <option value="user" ${r.role==="user"?"selected":""}>user</option>
-                     <option value="moderator" ${r.role==="moderator"?"selected":""}>moderator</option>
-                     <option value="admin">admin</option>
-                   </select>`}
-            </td>
-            <td class="site-tag">${new Date(r.created_at).toLocaleDateString("fr-FR")}</td>
-          </tr>`).join("")}
-      </tbody></table>`;
-  } catch (e) {
-    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
-  }
-}
-
-async function adminChangeRole(userId, newRole){
-  try {
-    await supabaseAuthedFetch(`profiles?id=eq.${userId}`, { method: "PATCH", body: JSON.stringify({ role: newRole }) });
-  } catch (e) {
-    alert(`Impossible de modifier le rôle : ${e.message}`);
-    renderAdminMembers();
-  }
-}
-</script>
-</body>
-</html>
+  supabaseSelect(
+    `price_history?card_id=in.(${[...uniqueIds].join(",")})&select=card_id,period_date,avg_price,currency&order=period_dat
