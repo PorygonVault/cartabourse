@@ -19,7 +19,7 @@
   a{color:inherit;text-decoration:none;}
 
   header.site{position:sticky;top:0;z-index:50;background:rgba(20,22,31,0.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);}
-  .header-inner{max-width:1280px;margin:0 auto;padding:16px 28px;display:flex;align-items:center;gap:28px;flex-wrap:wrap;}
+  .header-inner{max-width:1600px;margin:0 auto;padding:16px 28px;display:flex;align-items:center;gap:28px;flex-wrap:wrap;}
   .brand{font-family:var(--font-display);font-weight:700;font-size:22px;display:flex;align-items:baseline;gap:6px;cursor:pointer;}
   .brand .mark{color:var(--gold-bright);}
   .search-wrap{flex:1;position:relative;max-width:520px;min-width:200px;}
@@ -94,10 +94,23 @@
   }
   .auth-submit:hover{background:var(--gold-bright);}
   .modal-switch{margin-top:16px;text-align:center;font-size:12px;color:var(--text-dim);}
+
+  .report-reason-list{display:flex;flex-direction:column;gap:8px;margin-bottom:18px;}
+  .report-reason{
+    display:flex;align-items:center;gap:9px;background:var(--panel-light);border:1px solid var(--border);
+    border-radius:var(--radius);padding:10px 12px;cursor:pointer;font-size:13.5px;transition:border-color .15s;
+  }
+  .report-reason:hover{border-color:var(--gold);}
+  .report-reason input{accent-color:var(--gold);}
+  .report-flag-btn{
+    background:transparent;border:1px solid var(--border);color:var(--text-faint);border-radius:var(--radius);
+    padding:5px 9px;font-size:13px;cursor:pointer;line-height:1;
+  }
+  .report-flag-btn:hover{border-color:var(--red);color:var(--red);}
   .modal-switch a{color:var(--gold-bright);font-weight:600;}
   .modal-switch a:hover{text-decoration:underline;}
 
-  main{max-width:1280px;margin:0 auto;padding:0 28px 80px;}
+  main{max-width:1600px;margin:0 auto;padding:0 28px 80px;}
   .hero{padding:44px 0 30px;border-bottom:1px solid var(--border);margin-bottom:28px;}
   .hero .eyebrow{font-family:var(--font-mono);font-size:12px;letter-spacing:0.12em;text-transform:uppercase;color:var(--gold);margin-bottom:12px;}
   .hero h1{font-family:var(--font-display);font-weight:600;font-size:36px;line-height:1.1;margin:0 0 12px;max-width:680px;}
@@ -126,7 +139,7 @@
   .row-name{font-family:var(--font-display);font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .row-set{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
 
-  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-bottom:20px;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:16px;margin-bottom:20px;}
   .card-tile{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;cursor:pointer;transition:border-color .15s, transform .15s;}
   .card-tile:hover{border-color:var(--gold);transform:translateY(-2px);}
   .art{height:150px;position:relative;display:flex;align-items:center;justify-content:center;border-bottom:1px solid var(--border);background:linear-gradient(135deg,#2b3a55,#c9a227 130%);}
@@ -425,6 +438,21 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="report-modal-overlay" onclick="if(event.target===this)closeReportModal()">
+  <div class="modal">
+    <button class="modal-close" onclick="closeReportModal()">×</button>
+    <h3>Signaler cette annonce</h3>
+    <p style="color:var(--text-dim);font-size:13px;margin:-8px 0 16px;">Quel est le problème ?</p>
+    <div class="report-reason-list">
+      <label class="report-reason"><input type="radio" name="report-reason" value="wrong_card"> Mauvaise carte</label>
+      <label class="report-reason"><input type="radio" name="report-reason" value="wrong_condition"> Mauvaise condition</label>
+      <label class="report-reason"><input type="radio" name="report-reason" value="sold_or_unavailable"> Carte vendue ou indisponible</label>
+    </div>
+    <div class="auth-error" id="report-error"></div>
+    <button class="auth-submit" onclick="submitListingReport()">Envoyer le signalement</button>
+  </div>
+</div>
+
 <main>
   <section id="view-home" class="view active">
     <div class="hero">
@@ -704,6 +732,52 @@ function closeAuthModal(){
   document.getElementById("auth-modal-overlay").classList.remove("active");
   document.getElementById("auth-error").textContent = "";
   document.getElementById("auth-error").className = "auth-error";
+}
+
+let reportingListingId = null;
+
+function openReportModal(listingId){
+  reportingListingId = listingId;
+  document.querySelectorAll('input[name="report-reason"]').forEach(r => r.checked = false);
+  document.getElementById("report-error").textContent = "";
+  document.getElementById("report-error").className = "auth-error";
+  document.getElementById("report-modal-overlay").classList.add("active");
+}
+function closeReportModal(){
+  document.getElementById("report-modal-overlay").classList.remove("active");
+  reportingListingId = null;
+}
+
+async function submitListingReport(){
+  const errorEl = document.getElementById("report-error");
+  const selected = document.querySelector('input[name="report-reason"]:checked');
+  if (!selected){
+    errorEl.className = "auth-error";
+    errorEl.textContent = "Choisissez une raison.";
+    return;
+  }
+
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){
+    closeReportModal();
+    openAuthModal();
+    return;
+  }
+
+  try {
+    await supabaseAuthedFetch("listing_reports", {
+      method: "POST",
+      body: JSON.stringify({ listing_id: reportingListingId, user_id: data.session.user.id, reason: selected.value }),
+    });
+    errorEl.className = "auth-error success";
+    errorEl.textContent = "Signalement envoyé, merci.";
+    setTimeout(closeReportModal, 1200);
+  } catch (e) {
+    errorEl.className = "auth-error";
+    errorEl.textContent = e.message.toLowerCase().includes("duplicate")
+      ? "Vous avez déjà signalé cette annonce."
+      : e.message;
+  }
 }
 
 function toggleAuthMode(){
@@ -1517,7 +1591,7 @@ async function renderListingsSection(cardId){
   try {
     currentListings = await supabaseSelect(
       `listings?card_id=eq.${cardId}&is_active=eq.true` +
-      `&select=seller_name,price,currency,is_graded,grade,language,listing_url,grading_companies(name),sites(name)` +
+      `&select=id,seller_name,price,currency,is_graded,grade,language,listing_url,grading_companies(name),sites(name)` +
       `&order=price.asc`
     );
     renderListingsTable();
@@ -1570,6 +1644,7 @@ function renderListingsTable(){
           <th>Langue</th>
           <th>Prix</th>
           <th></th>
+          <th></th>
         </tr>
       </thead>
       <tbody>
@@ -1591,6 +1666,7 @@ function renderListingsTable(){
               <td><span class="lang-tag" title="${langLabel}">${lang}</span></td>
               <td class="listing-price">${price}</td>
               <td><a class="row-buy" href="${l.listing_url}" target="_blank" rel="noopener">Voir sur ${siteName || "le site"} →</a></td>
+              <td><button class="report-flag-btn" title="Signaler cette annonce" onclick="openReportModal(${l.id})">🚩</button></td>
               </tr>`;
           }).join("")}
         </tbody>
@@ -2565,5 +2641,3 @@ async function adminChangeRole(userId, newRole){
 </script>
 </body>
 </html>
-  supabaseSelect(
-    `price_history?card_id=in.(${[...uniqueIds].join(",")})&select=card_id,period_date,avg_price,currency&order=period_dat
