@@ -2038,4 +2038,532 @@ function refreshCollectionStats(){
     return;
   }
   supabaseSelect(
+    `price_history?card_id=in.(${[...uniqueIds].join(",")})&select=card_id,period_date,avg_price,currency&order=period_date.desc`
+  ).then(priceRows => {
+    const latestByCard = {};
+    for (const p of priceRows){
+      if (!(p.card_id in latestByCard) && p.avg_price != null) latestByCard[p.card_id] = p;
+    }
+    let totalValue = 0, currency = "EUR";
+    for (const setId in collectionCatalogState.ownedBySet){
+      const bucket = collectionCatalogState.ownedBySet[setId];
+      for (const cardId in bucket.qtyByCard){
+        const p = latestByCard[cardId];
+        if (p){ totalValue += Number(p.avg_price) * bucket.qtyByCard[cardId]; currency = p.currency || "EUR"; }
+      }
+    }
+    if (statsRow) statsRow.children[2].querySelector(".value").textContent = displayPrice(totalValue, currency);
+  }).catch(e => console.warn("Valeur de collection non recalculée :", e.message));
+}
+
+/* Recherche sur le NOM DU SET, pas sur les cartes individuelles (qui ne
+   sont chargées qu'à la demande) — instantanée, sans requête réseau. */
+function filterCollectionCatalog(term){
+  const q = term.trim().toLowerCase();
+  document.querySelectorAll(".collection-set-accordion").forEach(setEl => {
+    const matches = !q || setEl.dataset.setName.includes(q);
+    setEl.style.display = matches ? "" : "none";
+  });
+}
+
+async function collectionRemoveOne(cardId, setId, rowId){
+  try {
+    await supabaseAuthedFetch(`collection_items?id=eq.${rowId}`, { method: "DELETE" });
+
+    const bucket = collectionCatalogState.ownedBySet[setId];
+    if (bucket){
+      bucket.qtyByCard[cardId] = (bucket.qtyByCard[cardId] || 1) - 1;
+      bucket.rowIdsByCard[cardId] = (bucket.rowIdsByCard[cardId] || []).filter(id => id !== rowId);
+      if (bucket.qtyByCard[cardId] <= 0){
+        bucket.cardIds.delete(cardId);
+        delete bucket.qtyByCard[cardId];
+        delete bucket.badgeByCard[cardId];
+        delete bucket.rowIdsByCard[cardId];
+      }
+    }
+    refreshSetView(setId);
+    refreshCollectionStats();
+  } catch (e) {
+    alert(`Impossible de retirer cette carte : ${e.message}`);
+  }
+}
+
+async function collectionAddOne(cardId, setId){
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){ openAuthModal(); return; }
+  try {
+    const created = await supabaseAuthedFetch("collection_items", {
+      method: "POST",
+      body: JSON.stringify({
+        card_id: cardId, user_id: data.session.user.id,
+        quantity: 1, condition: "NM", is_graded: false,
+      }),
+    });
+
+    if (!collectionCatalogState.ownedBySet[setId]){
+      collectionCatalogState.ownedBySet[setId] = { cardIds: new Set(), qtyByCard: {}, badgeByCard: {}, rowIdsByCard: {} };
+    }
+    const bucket = collectionCatalogState.ownedBySet[setId];
+    bucket.cardIds.add(cardId);
+    bucket.qtyByCard[cardId] = (bucket.qtyByCard[cardId] || 0) + 1;
+    if (!bucket.badgeByCard[cardId]) bucket.badgeByCard[cardId] = "NM";
+    (bucket.rowIdsByCard[cardId] = bucket.rowIdsByCard[cardId] || []).push(created[0].id);
+
+    refreshSetView(setId);
+    refreshCollectionStats();
+  } catch (e) {
+    alert(`Impossible d'ajouter à la collection : ${e.message}`);
+  }
+}
+
+
+function renderCollectionGrid(cards, emptyMessage){
+  const content = document.getElementById("collection-content");
+  if (!cards.length){
+    content.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+    return;
+  }
+  content.innerHTML = `<div class="grid">${cards.map(c => `
+    <div class="card-tile" onclick="navigateCard(${c.id})">
+      <div class="art">
+        ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
+      </div>
+      <div class="tile-body"><h3>${c.name}</h3></div>
+    </div>`).join("")}</div>`;
+}
+
+/* ============================================================
+   ADMINISTRATION
+   La vraie sécurité est côté base (RLS + is_admin()) — cette vérification
+   ne sert qu'à l'affichage, pas de protection réelle en elle-même.
+   ============================================================ */
+let currentAdminTab = "cards";
+
+async function renderAdminPage(tab = "cards"){
+  const content = document.getElementById("admin-content");
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){
+    content.innerHTML = `<p style="color:var(--text-dim);">Vous devez être connecté.</p><button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
+    return;
+  }
+  try {
+    const rows = await supabaseAuthedFetch(`profiles?id=eq.${data.session.user.id}&select=role`);
+    if (!rows.length || rows[0].role !== "admin"){
+      content.innerHTML = `<p style="color:var(--text-dim);">Accès réservé aux administrateurs.</p>`;
+      return;
+    }
+  } catch (e) {
+    content.innerHTML = `<p style="color:var(--red);">Erreur de vérification des droits : ${e.message}</p>`;
+    return;
+  }
+  setAdminTab(tab);
+}
+
+function setAdminTab(tab){
+  currentAdminTab = tab;
+  document.querySelectorAll("#admin-tabs .tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tab));
+  if (tab === "cards") renderAdminCards();
+  else if (tab === "listings") renderAdminListings();
+  else renderAdminMembers();
+}
+
+/* ---------- Cartes ---------- */
+async function renderAdminCards(){
+  const content = document.getElementById("admin-content");
+  content.innerHTML = `
+    <div class="search-wrap collection-search-wrap" style="max-width:420px;">
+      <span class="search-icon">⌕</span>
+      <input id="admin-card-search" type="text" placeholder="Rechercher une carte à modifier... (Entrée)"
+             onkeydown="if(event.key==='Enter')adminSearchCards(this.value)">
+    </div>
+    <div id="admin-cards-results" style="margin-top:16px;"></div>
+
+    <div class="account-panel" style="max-width:520px;margin-top:36px;padding-top:24px;border-top:1px solid var(--border);">
+      <h2 style="font-size:18px;">Ajouter une nouvelle extension</h2>
+      <div class="account-field"><label>Nom (EN) — obligatoire</label>
+        <input type="text" id="admin-new-set-name" placeholder="ex: Paldean Fates"></div>
+      <div class="account-field"><label>Nombre de cartes (optionnel)</label>
+        <input type="number" id="admin-new-set-total" placeholder="ex: 102"></div>
+      <div class="account-field"><label>Zone de publication</label>
+        <select id="admin-new-set-region">
+          <option value="intl">International (intl)</option>
+          <option value="jp">Japon (jp)</option>
+        </select></div>
+      <div class="account-field"><label>Abréviation (optionnel)</label>
+        <input type="text" id="admin-new-set-abbr" placeholder="ex: PAF"></div>
+      <div class="auth-error" id="admin-new-set-error"></div>
+      <button class="auth-submit" onclick="adminCreateSet()">Créer l'extension</button>
+    </div>
+
+    <div class="account-panel" style="max-width:520px;margin-top:36px;padding-top:24px;border-top:1px solid var(--border);">
+      <h2 style="font-size:18px;">Ajouter une nouvelle carte</h2>
+      <div class="account-field"><label>Extension</label>
+        <select id="admin-new-set">
+          <option value="">Chargement des extensions...</option>
+        </select></div>
+      <div class="account-field"><label>Numéro dans le set</label>
+        <input type="text" id="admin-new-number" placeholder="ex: 4"></div>
+      <div class="account-field"><label>Nom (EN) — obligatoire</label>
+        <input type="text" id="admin-new-name-en"></div>
+      <div class="account-field"><label>Nom (FR)</label><input type="text" id="admin-new-name-fr"></div>
+      <div class="account-field"><label>Nom (DE)</label><input type="text" id="admin-new-name-de"></div>
+      <div class="auth-error" id="admin-new-card-error"></div>
+      <button class="auth-submit" onclick="adminCreateCard()">Créer la carte</button>
+    </div>`;
+  adminLoadSetsIntoSelect();
+}
+
+async function adminCreateSet(){
+  const errorEl = document.getElementById("admin-new-set-error");
+  errorEl.className = "auth-error";
+  errorEl.textContent = "";
+
+  const name = document.getElementById("admin-new-set-name").value.trim();
+  if (!name){
+    errorEl.textContent = "Le nom de l'extension est obligatoire.";
+    return null;
+  }
+  const total = document.getElementById("admin-new-set-total").value.trim();
+  const region = document.getElementById("admin-new-set-region").value;
+  const abbr = document.getElementById("admin-new-set-abbr").value.trim();
+
+  const body = {
+    game_id: 1,
+    // L'abréviation, si donnée, sert aussi de "code" (identifiant
+    // technique de l'extension) — sinon, repli sur le nom simplifié.
+    code: abbr ? abbr.toLowerCase().replace(/[^a-z0-9]+/g, "-") : name.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+    name_en: name,
+    release_region: region,
+  };
+  if (total) body.total_cards = parseInt(total, 10);
+  if (abbr) body.official_abbreviation = abbr;
+
+  try {
+    const created = await supabaseAuthedFetch("sets", { method: "POST", body: JSON.stringify(body) });
+    errorEl.className = "auth-error success";
+    errorEl.textContent = `Extension créée : ${name}.`;
+    document.getElementById("admin-new-set-name").value = "";
+    document.getElementById("admin-new-set-total").value = "";
+    document.getElementById("admin-new-set-abbr").value = "";
+    document.getElementById("admin-new-set-region").value = "intl";
+    adminLoadSetsIntoSelect(); // pour que la nouvelle extension soit tout de suite sélectionnable ci-dessous
+    return created[0].id;
+  } catch (e) {
+    errorEl.textContent = e.message.toLowerCase().includes("duplicate")
+      ? "Une extension avec ce code existe déjà — changez l'abréviation ou le nom."
+      : e.message;
+    return null;
+  }
+}
+
+async function adminLoadSetsIntoSelect(){
+  const select = document.getElementById("admin-new-set");
+  try {
+    const sets = await fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`);
+    select.innerHTML = sets.map(s => `<option value="${s.id}">${s.name_en}</option>`).join("");
+  } catch (e) {
+    select.innerHTML = `<option value="">Erreur de chargement des extensions</option>`;
+  }
+}
+
+async function adminCreateCard(){
+  const errorEl = document.getElementById("admin-new-card-error");
+  errorEl.className = "auth-error";
+  errorEl.textContent = "";
+
+  const setId = document.getElementById("admin-new-set").value;
+  const cardNumber = document.getElementById("admin-new-number").value.trim();
+  const nameEn = document.getElementById("admin-new-name-en").value.trim();
+
+  if (!setId || !cardNumber || !nameEn){
+    errorEl.textContent = "Extension, numéro et nom (EN) sont obligatoires.";
+    return;
+  }
+
+  try {
+    const created = await supabaseAuthedFetch("cards", {
+      method: "POST",
+      body: JSON.stringify({ set_id: parseInt(setId, 10), card_number: cardNumber, variant: "normal" }),
+    });
+    const cardId = created[0].id;
+
+    const nameRows = [{ card_id: cardId, locale: "en", name: nameEn }];
+    const nameFr = document.getElementById("admin-new-name-fr").value.trim();
+    const nameDe = document.getElementById("admin-new-name-de").value.trim();
+    if (nameFr) nameRows.push({ card_id: cardId, locale: "fr", name: nameFr });
+    if (nameDe) nameRows.push({ card_id: cardId, locale: "de", name: nameDe });
+    await supabaseAuthedFetch("card_names", { method: "POST", body: JSON.stringify(nameRows) });
+
+    errorEl.className = "auth-error success";
+    errorEl.textContent = `Carte créée (id ${cardId}).`;
+    document.getElementById("admin-new-number").value = "";
+    document.getElementById("admin-new-name-en").value = "";
+    document.getElementById("admin-new-name-fr").value = "";
+    document.getElementById("admin-new-name-de").value = "";
+  } catch (e) {
+    errorEl.textContent = e.message.toLowerCase().includes("duplicate")
+      ? "Cette carte existe déjà dans ce set avec ce numéro."
+      : e.message;
+  }
+}
+
+async function adminSearchCards(term){
+  const results = document.getElementById("admin-cards-results");
+  results.innerHTML = `<div class="empty-state">Recherche...</div>`;
+  try {
+    // "!inner" est indispensable ici : sans lui, PostgREST ne filtre que
+    // les noms affichés PARMI les 30 premières cartes récupérées au
+    // hasard, pas les cartes elles-mêmes — d'où l'absence de résultats.
+    const rows = await supabaseAuthedFetch(
+      `cards?select=id,card_number,card_names!inner(id,locale,name),card_images(image_url,variant),sets(name_en)` +
+      `&card_names.name=ilike.*${encodeURIComponent(term)}*&limit=30`
+    );
+    if (!rows.length){
+      results.innerHTML = `<div class="empty-state">Aucune carte trouvée.</div>`;
+      return;
+    }
+    results.innerHTML = `<table class="listing-table"><thead><tr><th></th><th>Carte</th><th>Extension</th><th>Numéro</th><th></th></tr></thead><tbody>
+      ${rows.map(r => {
+        const img = (r.card_images && r.card_images[0]) ? r.card_images[0].image_url : null;
+        return `
+        <tr>
+          <td style="width:36px;">${img ? `<img src="${imageVariants(img,'low').webp}" alt="" width="28" style="border-radius:2px;">` : ""}</td>
+          <td>${(r.card_names.find(n=>n.locale==="en")||r.card_names[0]).name}</td>
+          <td>${r.sets ? r.sets.name_en : "—"}</td>
+          <td>${r.card_number}</td>
+          <td><button class="row-buy" onclick="adminEditCard(${r.id})">Modifier →</button></td>
+        </tr>`;
+      }).join("")}
+    </tbody></table>`;
+  } catch (e) {
+    results.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function adminEditCard(cardId){
+  const results = document.getElementById("admin-cards-results");
+  results.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const [cardRows, variantRows] = await Promise.all([
+      supabaseAuthedFetch(`cards?id=eq.${cardId}&select=id,card_number,card_names(id,locale,name),card_images(image_url,variant)`),
+      supabaseAuthedFetch(`card_variants?card_id=eq.${cardId}&type=eq.normal&select=id,cardmarket_id,tcgplayer_id,cardtrader_id&limit=1`),
+    ]);
+    const card = cardRows[0];
+    const variant = variantRows[0] || {};
+    const img = (card.card_images && card.card_images[0]) ? card.card_images[0].image_url : null;
+
+    results.innerHTML = `
+      <div class="account-panel" style="max-width:520px;margin:0;">
+        <h2 style="font-size:20px;">Modifier la carte #${card.id}</h2>
+        ${img ? `<img src="${imageVariants(img,'high').webp}" alt="" style="max-width:140px;display:block;margin-bottom:16px;border-radius:3px;">` : ""}
+        <div class="account-field"><label>Numéro dans le set</label>
+          <input type="text" id="admin-edit-number" value="${card.card_number || ""}"></div>
+        ${["en","fr","de"].map(locale => {
+          const n = card.card_names.find(x => x.locale === locale);
+          return `<div class="account-field"><label>Nom (${locale.toUpperCase()})</label>
+            <input type="text" id="admin-edit-name-${locale}" value="${n ? n.name.replace(/"/g,"&quot;") : ""}"></div>`;
+        }).join("")}
+        <div class="account-field"><label>Identifiant Cardmarket</label>
+          <input type="text" id="admin-edit-cardmarket-id" value="${variant.cardmarket_id || ""}"></div>
+        <div class="account-field"><label>Identifiant TCGplayer</label>
+          <input type="text" id="admin-edit-tcgplayer-id" value="${variant.tcgplayer_id || ""}"></div>
+        <div class="account-field"><label>Identifiant CardTrader</label>
+          <input type="text" id="admin-edit-cardtrader-id" value="${variant.cardtrader_id || ""}"></div>
+        <div class="auth-error" id="admin-edit-error"></div>
+        <button class="auth-submit" onclick="adminSaveCard(${card.id}, ${variant.id || "null"})">Enregistrer</button>
+        <button class="reset-filters" style="margin-top:8px;" onclick="adminDeleteCard(${card.id})">Supprimer cette carte</button>
+      </div>`;
+  } catch (e) {
+    results.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function adminSaveCard(cardId, variantId){
+  const errorEl = document.getElementById("admin-edit-error");
+  errorEl.textContent = "";
+  try {
+    await supabaseAuthedFetch(`cards?id=eq.${cardId}`, {
+      method: "PATCH", body: JSON.stringify({ card_number: document.getElementById("admin-edit-number").value }),
+    });
+    for (const locale of ["en", "fr", "de"]){
+      const value = document.getElementById(`admin-edit-name-${locale}`).value.trim();
+      if (!value) continue;
+      await supabaseAuthedFetch("card_names", {
+        method: "POST", body: JSON.stringify({ card_id: cardId, locale, name: value }),
+        headers: { Prefer: "resolution=merge-duplicates" },
+      });
+    }
+
+    const marketplaceIds = {
+      cardmarket_id: document.getElementById("admin-edit-cardmarket-id").value.trim() || null,
+      tcgplayer_id: document.getElementById("admin-edit-tcgplayer-id").value.trim() || null,
+      cardtrader_id: document.getElementById("admin-edit-cardtrader-id").value.trim() || null,
+    };
+    if (variantId){
+      await supabaseAuthedFetch(`card_variants?id=eq.${variantId}`, { method: "PATCH", body: JSON.stringify(marketplaceIds) });
+    } else {
+      await supabaseAuthedFetch("card_variants", {
+        method: "POST", body: JSON.stringify({ card_id: cardId, variant_id: "normal", type: "normal", ...marketplaceIds }),
+      });
+    }
+
+    errorEl.className = "auth-error success";
+    errorEl.textContent = "Enregistré.";
+  } catch (e) {
+    errorEl.className = "auth-error";
+    errorEl.textContent = e.message;
+  }
+}
+
+async function adminDeleteCard(cardId){
+  if (!confirm("Supprimer définitivement cette carte (et tout ce qui lui est lié) ?")) return;
+  try {
+    await supabaseAuthedFetch(`cards?id=eq.${cardId}`, { method: "DELETE" });
+    document.getElementById("admin-cards-results").innerHTML = `<div class="empty-state">Carte supprimée.</div>`;
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
+}
+
+/* ---------- Listings ---------- */
+async function renderAdminListings(){
+  const content = document.getElementById("admin-content");
+  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const rows = await supabaseAuthedFetch(
+      `listings?is_active=eq.true&select=id,card_id,seller_name,price,currency,language,listing_url,` +
+      `cards(card_number,card_names(locale,name),sets(name_en)),sites(name)&order=id.desc&limit=100`
+    );
+    if (!rows.length){
+      content.innerHTML = `<div class="empty-state">Aucun listing actif.</div>`;
+      return;
+    }
+    content.innerHTML = `
+      <p style="color:var(--text-faint);font-family:var(--font-mono);font-size:11px;margin-bottom:14px;">
+        100 plus récents listings actifs. Le signalement par les membres (produit expiré/incorrect) viendra compléter cette vue plus tard.
+      </p>
+      <table class="listing-table"><thead><tr><th>Carte</th><th>Extension / N°</th><th>Site</th><th>Vendeur</th><th>Langue</th><th>Prix</th><th></th></tr></thead>
+      <tbody id="admin-listings-tbody">
+        ${rows.map(r => adminListingRowHtml(r)).join("")}
+      </tbody></table>`;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+function adminListingRowHtml(r){
+  const name = r.cards && r.cards.card_names ? (r.cards.card_names.find(n=>n.locale==="en")||r.cards.card_names[0]||{}).name : "?";
+  const setName = r.cards && r.cards.sets ? r.cards.sets.name_en : "—";
+  const cardNumber = r.cards ? r.cards.card_number : "—";
+  return `
+    <tr id="admin-listing-row-${r.id}">
+      <td>${name || "?"}</td>
+      <td class="site-tag">${setName} · ${cardNumber}</td>
+      <td class="site-tag">${r.sites ? r.sites.name : "—"}</td>
+      <td>${r.seller_name || "—"}</td>
+      <td>${r.language || "—"}</td>
+      <td class="listing-price">${r.price} ${r.currency}</td>
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
+        <a class="row-buy" href="${r.listing_url}" target="_blank" rel="noopener">Voir ↗</a>
+        <button class="row-buy" onclick="adminEditListing(${r.id}, ${r.card_id}, '${r.language || ""}', ${r.price})">Modifier</button>
+        <button class="row-buy" onclick="adminDeactivateListing(${r.id})">Désactiver</button>
+        <button class="row-buy" onclick="adminDeleteListing(${r.id})">Supprimer</button>
+      </td>
+    </tr>`;
+}
+
+function adminEditListing(id, cardId, language, price){
+  const row = document.getElementById(`admin-listing-row-${id}`);
+  row.innerHTML = `
+    <td colspan="7">
+      <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;padding:8px 0;">
+        <div><label style="display:block;font-size:10px;color:var(--text-faint);margin-bottom:3px;">ID de la bonne carte</label>
+          <input type="number" id="edit-listing-card-${id}" value="${cardId}" style="width:100px;"></div>
+        <div><label style="display:block;font-size:10px;color:var(--text-faint);margin-bottom:3px;">Langue</label>
+          <select id="edit-listing-lang-${id}">
+            ${["", "fr", "de", "en", "ja", "es", "it"].map(l => `<option value="${l}" ${l===language?"selected":""}>${l || "—"}</option>`).join("")}
+          </select></div>
+        <div><label style="display:block;font-size:10px;color:var(--text-faint);margin-bottom:3px;">Prix</label>
+          <input type="number" step="0.01" id="edit-listing-price-${id}" value="${price}" style="width:90px;"></div>
+        <button class="row-buy" onclick="adminSaveListing(${id})">Enregistrer</button>
+        <button class="row-buy" onclick="renderAdminListings()">Annuler</button>
+      </div>
+    </td>`;
+}
+
+async function adminSaveListing(id){
+  try {
+    const cardId = document.getElementById(`edit-listing-card-${id}`).value;
+    const language = document.getElementById(`edit-listing-lang-${id}`).value;
+    const price = document.getElementById(`edit-listing-price-${id}`).value;
+    await supabaseAuthedFetch(`listings?id=eq.${id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ card_id: parseInt(cardId, 10), language: language || null, price: parseFloat(price) }),
+    });
+    renderAdminListings();
+  } catch (e) {
+    alert(`Impossible d'enregistrer : ${e.message}`);
+  }
+}
+
+async function adminDeactivateListing(id){
+  try {
+    await supabaseAuthedFetch(`listings?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ is_active: false }) });
+    renderAdminListings();
+  } catch (e) { alert(`Erreur : ${e.message}`); }
+}
+async function adminDeleteListing(id){
+  if (!confirm("Supprimer définitivement ce listing ?")) return;
+  try {
+    await supabaseAuthedFetch(`listings?id=eq.${id}`, { method: "DELETE" });
+    renderAdminListings();
+  } catch (e) { alert(`Erreur : ${e.message}`); }
+}
+
+/* ---------- Membres ---------- */
+async function renderAdminMembers(){
+  const content = document.getElementById("admin-content");
+  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const rows = await supabaseAuthedFetch(`profiles?select=id,email,display_name,role,created_at&order=created_at.desc&limit=500`);
+    content.innerHTML = `
+      <p style="color:var(--text-faint);font-family:var(--font-mono);font-size:11px;margin-bottom:14px;">
+        La suppression d'un compte ne peut pas se faire depuis le navigateur (ça demanderait d'exposer une clé
+        sensible côté client) — à faire depuis le tableau de bord Supabase pour l'instant, ou via une fonction
+        serveur dédiée plus tard si le besoin devient fréquent.
+      </p>
+      <table class="listing-table"><thead><tr><th>Pseudo</th><th>Email</th><th>Rôle</th><th>Inscrit le</th></tr></thead><tbody>
+        ${rows.map(r => `
+          <tr>
+            <td>${r.display_name || "—"}</td>
+            <td>${r.email || "—"}</td>
+            <td>
+              ${r.role === "admin"
+                ? `<span class="grade-pill graded" title="Protégé : modifiable uniquement depuis la base directement">🔒 admin</span>`
+                : `<select onchange="adminChangeRole('${r.id}', this.value)">
+                     <option value="user" ${r.role==="user"?"selected":""}>user</option>
+                     <option value="moderator" ${r.role==="moderator"?"selected":""}>moderator</option>
+                     <option value="admin">admin</option>
+                   </select>`}
+            </td>
+            <td class="site-tag">${new Date(r.created_at).toLocaleDateString("fr-FR")}</td>
+          </tr>`).join("")}
+      </tbody></table>`;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function adminChangeRole(userId, newRole){
+  try {
+    await supabaseAuthedFetch(`profiles?id=eq.${userId}`, { method: "PATCH", body: JSON.stringify({ role: newRole }) });
+  } catch (e) {
+    alert(`Impossible de modifier le rôle : ${e.message}`);
+    renderAdminMembers();
+  }
+}
+</script>
+</body>
+</html>
+  supabaseSelect(
     `price_history?card_id=in.(${[...uniqueIds].join(",")})&select=card_id,period_date,avg_price,currency&order=period_dat
