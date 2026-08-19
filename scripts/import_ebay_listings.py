@@ -73,7 +73,7 @@ SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 # appels par carte. Le lot par défaut est calculé pour rester sous la limite
 # de 5000 appels/jour avec une marge de sécurité, quel que soit le nombre de
 # marketplaces configurées.
-_default_batch = max(1, (450 // max(1, len(EBAY_MARKETPLACES))) - 100)
+_default_batch = max(1, (5000 // max(1, len(EBAY_MARKETPLACES))) - 100)
 CARD_BATCH_SIZE = int(os.environ.get("CARD_BATCH_SIZE", str(_default_batch)))
 RESULTS_PER_CARD = 15  # annonces récupérées par carte et par marketplace
 
@@ -207,7 +207,7 @@ def detect_grading(title, pattern, grading_companies_by_name):
 # pourtant clairement françaises. Seuls des mots suffisamment longs et non
 # ambigus sont utilisés.
 LANGUAGE_KEYWORDS = {
-    "fr": r"\b(fra|fran[cç]ais|francais|french)\b",
+    "fr": r"\b(fra|vf|fran[cç]ais(?:e)?|francais(?:e)?|french)\b",
     "de": r"\b(deu|deutsch|german)\b",
     "en": r"\b(eng|english|anglais)\b",
     "ja": r"\b(jpn|japanese|japonais|japan)\b",
@@ -218,16 +218,26 @@ LANGUAGE_PATTERNS = {locale: re.compile(pattern, re.IGNORECASE) for locale, patt
 
 
 def detect_language(title, set_names_by_locale=None):
-    # 1. Indice fort : le nom de l'extension, tel qu'il varie d'une langue à
-    # l'autre, mentionné dans le titre (ex. "Set de Base" ne s'écrit qu'en
-    # français) — plus fiable qu'un simple mot-clé générique. Recherché en
-    # tant que MOT ENTIER (limites de mots), pas comme simple sous-chaîne,
-    # pour éviter qu'un nom très court ne matche par coïncidence.
+    # 1. Indice fort, MAIS seulement si le nom de l'extension diffère
+    # réellement d'une langue à l'autre (ex. "Set de Base" ne s'écrit qu'en
+    # français). La plupart des noms d'extension Pokémon ne sont PAS
+    # traduits (ex. "Aquapolis" identique en EN/FR/DE) — dans ce cas, un
+    # nom qui matche ne dit rien sur la langue réelle de l'annonce, et le
+    # considérer comme un indice provoquait justement le bug observé :
+    # l'ordre arbitraire du dictionnaire faisait gagner systématiquement
+    # une langue au hasard (l'allemand) sur des annonces françaises/anglaises.
     if set_names_by_locale:
+        name_counts = {}
+        for name in set_names_by_locale.values():
+            if name:
+                name_counts[name.lower()] = name_counts.get(name.lower(), 0) + 1
         for locale, name in set_names_by_locale.items():
-            if name and len(name) >= 4 and locale in LANGUAGE_KEYWORDS:
-                if re.search(rf"\b{re.escape(name)}\b", title, re.IGNORECASE):
-                    return locale
+            if not name or len(name) < 4 or locale not in LANGUAGE_KEYWORDS:
+                continue
+            if name_counts[name.lower()] > 1:
+                continue  # ce nom est identique dans au moins une autre langue : pas discriminant, on l'ignore
+            if re.search(rf"\b{re.escape(name)}\b", title, re.IGNORECASE):
+                return locale
 
     # 2. Repli : mots-clés génériques de langue, non ambigus
     for locale, pattern in LANGUAGE_PATTERNS.items():
@@ -366,8 +376,16 @@ def main():
             time.sleep(0.2)
 
         # Une même annonce peut ressortir sur plusieurs marketplaces (un
-        # vendeur français visible aussi depuis EBAY_GB, par ex.)
-        deduped = {row["external_ref"]: row for row in all_rows}
+        # vendeur français visible aussi depuis EBAY_GB, par ex.) — la
+        # fusion ne doit JAMAIS dépendre de l'ordre de traitement des
+        # marketplaces (sans quoi la langue retenue devient arbitraire,
+        # simplement "celle du marketplace traité en dernier").
+        deduped = {}
+        for row in all_rows:
+            ref = row["external_ref"]
+            existing = deduped.get(ref)
+            if existing is None or (existing.get("language") is None and row.get("language") is not None):
+                deduped[ref] = row
         found_refs = set(deduped.keys())
         existing_refs = set(existing_by_ref.keys())
 
@@ -416,7 +434,5 @@ def main():
     print(f"\nRelancez le script pour continuer à partir de l'id {cards[-1]['id']}.")
 
 
-if __name__ == "__main__":
-    main()
 if __name__ == "__main__":
     main()
