@@ -210,6 +210,22 @@
   .collection-set-accordion .collection-set-body{display:none;padding:16px;}
   .collection-set-accordion.open .collection-set-body{display:block;}
 
+  .collection-catalog-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px;flex-wrap:wrap;}
+  .collection-catalog-toolbar .collection-search-wrap{margin-bottom:0;flex:1;min-width:200px;}
+
+  /* Mode grille compact : les sets fermés s'affichent en petites tuiles
+     côte à côte ; celui qu'on déplie s'étale sur toute la largeur pour
+     laisser sa grille de cartes s'afficher normalement en dessous. */
+  .collection-sets-container.grid-mode{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;align-items:start;
+  }
+  .collection-sets-container.grid-mode .collection-set-accordion{margin-bottom:0;}
+  .collection-sets-container.grid-mode .collection-set-accordion.open{grid-column:1 / -1;}
+  .collection-sets-container.grid-mode .collection-set-header{padding:12px;flex-wrap:wrap;}
+  .collection-sets-container.grid-mode .collection-set-header h3{font-size:13px;flex-basis:100%;order:1;margin-top:4px;}
+  .collection-sets-container.grid-mode .collection-set-progress{font-size:10.5px;order:0;}
+  .collection-sets-container.grid-mode .accordion-caret{order:2;}
+
   .collection-tile.not-owned .art-img{filter:grayscale(100%) brightness(0.65);}
   .collection-tile.not-owned .tile-body h3{color:var(--text-faint);}
   .collection-tile.owned .art-img{filter:none;}
@@ -1818,11 +1834,17 @@ async function renderCollectionContent(){
         <div class="collection-stat"><div class="label">Cartes uniques</div><div class="value">${uniqueCardIds.length}</div></div>
         <div class="collection-stat"><div class="label">Valeur estimée</div><div class="value">${displayPrice(totalValue, valueCurrency)}</div></div>
       </div>
-      <div class="search-wrap collection-search-wrap">
-        <span class="search-icon">⌕</span>
-        <input id="collection-search" type="text" placeholder="Filtrer par nom d'extension..." oninput="filterCollectionCatalog(this.value)">
+      <div class="collection-catalog-toolbar">
+        <div class="search-wrap collection-search-wrap">
+          <span class="search-icon">⌕</span>
+          <input id="collection-search" type="text" placeholder="Filtrer par nom d'extension..." oninput="filterCollectionCatalog(this.value)">
+        </div>
+        <div class="view-toggle">
+          <button id="sets-list-btn" class="view-toggle-btn active" onclick="setCollectionSetsViewMode('list')">Liste</button>
+          <button id="sets-grid-btn" class="view-toggle-btn" onclick="setCollectionSetsViewMode('grid')">Grille</button>
+        </div>
       </div>
-      <div id="collection-catalog"><div class="empty-state">Chargement des extensions...</div></div>`;
+      <div id="collection-catalog" class="collection-sets-container"><div class="empty-state">Chargement des extensions...</div></div>`;
     content.innerHTML = statsHtml;
 
     // Léger : uniquement la liste des sets (présents et futurs), pas leurs
@@ -1853,6 +1875,16 @@ async function fetchAllPaginated(basePath){
 
 let collectionCatalogState = null;
 
+let collectionSetsViewMode = "list";
+
+function setCollectionSetsViewMode(mode){
+  collectionSetsViewMode = mode;
+  document.getElementById("sets-list-btn").classList.toggle("active", mode === "list");
+  document.getElementById("sets-grid-btn").classList.toggle("active", mode === "grid");
+  const container = document.getElementById("collection-catalog");
+  if (container) container.classList.toggle("grid-mode", mode === "grid");
+}
+
 function renderCollectionCatalog(){
   const { allSets, ownedBySet } = collectionCatalogState;
   const container = document.getElementById("collection-catalog");
@@ -1874,6 +1906,7 @@ function renderCollectionCatalog(){
         <div class="collection-set-body"><div class="grid"><div class="empty-state">Cliquez pour charger les cartes de cette extension...</div></div></div>
       </div>`;
   }).join("");
+  container.classList.toggle("grid-mode", collectionSetsViewMode === "grid");
 }
 
 /* Récupère les cartes d'UN set à la demande, seulement au premier
