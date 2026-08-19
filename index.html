@@ -191,6 +191,14 @@
   .progress-bar{height:5px;background:var(--panel-light);border-radius:3px;overflow:hidden;margin-bottom:14px;}
   .progress-bar-fill{height:100%;background:var(--gold);}
 
+  .collection-tile{position:relative;}
+  .tile-remove-btn{
+    position:absolute;top:6px;right:6px;z-index:3;width:22px;height:22px;border-radius:50%;
+    background:rgba(13,14,21,0.85);border:1px solid var(--border);color:var(--text-dim);
+    font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .tile-remove-btn:hover{border-color:var(--red);color:var(--red);}
+
   .detail-info h1{font-family:var(--font-display);font-size:30px;margin:0 0 6px;font-weight:600;}
   .detail-meta{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-bottom:22px;text-transform:uppercase;}
   .detail-number{font-family:var(--font-mono);font-size:16px;color:var(--text-faint);font-weight:400;}
@@ -1638,14 +1646,25 @@ async function renderCollectionContent(){
         bySet[setId] = {
           setName: pickLocalized(row.cards.sets.set_names, LANG) || row.cards.sets.name_en,
           totalCards: row.cards.sets.total_cards,
-          items: [],
+          byCard: {},
         };
       }
-      bySet[setId].items.push(row);
+      // Regroupe par carte : deux lignes de la même carte comptent pour
+      // UNE seule carte dans la progression, pas deux — seule la quantité
+      // totale (affichée en badge) augmente.
+      const cardId = row.cards.id;
+      if (!bySet[setId].byCard[cardId]){
+        bySet[setId].byCard[cardId] = { card: row.cards, rowIds: [], totalQty: 0, badge: null };
+      }
+      const entry = bySet[setId].byCard[cardId];
+      entry.rowIds.push(row.id);
+      entry.totalQty += row.quantity || 1;
+      if (!entry.badge) entry.badge = row.is_graded ? `${row.grade ?? ""} gradée` : (row.condition || "");
     }
 
     content.innerHTML = Object.entries(bySet).map(([setId, group]) => {
-      const ownedCount = group.items.length;
+      const cardEntries = Object.values(group.byCard);
+      const ownedCount = cardEntries.length; // cartes UNIQUES, pas le nombre de lignes/exemplaires
       const pct = group.totalCards ? Math.round((ownedCount / group.totalCards) * 100) : null;
       return `
         <div class="collection-set-group">
@@ -1655,18 +1674,21 @@ async function renderCollectionContent(){
           </div>
           ${group.totalCards ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>` : ""}
           <div class="grid">
-            ${group.items.map(row => {
-              const c = shapeCard(row.cards);
-              const badge = row.is_graded ? `${row.grade ?? ""} gradée` : (row.condition || "");
+            ${cardEntries.map(entry => {
+              const c = shapeCard(entry.card);
+              const lastRowId = entry.rowIds[entry.rowIds.length - 1];
               return `
-                <div class="card-tile" onclick="navigateCard(${c.id})">
-                  <div class="art">
-                    ${row.quantity > 1 ? `<span class="set-tag">×${row.quantity}</span>` : ""}
-                    ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
-                  </div>
-                  <div class="tile-body">
-                    <h3>${c.name}</h3>
-                    ${badge ? `<div class="tcg-label">${badge}</div>` : ""}
+                <div class="card-tile collection-tile">
+                  <button class="tile-remove-btn" title="Retirer un exemplaire" onclick="event.stopPropagation();removeFromCollection(${lastRowId})">×</button>
+                  <div onclick="navigateCard(${c.id})">
+                    <div class="art">
+                      ${entry.totalQty > 1 ? `<span class="set-tag">×${entry.totalQty}</span>` : ""}
+                      ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
+                    </div>
+                    <div class="tile-body">
+                      <h3>${c.name}</h3>
+                      ${entry.badge ? `<div class="tcg-label">${entry.badge}</div>` : ""}
+                    </div>
                   </div>
                 </div>`;
             }).join("")}
@@ -1677,6 +1699,16 @@ async function renderCollectionContent(){
     content.innerHTML = `<div class="empty-state">Erreur de chargement : ${e.message}</div>`;
   }
 }
+
+async function removeFromCollection(rowId){
+  try {
+    await supabaseAuthedFetch(`collection_items?id=eq.${rowId}`, { method: "DELETE" });
+    renderCollectionContent();
+  } catch (e) {
+    alert(`Impossible de retirer cette carte : ${e.message}`);
+  }
+}
+
 
 function renderCollectionGrid(cards, emptyMessage){
   const content = document.getElementById("collection-content");
