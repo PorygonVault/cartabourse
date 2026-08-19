@@ -551,9 +551,9 @@
     <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Administration</div>
 
     <div class="listings-tabs" id="admin-tabs">
-      <button class="tab-btn active" data-tab="cards" onclick="setAdminTab('cards')">Cartes</button>
-      <button class="tab-btn" data-tab="listings" onclick="setAdminTab('listings')">Listings</button>
-      <button class="tab-btn" data-tab="members" onclick="setAdminTab('members')">Membres</button>
+      <button class="tab-btn active" data-tab="cards" onclick="navigateAdmin('cards');return false;">Cartes</button>
+      <button class="tab-btn" data-tab="listings" onclick="navigateAdmin('listings');return false;">Listings</button>
+      <button class="tab-btn" data-tab="members" onclick="navigateAdmin('members');return false;">Membres</button>
     </div>
 
     <div id="admin-content"><div class="empty-state">Chargement...</div></div>
@@ -1134,7 +1134,7 @@ function navigateAccount(){ location.hash = "#/account"; }
 function navigateSet(id){ location.hash = "#/set/" + id; }
 function navigateCollection(){ location.hash = "#/collection"; }
 function navigateFavorites(){ location.hash = "#/favorites"; }
-function navigateAdmin(){ location.hash = "#/admin"; }
+function navigateAdmin(tab = "cards"){ location.hash = "#/admin/" + tab; }
 
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", init);
@@ -1162,7 +1162,8 @@ function route(){
   const isAccount = hash === "#/account";
   const isCollection = hash === "#/collection";
   const isFavorites = hash === "#/favorites";
-  const isAdmin = hash === "#/admin";
+  const adminMatch = hash.match(/^#\/admin\/(cards|listings|members)$/);
+  const isAdminRoot = hash === "#/admin";
 
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
@@ -1183,9 +1184,9 @@ function route(){
   } else if (isCollection || isFavorites){
     document.getElementById("view-collection").classList.add("active");
     renderCollectionPage(isFavorites ? "favorites" : "collection");
-  } else if (isAdmin){
+  } else if (adminMatch || isAdminRoot){
     document.getElementById("view-admin").classList.add("active");
-    renderAdminPage();
+    renderAdminPage(adminMatch ? adminMatch[1] : "cards");
   } else if (searchMatch){
     document.getElementById("view-home").classList.add("active");
     const term = decodeURIComponent(searchMatch[1]);
@@ -2049,7 +2050,7 @@ function renderCollectionGrid(cards, emptyMessage){
    ============================================================ */
 let currentAdminTab = "cards";
 
-async function renderAdminPage(){
+async function renderAdminPage(tab = "cards"){
   const content = document.getElementById("admin-content");
   const { data } = await supabaseClient.auth.getSession();
   if (!data.session){
@@ -2066,7 +2067,7 @@ async function renderAdminPage(){
     content.innerHTML = `<p style="color:var(--red);">Erreur de vérification des droits : ${e.message}</p>`;
     return;
   }
-  setAdminTab(currentAdminTab);
+  setAdminTab(tab);
 }
 
 function setAdminTab(tab){
@@ -2096,7 +2097,17 @@ async function renderAdminCards(){
         </select></div>
       <div class="account-field" id="admin-new-set-name-wrap" style="display:none;">
         <label>Nom de la nouvelle extension (EN)</label>
-        <input type="text" id="admin-new-set-name" placeholder="ex: Paldean Fates"></div>
+        <input type="text" id="admin-new-set-name" placeholder="ex: Paldean Fates">
+        <label style="margin-top:10px;">Nombre de cartes (optionnel)</label>
+        <input type="number" id="admin-new-set-total" placeholder="ex: 102">
+        <label style="margin-top:10px;">Zone de publication</label>
+        <select id="admin-new-set-region">
+          <option value="intl">International (intl)</option>
+          <option value="jp">Japon (jp)</option>
+        </select>
+        <label style="margin-top:10px;">Abréviation (optionnel)</label>
+        <input type="text" id="admin-new-set-abbr" placeholder="ex: PAF">
+      </div>
       <div class="account-field"><label>Numéro dans le set</label>
         <input type="text" id="admin-new-number" placeholder="ex: 4"></div>
       <div class="account-field"><label>Nom (EN) — obligatoire</label>
@@ -2141,10 +2152,21 @@ async function adminCreateCard(){
         errorEl.textContent = "Le nom de la nouvelle extension est obligatoire.";
         return;
       }
-      const newSet = await supabaseAuthedFetch("sets", {
-        method: "POST",
-        body: JSON.stringify({ game_id: 1, code: newSetName.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name_en: newSetName }),
-      });
+      const newSetTotal = document.getElementById("admin-new-set-total").value.trim();
+      const newSetRegion = document.getElementById("admin-new-set-region").value;
+      const newSetAbbr = document.getElementById("admin-new-set-abbr").value.trim();
+      const newSetBody = {
+        game_id: 1,
+        // L'abréviation, si donnée, sert aussi de "code" (identifiant
+        // technique de l'extension) — sinon, repli sur le nom simplifié.
+        code: newSetAbbr ? newSetAbbr.toLowerCase().replace(/[^a-z0-9]+/g, "-") : newSetName.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        name_en: newSetName,
+        release_region: newSetRegion,
+      };
+      if (newSetTotal) newSetBody.total_cards = parseInt(newSetTotal, 10);
+      if (newSetAbbr) newSetBody.official_abbreviation = newSetAbbr;
+
+      const newSet = await supabaseAuthedFetch("sets", { method: "POST", body: JSON.stringify(newSetBody) });
       setId = newSet[0].id;
     }
 
@@ -2169,6 +2191,9 @@ async function adminCreateCard(){
     document.getElementById("admin-new-name-de").value = "";
     document.getElementById("admin-new-set-name").value = "";
     document.getElementById("admin-new-set-name-wrap").style.display = "none";
+    document.getElementById("admin-new-set-total").value = "";
+    document.getElementById("admin-new-set-abbr").value = "";
+    document.getElementById("admin-new-set-region").value = "intl";
     adminLoadSetsIntoSelect(); // pour que la nouvelle extension apparaisse dans la liste dès la prochaine carte
   } catch (e) {
     errorEl.textContent = e.message.toLowerCase().includes("duplicate")
@@ -2185,21 +2210,25 @@ async function adminSearchCards(term){
     // les noms affichés PARMI les 30 premières cartes récupérées au
     // hasard, pas les cartes elles-mêmes — d'où l'absence de résultats.
     const rows = await supabaseAuthedFetch(
-      `cards?select=id,card_number,card_names!inner(id,locale,name),sets(name_en)` +
+      `cards?select=id,card_number,card_names!inner(id,locale,name),card_images(image_url,variant),sets(name_en)` +
       `&card_names.name=ilike.*${encodeURIComponent(term)}*&limit=30`
     );
     if (!rows.length){
       results.innerHTML = `<div class="empty-state">Aucune carte trouvée.</div>`;
       return;
     }
-    results.innerHTML = `<table class="listing-table"><thead><tr><th>Carte</th><th>Extension</th><th>Numéro</th><th></th></tr></thead><tbody>
-      ${rows.map(r => `
+    results.innerHTML = `<table class="listing-table"><thead><tr><th></th><th>Carte</th><th>Extension</th><th>Numéro</th><th></th></tr></thead><tbody>
+      ${rows.map(r => {
+        const img = (r.card_images && r.card_images[0]) ? r.card_images[0].image_url : null;
+        return `
         <tr>
+          <td style="width:36px;">${img ? `<img src="${imageVariants(img,'low').webp}" alt="" width="28" style="border-radius:2px;">` : ""}</td>
           <td>${(r.card_names.find(n=>n.locale==="en")||r.card_names[0]).name}</td>
           <td>${r.sets ? r.sets.name_en : "—"}</td>
           <td>${r.card_number}</td>
           <td><button class="row-buy" onclick="adminEditCard(${r.id})">Modifier →</button></td>
-        </tr>`).join("")}
+        </tr>`;
+      }).join("")}
     </tbody></table>`;
   } catch (e) {
     results.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
@@ -2210,11 +2239,18 @@ async function adminEditCard(cardId){
   const results = document.getElementById("admin-cards-results");
   results.innerHTML = `<div class="empty-state">Chargement...</div>`;
   try {
-    const rows = await supabaseAuthedFetch(`cards?id=eq.${cardId}&select=id,card_number,card_names(id,locale,name)`);
-    const card = rows[0];
+    const [cardRows, variantRows] = await Promise.all([
+      supabaseAuthedFetch(`cards?id=eq.${cardId}&select=id,card_number,card_names(id,locale,name),card_images(image_url,variant)`),
+      supabaseAuthedFetch(`card_variants?card_id=eq.${cardId}&type=eq.normal&select=id,cardmarket_id,tcgplayer_id,cardtrader_id&limit=1`),
+    ]);
+    const card = cardRows[0];
+    const variant = variantRows[0] || {};
+    const img = (card.card_images && card.card_images[0]) ? card.card_images[0].image_url : null;
+
     results.innerHTML = `
       <div class="account-panel" style="max-width:520px;margin:0;">
         <h2 style="font-size:20px;">Modifier la carte #${card.id}</h2>
+        ${img ? `<img src="${imageVariants(img,'high').webp}" alt="" style="max-width:140px;display:block;margin-bottom:16px;border-radius:3px;">` : ""}
         <div class="account-field"><label>Numéro dans le set</label>
           <input type="text" id="admin-edit-number" value="${card.card_number || ""}"></div>
         ${["en","fr","de"].map(locale => {
@@ -2222,8 +2258,14 @@ async function adminEditCard(cardId){
           return `<div class="account-field"><label>Nom (${locale.toUpperCase()})</label>
             <input type="text" id="admin-edit-name-${locale}" value="${n ? n.name.replace(/"/g,"&quot;") : ""}"></div>`;
         }).join("")}
+        <div class="account-field"><label>Identifiant Cardmarket</label>
+          <input type="text" id="admin-edit-cardmarket-id" value="${variant.cardmarket_id || ""}"></div>
+        <div class="account-field"><label>Identifiant TCGplayer</label>
+          <input type="text" id="admin-edit-tcgplayer-id" value="${variant.tcgplayer_id || ""}"></div>
+        <div class="account-field"><label>Identifiant CardTrader</label>
+          <input type="text" id="admin-edit-cardtrader-id" value="${variant.cardtrader_id || ""}"></div>
         <div class="auth-error" id="admin-edit-error"></div>
-        <button class="auth-submit" onclick="adminSaveCard(${card.id})">Enregistrer</button>
+        <button class="auth-submit" onclick="adminSaveCard(${card.id}, ${variant.id || "null"})">Enregistrer</button>
         <button class="reset-filters" style="margin-top:8px;" onclick="adminDeleteCard(${card.id})">Supprimer cette carte</button>
       </div>`;
   } catch (e) {
@@ -2231,7 +2273,7 @@ async function adminEditCard(cardId){
   }
 }
 
-async function adminSaveCard(cardId){
+async function adminSaveCard(cardId, variantId){
   const errorEl = document.getElementById("admin-edit-error");
   errorEl.textContent = "";
   try {
@@ -2246,6 +2288,20 @@ async function adminSaveCard(cardId){
         headers: { Prefer: "resolution=merge-duplicates" },
       });
     }
+
+    const marketplaceIds = {
+      cardmarket_id: document.getElementById("admin-edit-cardmarket-id").value.trim() || null,
+      tcgplayer_id: document.getElementById("admin-edit-tcgplayer-id").value.trim() || null,
+      cardtrader_id: document.getElementById("admin-edit-cardtrader-id").value.trim() || null,
+    };
+    if (variantId){
+      await supabaseAuthedFetch(`card_variants?id=eq.${variantId}`, { method: "PATCH", body: JSON.stringify(marketplaceIds) });
+    } else {
+      await supabaseAuthedFetch("card_variants", {
+        method: "POST", body: JSON.stringify({ card_id: cardId, variant_id: "normal", type: "normal", ...marketplaceIds }),
+      });
+    }
+
     errorEl.className = "auth-error success";
     errorEl.textContent = "Enregistré.";
   } catch (e) {
@@ -2290,6 +2346,7 @@ async function renderAdminListings(){
               <td>${r.seller_name || "—"}</td>
               <td class="listing-price">${r.price} ${r.currency}</td>
               <td style="display:flex;gap:6px;">
+                <a class="row-buy" href="${r.listing_url}" target="_blank" rel="noopener">Voir l'annonce ↗</a>
                 <button class="row-buy" onclick="adminDeactivateListing(${r.id})">Désactiver</button>
                 <button class="row-buy" onclick="adminDeleteListing(${r.id})">Supprimer</button>
               </td>
