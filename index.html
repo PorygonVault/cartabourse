@@ -1269,11 +1269,15 @@ async function toggleFavorite(cardId){
     if (existing.length){
       await supabaseAuthedFetch(`favorites?id=eq.${existing[0].id}`, { method: "DELETE" });
     } else {
-      await supabaseAuthedFetch("favorites", { method: "POST", body: JSON.stringify({ card_id: cardId }) });
+      await supabaseAuthedFetch("favorites", {
+        method: "POST",
+        body: JSON.stringify({ card_id: cardId, user_id: data.session.user.id }),
+      });
     }
     renderCollectionActions(cardId);
   } catch (e) {
     console.error("Erreur favoris :", e.message);
+    alert(`Impossible de mettre à jour les favoris : ${e.message}`);
   }
 }
 
@@ -1287,11 +1291,15 @@ async function addToCollection(cardId){
     // s'affiner plus tard depuis la page collection elle-même.
     await supabaseAuthedFetch("collection_items", {
       method: "POST",
-      body: JSON.stringify({ card_id: cardId, quantity: 1, condition: "NM", is_graded: false }),
+      body: JSON.stringify({
+        card_id: cardId, user_id: data.session.user.id,
+        quantity: 1, condition: "NM", is_graded: false,
+      }),
     });
     renderCollectionActions(cardId);
   } catch (e) {
     console.error("Erreur ajout collection :", e.message);
+    alert(`Impossible d'ajouter à la collection : ${e.message}`);
   }
 }
 
