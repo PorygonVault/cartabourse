@@ -345,7 +345,9 @@
   .row-buy{
     font-family:var(--font-mono);font-size:11px;text-transform:uppercase;color:var(--text-dim);
     border:1px solid var(--border);padding:5px 10px;border-radius:var(--radius);white-space:nowrap;
+    background:transparent;cursor:pointer;
   }
+  .row-buy:hover{border-color:var(--gold);color:var(--gold-bright);}
   tr:hover .row-buy{border-color:var(--gold);color:var(--gold-bright);}
 
   .listings-tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:1px solid var(--border);}
@@ -2084,23 +2086,114 @@ async function renderAdminCards(){
       <input id="admin-card-search" type="text" placeholder="Rechercher une carte à modifier... (Entrée)"
              onkeydown="if(event.key==='Enter')adminSearchCards(this.value)">
     </div>
-    <div id="admin-cards-results" style="margin-top:16px;"></div>`;
+    <div id="admin-cards-results" style="margin-top:16px;"></div>
+
+    <div class="account-panel" style="max-width:520px;margin-top:36px;padding-top:24px;border-top:1px solid var(--border);">
+      <h2 style="font-size:18px;">Ajouter une nouvelle carte</h2>
+      <div class="account-field"><label>Extension</label>
+        <select id="admin-new-set" onchange="document.getElementById('admin-new-set-name-wrap').style.display=this.value==='__new__'?'block':'none';">
+          <option value="">Chargement des extensions...</option>
+        </select></div>
+      <div class="account-field" id="admin-new-set-name-wrap" style="display:none;">
+        <label>Nom de la nouvelle extension (EN)</label>
+        <input type="text" id="admin-new-set-name" placeholder="ex: Paldean Fates"></div>
+      <div class="account-field"><label>Numéro dans le set</label>
+        <input type="text" id="admin-new-number" placeholder="ex: 4"></div>
+      <div class="account-field"><label>Nom (EN) — obligatoire</label>
+        <input type="text" id="admin-new-name-en"></div>
+      <div class="account-field"><label>Nom (FR)</label><input type="text" id="admin-new-name-fr"></div>
+      <div class="account-field"><label>Nom (DE)</label><input type="text" id="admin-new-name-de"></div>
+      <div class="auth-error" id="admin-new-card-error"></div>
+      <button class="auth-submit" onclick="adminCreateCard()">Créer la carte</button>
+    </div>`;
+  adminLoadSetsIntoSelect();
+}
+
+async function adminLoadSetsIntoSelect(){
+  const select = document.getElementById("admin-new-set");
+  try {
+    const sets = await fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`);
+    select.innerHTML = `<option value="__new__">+ Nouvelle extension...</option>` +
+      sets.map(s => `<option value="${s.id}">${s.name_en}</option>`).join("");
+  } catch (e) {
+    select.innerHTML = `<option value="">Erreur de chargement des extensions</option>`;
+  }
+}
+
+async function adminCreateCard(){
+  const errorEl = document.getElementById("admin-new-card-error");
+  errorEl.className = "auth-error";
+  errorEl.textContent = "";
+
+  let setId = document.getElementById("admin-new-set").value;
+  const cardNumber = document.getElementById("admin-new-number").value.trim();
+  const nameEn = document.getElementById("admin-new-name-en").value.trim();
+
+  if (!setId || !cardNumber || !nameEn){
+    errorEl.textContent = "Extension, numéro et nom (EN) sont obligatoires.";
+    return;
+  }
+
+  try {
+    if (setId === "__new__"){
+      const newSetName = document.getElementById("admin-new-set-name").value.trim();
+      if (!newSetName){
+        errorEl.textContent = "Le nom de la nouvelle extension est obligatoire.";
+        return;
+      }
+      const newSet = await supabaseAuthedFetch("sets", {
+        method: "POST",
+        body: JSON.stringify({ game_id: 1, code: newSetName.toLowerCase().replace(/[^a-z0-9]+/g, "-"), name_en: newSetName }),
+      });
+      setId = newSet[0].id;
+    }
+
+    const created = await supabaseAuthedFetch("cards", {
+      method: "POST",
+      body: JSON.stringify({ set_id: parseInt(setId, 10), card_number: cardNumber, variant: "normal" }),
+    });
+    const cardId = created[0].id;
+
+    const nameRows = [{ card_id: cardId, locale: "en", name: nameEn }];
+    const nameFr = document.getElementById("admin-new-name-fr").value.trim();
+    const nameDe = document.getElementById("admin-new-name-de").value.trim();
+    if (nameFr) nameRows.push({ card_id: cardId, locale: "fr", name: nameFr });
+    if (nameDe) nameRows.push({ card_id: cardId, locale: "de", name: nameDe });
+    await supabaseAuthedFetch("card_names", { method: "POST", body: JSON.stringify(nameRows) });
+
+    errorEl.className = "auth-error success";
+    errorEl.textContent = `Carte créée (id ${cardId}).`;
+    document.getElementById("admin-new-number").value = "";
+    document.getElementById("admin-new-name-en").value = "";
+    document.getElementById("admin-new-name-fr").value = "";
+    document.getElementById("admin-new-name-de").value = "";
+    document.getElementById("admin-new-set-name").value = "";
+    document.getElementById("admin-new-set-name-wrap").style.display = "none";
+    adminLoadSetsIntoSelect(); // pour que la nouvelle extension apparaisse dans la liste dès la prochaine carte
+  } catch (e) {
+    errorEl.textContent = e.message.toLowerCase().includes("duplicate")
+      ? "Cette carte existe déjà dans ce set avec ce numéro."
+      : e.message;
+  }
 }
 
 async function adminSearchCards(term){
   const results = document.getElementById("admin-cards-results");
   results.innerHTML = `<div class="empty-state">Recherche...</div>`;
   try {
+    // "!inner" est indispensable ici : sans lui, PostgREST ne filtre que
+    // les noms affichés PARMI les 30 premières cartes récupérées au
+    // hasard, pas les cartes elles-mêmes — d'où l'absence de résultats.
     const rows = await supabaseAuthedFetch(
-      `cards?select=id,card_number,card_names(id,locale,name),sets(name_en)&card_names.name=ilike.*${encodeURIComponent(term)}*&limit=30`
+      `cards?select=id,card_number,card_names!inner(id,locale,name),sets(name_en)` +
+      `&card_names.name=ilike.*${encodeURIComponent(term)}*&limit=30`
     );
-    const withMatch = rows.filter(r => r.card_names && r.card_names.length);
-    if (!withMatch.length){
+    if (!rows.length){
       results.innerHTML = `<div class="empty-state">Aucune carte trouvée.</div>`;
       return;
     }
     results.innerHTML = `<table class="listing-table"><thead><tr><th>Carte</th><th>Extension</th><th>Numéro</th><th></th></tr></thead><tbody>
-      ${withMatch.map(r => `
+      ${rows.map(r => `
         <tr>
           <td>${(r.card_names.find(n=>n.locale==="en")||r.card_names[0]).name}</td>
           <td>${r.sets ? r.sets.name_en : "—"}</td>
@@ -2240,11 +2333,13 @@ async function renderAdminMembers(){
             <td>${r.display_name || "—"}</td>
             <td>${r.email || "—"}</td>
             <td>
-              <select onchange="adminChangeRole('${r.id}', this.value)">
-                <option value="user" ${r.role==="user"?"selected":""}>user</option>
-                <option value="moderator" ${r.role==="moderator"?"selected":""}>moderator</option>
-                <option value="admin" ${r.role==="admin"?"selected":""}>admin</option>
-              </select>
+              ${r.role === "admin"
+                ? `<span class="grade-pill graded" title="Protégé : modifiable uniquement depuis la base directement">🔒 admin</span>`
+                : `<select onchange="adminChangeRole('${r.id}', this.value)">
+                     <option value="user" ${r.role==="user"?"selected":""}>user</option>
+                     <option value="moderator" ${r.role==="moderator"?"selected":""}>moderator</option>
+                     <option value="admin">admin</option>
+                   </select>`}
             </td>
             <td class="site-tag">${new Date(r.created_at).toLocaleDateString("fr-FR")}</td>
           </tr>`).join("")}
