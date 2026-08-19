@@ -545,6 +545,18 @@
     <div id="collection-content"><div class="empty-state">Chargement...</div></div>
   </section>
 
+  <section id="view-admin" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Administration</div>
+
+    <div class="listings-tabs" id="admin-tabs">
+      <button class="tab-btn active" data-tab="cards" onclick="setAdminTab('cards')">Cartes</button>
+      <button class="tab-btn" data-tab="listings" onclick="setAdminTab('listings')">Listings</button>
+      <button class="tab-btn" data-tab="members" onclick="setAdminTab('members')">Membres</button>
+    </div>
+
+    <div id="admin-content"><div class="empty-state">Chargement...</div></div>
+  </section>
+
   <section id="view-account" class="view">
     <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Mon compte</div>
     <div class="account-panel">
@@ -769,12 +781,17 @@ async function renderAuthArea(session){
   const area = document.getElementById("auth-area");
   if (session && session.user){
     let label = session.user.email;
+    let role = "user";
     try {
-      const rows = await supabaseAuthedFetch(`profiles?id=eq.${session.user.id}&select=display_name`);
-      if (rows && rows[0] && rows[0].display_name) label = rows[0].display_name;
+      const rows = await supabaseAuthedFetch(`profiles?id=eq.${session.user.id}&select=display_name,role`);
+      if (rows && rows[0]){
+        if (rows[0].display_name) label = rows[0].display_name;
+        role = rows[0].role || "user";
+      }
     } catch (_) { /* on garde l'email en repli si le profil n'est pas encore accessible */ }
     area.innerHTML = `
       <a href="#" class="auth-btn" onclick="navigateCollection();return false;">Ma collection</a>
+      ${role === "admin" ? `<a href="#" class="auth-btn" onclick="navigateAdmin();return false;">Admin</a>` : ""}
       <span class="auth-user" onclick="navigateAccount()" title="Mon compte">${label}</span>
       <button class="auth-btn" onclick="signOut()">Se déconnecter</button>
     `;
@@ -1115,6 +1132,7 @@ function navigateAccount(){ location.hash = "#/account"; }
 function navigateSet(id){ location.hash = "#/set/" + id; }
 function navigateCollection(){ location.hash = "#/collection"; }
 function navigateFavorites(){ location.hash = "#/favorites"; }
+function navigateAdmin(){ location.hash = "#/admin"; }
 
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", init);
@@ -1142,12 +1160,14 @@ function route(){
   const isAccount = hash === "#/account";
   const isCollection = hash === "#/collection";
   const isFavorites = hash === "#/favorites";
+  const isAdmin = hash === "#/admin";
 
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
   document.getElementById("view-set").classList.remove("active");
   document.getElementById("view-account").classList.remove("active");
   document.getElementById("view-collection").classList.remove("active");
+  document.getElementById("view-admin").classList.remove("active");
 
   if (cardMatch){
     document.getElementById("view-card").classList.add("active");
@@ -1161,6 +1181,9 @@ function route(){
   } else if (isCollection || isFavorites){
     document.getElementById("view-collection").classList.add("active");
     renderCollectionPage(isFavorites ? "favorites" : "collection");
+  } else if (isAdmin){
+    document.getElementById("view-admin").classList.add("active");
+    renderAdminPage();
   } else if (searchMatch){
     document.getElementById("view-home").classList.add("active");
     const term = decodeURIComponent(searchMatch[1]);
@@ -2015,6 +2038,229 @@ function renderCollectionGrid(cards, emptyMessage){
       </div>
       <div class="tile-body"><h3>${c.name}</h3></div>
     </div>`).join("")}</div>`;
+}
+
+/* ============================================================
+   ADMINISTRATION
+   La vraie sécurité est côté base (RLS + is_admin()) — cette vérification
+   ne sert qu'à l'affichage, pas de protection réelle en elle-même.
+   ============================================================ */
+let currentAdminTab = "cards";
+
+async function renderAdminPage(){
+  const content = document.getElementById("admin-content");
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){
+    content.innerHTML = `<p style="color:var(--text-dim);">Vous devez être connecté.</p><button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
+    return;
+  }
+  try {
+    const rows = await supabaseAuthedFetch(`profiles?id=eq.${data.session.user.id}&select=role`);
+    if (!rows.length || rows[0].role !== "admin"){
+      content.innerHTML = `<p style="color:var(--text-dim);">Accès réservé aux administrateurs.</p>`;
+      return;
+    }
+  } catch (e) {
+    content.innerHTML = `<p style="color:var(--red);">Erreur de vérification des droits : ${e.message}</p>`;
+    return;
+  }
+  setAdminTab(currentAdminTab);
+}
+
+function setAdminTab(tab){
+  currentAdminTab = tab;
+  document.querySelectorAll("#admin-tabs .tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tab));
+  if (tab === "cards") renderAdminCards();
+  else if (tab === "listings") renderAdminListings();
+  else renderAdminMembers();
+}
+
+/* ---------- Cartes ---------- */
+async function renderAdminCards(){
+  const content = document.getElementById("admin-content");
+  content.innerHTML = `
+    <div class="search-wrap collection-search-wrap" style="max-width:420px;">
+      <span class="search-icon">⌕</span>
+      <input id="admin-card-search" type="text" placeholder="Rechercher une carte à modifier... (Entrée)"
+             onkeydown="if(event.key==='Enter')adminSearchCards(this.value)">
+    </div>
+    <div id="admin-cards-results" style="margin-top:16px;"></div>`;
+}
+
+async function adminSearchCards(term){
+  const results = document.getElementById("admin-cards-results");
+  results.innerHTML = `<div class="empty-state">Recherche...</div>`;
+  try {
+    const rows = await supabaseAuthedFetch(
+      `cards?select=id,card_number,card_names(id,locale,name),sets(name_en)&card_names.name=ilike.*${encodeURIComponent(term)}*&limit=30`
+    );
+    const withMatch = rows.filter(r => r.card_names && r.card_names.length);
+    if (!withMatch.length){
+      results.innerHTML = `<div class="empty-state">Aucune carte trouvée.</div>`;
+      return;
+    }
+    results.innerHTML = `<table class="listing-table"><thead><tr><th>Carte</th><th>Extension</th><th>Numéro</th><th></th></tr></thead><tbody>
+      ${withMatch.map(r => `
+        <tr>
+          <td>${(r.card_names.find(n=>n.locale==="en")||r.card_names[0]).name}</td>
+          <td>${r.sets ? r.sets.name_en : "—"}</td>
+          <td>${r.card_number}</td>
+          <td><button class="row-buy" onclick="adminEditCard(${r.id})">Modifier →</button></td>
+        </tr>`).join("")}
+    </tbody></table>`;
+  } catch (e) {
+    results.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function adminEditCard(cardId){
+  const results = document.getElementById("admin-cards-results");
+  results.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const rows = await supabaseAuthedFetch(`cards?id=eq.${cardId}&select=id,card_number,card_names(id,locale,name)`);
+    const card = rows[0];
+    results.innerHTML = `
+      <div class="account-panel" style="max-width:520px;margin:0;">
+        <h2 style="font-size:20px;">Modifier la carte #${card.id}</h2>
+        <div class="account-field"><label>Numéro dans le set</label>
+          <input type="text" id="admin-edit-number" value="${card.card_number || ""}"></div>
+        ${["en","fr","de"].map(locale => {
+          const n = card.card_names.find(x => x.locale === locale);
+          return `<div class="account-field"><label>Nom (${locale.toUpperCase()})</label>
+            <input type="text" id="admin-edit-name-${locale}" value="${n ? n.name.replace(/"/g,"&quot;") : ""}"></div>`;
+        }).join("")}
+        <div class="auth-error" id="admin-edit-error"></div>
+        <button class="auth-submit" onclick="adminSaveCard(${card.id})">Enregistrer</button>
+        <button class="reset-filters" style="margin-top:8px;" onclick="adminDeleteCard(${card.id})">Supprimer cette carte</button>
+      </div>`;
+  } catch (e) {
+    results.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function adminSaveCard(cardId){
+  const errorEl = document.getElementById("admin-edit-error");
+  errorEl.textContent = "";
+  try {
+    await supabaseAuthedFetch(`cards?id=eq.${cardId}`, {
+      method: "PATCH", body: JSON.stringify({ card_number: document.getElementById("admin-edit-number").value }),
+    });
+    for (const locale of ["en", "fr", "de"]){
+      const value = document.getElementById(`admin-edit-name-${locale}`).value.trim();
+      if (!value) continue;
+      await supabaseAuthedFetch("card_names", {
+        method: "POST", body: JSON.stringify({ card_id: cardId, locale, name: value }),
+        headers: { Prefer: "resolution=merge-duplicates" },
+      });
+    }
+    errorEl.className = "auth-error success";
+    errorEl.textContent = "Enregistré.";
+  } catch (e) {
+    errorEl.className = "auth-error";
+    errorEl.textContent = e.message;
+  }
+}
+
+async function adminDeleteCard(cardId){
+  if (!confirm("Supprimer définitivement cette carte (et tout ce qui lui est lié) ?")) return;
+  try {
+    await supabaseAuthedFetch(`cards?id=eq.${cardId}`, { method: "DELETE" });
+    document.getElementById("admin-cards-results").innerHTML = `<div class="empty-state">Carte supprimée.</div>`;
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
+}
+
+/* ---------- Listings ---------- */
+async function renderAdminListings(){
+  const content = document.getElementById("admin-content");
+  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const rows = await supabaseAuthedFetch(
+      `listings?is_active=eq.true&select=id,seller_name,price,currency,listing_url,cards(card_names(locale,name)),sites(name)&order=id.desc&limit=100`
+    );
+    if (!rows.length){
+      content.innerHTML = `<div class="empty-state">Aucun listing actif.</div>`;
+      return;
+    }
+    content.innerHTML = `
+      <p style="color:var(--text-faint);font-family:var(--font-mono);font-size:11px;margin-bottom:14px;">
+        100 plus récents listings actifs. Le signalement par les membres (produit expiré/incorrect) viendra compléter cette vue plus tard.
+      </p>
+      <table class="listing-table"><thead><tr><th>Carte</th><th>Site</th><th>Vendeur</th><th>Prix</th><th></th></tr></thead><tbody>
+        ${rows.map(r => {
+          const name = r.cards && r.cards.card_names ? (r.cards.card_names.find(n=>n.locale==="en")||r.cards.card_names[0]||{}).name : "?";
+          return `
+            <tr>
+              <td>${name || "?"}</td>
+              <td class="site-tag">${r.sites ? r.sites.name : "—"}</td>
+              <td>${r.seller_name || "—"}</td>
+              <td class="listing-price">${r.price} ${r.currency}</td>
+              <td style="display:flex;gap:6px;">
+                <button class="row-buy" onclick="adminDeactivateListing(${r.id})">Désactiver</button>
+                <button class="row-buy" onclick="adminDeleteListing(${r.id})">Supprimer</button>
+              </td>
+            </tr>`;
+        }).join("")}
+      </tbody></table>`;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function adminDeactivateListing(id){
+  try {
+    await supabaseAuthedFetch(`listings?id=eq.${id}`, { method: "PATCH", body: JSON.stringify({ is_active: false }) });
+    renderAdminListings();
+  } catch (e) { alert(`Erreur : ${e.message}`); }
+}
+async function adminDeleteListing(id){
+  if (!confirm("Supprimer définitivement ce listing ?")) return;
+  try {
+    await supabaseAuthedFetch(`listings?id=eq.${id}`, { method: "DELETE" });
+    renderAdminListings();
+  } catch (e) { alert(`Erreur : ${e.message}`); }
+}
+
+/* ---------- Membres ---------- */
+async function renderAdminMembers(){
+  const content = document.getElementById("admin-content");
+  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const rows = await supabaseAuthedFetch(`profiles?select=id,email,display_name,role,created_at&order=created_at.desc&limit=500`);
+    content.innerHTML = `
+      <p style="color:var(--text-faint);font-family:var(--font-mono);font-size:11px;margin-bottom:14px;">
+        La suppression d'un compte ne peut pas se faire depuis le navigateur (ça demanderait d'exposer une clé
+        sensible côté client) — à faire depuis le tableau de bord Supabase pour l'instant, ou via une fonction
+        serveur dédiée plus tard si le besoin devient fréquent.
+      </p>
+      <table class="listing-table"><thead><tr><th>Pseudo</th><th>Email</th><th>Rôle</th><th>Inscrit le</th></tr></thead><tbody>
+        ${rows.map(r => `
+          <tr>
+            <td>${r.display_name || "—"}</td>
+            <td>${r.email || "—"}</td>
+            <td>
+              <select onchange="adminChangeRole('${r.id}', this.value)">
+                <option value="user" ${r.role==="user"?"selected":""}>user</option>
+                <option value="moderator" ${r.role==="moderator"?"selected":""}>moderator</option>
+                <option value="admin" ${r.role==="admin"?"selected":""}>admin</option>
+              </select>
+            </td>
+            <td class="site-tag">${new Date(r.created_at).toLocaleDateString("fr-FR")}</td>
+          </tr>`).join("")}
+      </tbody></table>`;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function adminChangeRole(userId, newRole){
+  try {
+    await supabaseAuthedFetch(`profiles?id=eq.${userId}`, { method: "PATCH", body: JSON.stringify({ role: newRole }) });
+  } catch (e) {
+    alert(`Impossible de modifier le rôle : ${e.message}`);
+    renderAdminMembers();
+  }
 }
 </script>
 </body>
