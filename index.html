@@ -169,6 +169,28 @@
   .buy-btn.cardtrader.disabled .buy-badge{background:var(--panel);color:var(--text-faint);}
   .buy-btn.cardtrader.disabled:hover{background:var(--panel-light);}
 
+  .collection-actions{display:flex;gap:8px;margin-top:10px;}
+  .collection-btn{
+    flex:1;display:flex;align-items:center;justify-content:center;gap:6px;
+    background:var(--panel-light);border:1px solid var(--border);border-radius:var(--radius);
+    padding:9px 10px;font-family:var(--font-mono);font-size:11.5px;text-transform:uppercase;
+    letter-spacing:0.03em;color:var(--text-dim);cursor:pointer;transition:all .15s;
+  }
+  .collection-btn:hover{border-color:var(--gold);color:var(--text);}
+  .collection-btn.active{background:var(--gold);border-color:var(--gold);color:var(--ink-deep);font-weight:600;}
+  .collection-qty-row{display:flex;align-items:center;gap:8px;margin-top:8px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:8px 10px;}
+  .collection-qty-row span{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);}
+  .qty-btn{width:26px;height:26px;border:1px solid var(--border);background:var(--panel-light);color:var(--text);border-radius:3px;cursor:pointer;font-family:var(--font-mono);}
+  .qty-btn:hover{border-color:var(--gold);}
+
+  .collection-set-group{margin-bottom:36px;}
+  .collection-set-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:8px;}
+  .collection-set-header h3{font-family:var(--font-display);font-size:17px;font-weight:600;margin:0;}
+  .collection-set-header:hover h3{color:var(--gold-bright);}
+  .collection-set-progress{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);}
+  .progress-bar{height:5px;background:var(--panel-light);border-radius:3px;overflow:hidden;margin-bottom:14px;}
+  .progress-bar-fill{height:100%;background:var(--gold);}
+
   .detail-info h1{font-family:var(--font-display);font-size:30px;margin:0 0 6px;font-weight:600;}
   .detail-meta{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);margin-bottom:22px;text-transform:uppercase;}
   .detail-number{font-family:var(--font-mono);font-size:16px;color:var(--text-faint);font-weight:400;}
@@ -348,6 +370,7 @@
       <div class="slab">
         <div class="slab-art" id="detail-art"></div>
         <div class="buy-buttons" id="buy-buttons"></div>
+        <div class="collection-actions" id="collection-actions"></div>
       </div>
       <div class="detail-info">
         <h1 id="detail-name"></h1>
@@ -431,6 +454,17 @@
 
     <div class="section-title">Toutes les cartes <span class="count" id="set-cards-count"></span></div>
     <div class="grid" id="set-cards-grid"><div class="empty-state">Chargement...</div></div>
+  </section>
+
+  <section id="view-collection" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Ma collection</div>
+
+    <div class="listings-tabs" id="collection-tabs">
+      <button class="tab-btn active" data-tab="collection" onclick="setCollectionTab('collection')">Ma collection</button>
+      <button class="tab-btn" data-tab="favorites" onclick="setCollectionTab('favorites')">Mes favoris</button>
+    </div>
+
+    <div id="collection-content"><div class="empty-state">Chargement...</div></div>
   </section>
 
   <section id="view-account" class="view">
@@ -662,6 +696,7 @@ async function renderAuthArea(session){
       if (rows && rows[0] && rows[0].display_name) label = rows[0].display_name;
     } catch (_) { /* on garde l'email en repli si le profil n'est pas encore accessible */ }
     area.innerHTML = `
+      <a href="#" class="auth-btn" onclick="navigateCollection();return false;">Ma collection</a>
       <span class="auth-user" onclick="navigateAccount()" title="Mon compte">${label}</span>
       <button class="auth-btn" onclick="signOut()">Se déconnecter</button>
     `;
@@ -928,6 +963,7 @@ function navigateCard(id){ location.hash = "#/card/" + id; }
 function navigateSearch(term){ location.hash = "#/search/" + encodeURIComponent(term); }
 function navigateAccount(){ location.hash = "#/account"; }
 function navigateSet(id){ location.hash = "#/set/" + id; }
+function navigateCollection(){ location.hash = "#/collection"; }
 
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", init);
@@ -953,11 +989,13 @@ function route(){
   const setMatch = hash.match(/^#\/set\/(\d+)$/);
   const searchMatch = hash.match(/^#\/search\/(.+)$/);
   const isAccount = hash === "#/account";
+  const isCollection = hash === "#/collection";
 
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
   document.getElementById("view-set").classList.remove("active");
   document.getElementById("view-account").classList.remove("active");
+  document.getElementById("view-collection").classList.remove("active");
 
   if (cardMatch){
     document.getElementById("view-card").classList.add("active");
@@ -968,6 +1006,9 @@ function route(){
   } else if (isAccount){
     document.getElementById("view-account").classList.add("active");
     renderAccountPage();
+  } else if (isCollection){
+    document.getElementById("view-collection").classList.add("active");
+    renderCollectionPage();
   } else if (searchMatch){
     document.getElementById("view-home").classList.add("active");
     const term = decodeURIComponent(searchMatch[1]);
@@ -1038,6 +1079,7 @@ async function renderCardDetail(id){
 
     renderMarketSection(id);
     renderListingsSection(id);
+    renderCollectionActions(id);
   } catch (e) {
     document.getElementById("detail-name").textContent = "Erreur de chargement";
     console.error(e);
@@ -1181,6 +1223,76 @@ function drawPriceChart(history){
   }, { passive: true });
 
   showPoint(coords.length - 1); // point le plus récent visible par défaut
+}
+
+/* ============================================================
+   FAVORIS & COLLECTION
+   ============================================================ */
+async function renderCollectionActions(cardId){
+  const container = document.getElementById("collection-actions");
+  const { data } = await supabaseClient.auth.getSession();
+  const session = data.session;
+
+  if (!session){
+    container.innerHTML = `
+      <button class="collection-btn" onclick="openAuthModal()">♡ Favoris</button>
+      <button class="collection-btn" onclick="openAuthModal()">+ Collection</button>`;
+    return;
+  }
+
+  let isFavorite = false;
+  let ownedCount = 0;
+  try {
+    const favRows = await supabaseAuthedFetch(`favorites?card_id=eq.${cardId}&select=id`);
+    isFavorite = favRows.length > 0;
+    const collRows = await supabaseAuthedFetch(`collection_items?card_id=eq.${cardId}&select=quantity`);
+    ownedCount = collRows.reduce((sum, r) => sum + (r.quantity || 0), 0);
+  } catch (e) {
+    console.warn("Impossible de charger l'état favoris/collection :", e.message);
+  }
+
+  container.innerHTML = `
+    <button class="collection-btn ${isFavorite ? "active" : ""}" id="fav-btn" onclick="toggleFavorite(${cardId})">
+      ${isFavorite ? "♥ Dans mes favoris" : "♡ Favoris"}
+    </button>
+    <button class="collection-btn ${ownedCount > 0 ? "active" : ""}" id="add-collection-btn" onclick="addToCollection(${cardId})">
+      + Collection${ownedCount > 0 ? ` (${ownedCount})` : ""}
+    </button>`;
+}
+
+async function toggleFavorite(cardId){
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){ openAuthModal(); return; }
+
+  try {
+    const existing = await supabaseAuthedFetch(`favorites?card_id=eq.${cardId}&select=id`);
+    if (existing.length){
+      await supabaseAuthedFetch(`favorites?id=eq.${existing[0].id}`, { method: "DELETE" });
+    } else {
+      await supabaseAuthedFetch("favorites", { method: "POST", body: JSON.stringify({ card_id: cardId }) });
+    }
+    renderCollectionActions(cardId);
+  } catch (e) {
+    console.error("Erreur favoris :", e.message);
+  }
+}
+
+async function addToCollection(cardId){
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){ openAuthModal(); return; }
+
+  try {
+    // Ajout simple pour l'instant : 1 exemplaire, non gradé, état par
+    // défaut Near Mint — la distinction fine (gradée, état précis) pourra
+    // s'affiner plus tard depuis la page collection elle-même.
+    await supabaseAuthedFetch("collection_items", {
+      method: "POST",
+      body: JSON.stringify({ card_id: cardId, quantity: 1, condition: "NM", is_graded: false }),
+    });
+    renderCollectionActions(cardId);
+  } catch (e) {
+    console.error("Erreur ajout collection :", e.message);
+  }
 }
 
 const LANGUAGE_FLAGS = { fr: "france", de: "germany", en: "united-kingdom", es: "spain", it: "italy", ja: "japan" };
@@ -1453,6 +1565,124 @@ function renderSetMovers(history, shapedCards){
 
   renderMoverList(risers, "set-risers");
   renderMoverList(fallers, "set-fallers");
+}
+
+/* ============================================================
+   PAGE COLLECTION
+   ============================================================ */
+let currentCollectionTab = "collection";
+
+async function renderCollectionPage(){
+  currentCollectionTab = "collection";
+  document.querySelectorAll("#collection-tabs .tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === "collection"));
+
+  const { data } = await supabaseClient.auth.getSession();
+  const session = data.session;
+  const content = document.getElementById("collection-content");
+
+  if (!session){
+    content.innerHTML = `
+      <p style="color:var(--text-dim);font-size:14px;margin-bottom:16px;">Vous devez être connecté pour consulter votre collection.</p>
+      <button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
+    return;
+  }
+
+  await renderCollectionContent();
+}
+
+function setCollectionTab(tab){
+  currentCollectionTab = tab;
+  document.querySelectorAll("#collection-tabs .tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tab));
+  renderCollectionContent();
+}
+
+async function renderCollectionContent(){
+  const content = document.getElementById("collection-content");
+  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
+
+  try {
+    if (currentCollectionTab === "favorites"){
+      const rows = await supabaseAuthedFetch(
+        `favorites?select=card_id,cards(id,card_number,card_names(locale,name),card_images(image_url,variant),sets(name_en,set_names(locale,name)))`
+      );
+      const cards = rows.filter(r => r.cards).map(r => shapeCard(r.cards));
+      renderCollectionGrid(cards, "Aucune carte en favoris pour l'instant.");
+      return;
+    }
+
+    // Onglet "Ma collection" : groupé par set, avec une barre de progression
+    const rows = await supabaseAuthedFetch(
+      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,` +
+      `cards(id,card_number,card_names(locale,name),card_images(image_url,variant),` +
+      `sets(id,name_en,total_cards,set_names(locale,name)))`
+    );
+
+    if (!rows.length){
+      content.innerHTML = `<div class="empty-state">Votre collection est vide pour l'instant — ajoutez des cartes depuis leur fiche.</div>`;
+      return;
+    }
+
+    const bySet = {};
+    for (const row of rows){
+      if (!row.cards || !row.cards.sets) continue;
+      const setId = row.cards.sets.id;
+      if (!bySet[setId]){
+        bySet[setId] = {
+          setName: pickLocalized(row.cards.sets.set_names, LANG) || row.cards.sets.name_en,
+          totalCards: row.cards.sets.total_cards,
+          items: [],
+        };
+      }
+      bySet[setId].items.push(row);
+    }
+
+    content.innerHTML = Object.entries(bySet).map(([setId, group]) => {
+      const ownedCount = group.items.length;
+      const pct = group.totalCards ? Math.round((ownedCount / group.totalCards) * 100) : null;
+      return `
+        <div class="collection-set-group">
+          <div class="collection-set-header" onclick="navigateSet(${setId})">
+            <h3>${group.setName}</h3>
+            <span class="collection-set-progress">${ownedCount}${group.totalCards ? ` / ${group.totalCards}` : ""}${pct != null ? ` (${pct}%)` : ""}</span>
+          </div>
+          ${group.totalCards ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>` : ""}
+          <div class="grid">
+            ${group.items.map(row => {
+              const c = shapeCard(row.cards);
+              const badge = row.is_graded ? `${row.grade ?? ""} gradée` : (row.condition || "");
+              return `
+                <div class="card-tile" onclick="navigateCard(${c.id})">
+                  <div class="art">
+                    ${row.quantity > 1 ? `<span class="set-tag">×${row.quantity}</span>` : ""}
+                    ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
+                  </div>
+                  <div class="tile-body">
+                    <h3>${c.name}</h3>
+                    ${badge ? `<div class="tcg-label">${badge}</div>` : ""}
+                  </div>
+                </div>`;
+            }).join("")}
+          </div>
+        </div>`;
+    }).join("");
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Erreur de chargement : ${e.message}</div>`;
+  }
+}
+
+function renderCollectionGrid(cards, emptyMessage){
+  const content = document.getElementById("collection-content");
+  if (!cards.length){
+    content.innerHTML = `<div class="empty-state">${emptyMessage}</div>`;
+    return;
+  }
+  content.innerHTML = `<div class="grid">${cards.map(c => `
+    <div class="card-tile" onclick="navigateCard(${c.id})">
+      <div class="art">
+        ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
+      </div>
+      <div class="tile-body"><h3>${c.name}</h3></div>
+    </div>`).join("")}</div>`;
 }
 </script>
 </body>
