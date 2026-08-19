@@ -55,7 +55,7 @@
 
   .modal-overlay{
     display:none;position:fixed;inset:0;z-index:100;background:rgba(13,14,21,0.75);
-    align-items:center;justify-content:center;
+    align-items:center;justify-content:center;padding:16px;
   }
   .modal-overlay.active{display:flex;}
   .modal{
@@ -146,6 +146,12 @@
     display:flex;align-items:center;justify-content:center;line-height:1;z-index:2;
   }
   .binder-slot-remove:hover{border-color:var(--red);color:var(--red);}
+  .binder-slot-swap{
+    position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
+    background:rgba(13,14,21,0.85);border:1px solid var(--border);color:#fff;font-size:11px;
+    display:flex;align-items:center;justify-content:center;line-height:1;z-index:2;
+  }
+  .binder-slot-swap:hover{border-color:var(--gold);color:var(--gold-bright);}
   .modal-switch a{color:var(--gold-bright);font-weight:600;}
   .modal-switch a:hover{text-decoration:underline;}
 
@@ -378,7 +384,11 @@
   }
   .price-chart-source{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);margin-top:10px;text-align:right;}
 
-  .listing-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px;}
+  /* Enveloppe indispensable en mobile : sans elle, un tableau avec
+     plusieurs colonnes fait déborder TOUTE la page horizontalement au
+     lieu de simplement défiler lui-même. */
+  .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:8px;}
+  .listing-table{width:100%;min-width:520px;border-collapse:collapse;font-size:13px;}
   .listing-table thead th{
     text-align:left;font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;
     letter-spacing:0.05em;color:var(--text-faint);border-bottom:1px solid var(--border);
@@ -433,6 +443,40 @@
   footer{border-top:1px solid var(--border);padding:28px;text-align:center;color:var(--text-faint);font-family:var(--font-mono);font-size:11px;}
   .view{display:none;} .view.active{display:block;}
   @media (max-width:860px){ .detail-top{grid-template-columns:1fr;} .hero h1{font-size:28px;} }
+
+  /* ============================================================
+     MOBILE — bloc consolidé, plutôt que dispersé dans chaque règle.
+     Corrige les débordements horizontaux (barres d'outils, en-tête,
+     grilles) qui poussaient boutons/menus hors de l'écran.
+     ============================================================ */
+  @media (max-width:640px){
+    main{padding:0 14px 60px;}
+    .header-inner{padding:12px 14px;gap:12px;}
+    .search-wrap{min-width:0;flex-basis:100%;order:3;max-width:none;}
+    .brand{flex-shrink:0;}
+    .auth-area{gap:6px;}
+    .auth-btn{padding:7px 10px;font-size:11.5px;}
+
+    .grid{grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px;}
+
+    .binder-toolbar,
+    .collection-catalog-toolbar,
+    .collection-stats-row{flex-direction:column;align-items:stretch;gap:12px;}
+    .binder-page-nav{flex-wrap:wrap;justify-content:center;}
+    .collection-stat{flex:1;min-width:90px;}
+
+    .listings-tabs{overflow-x:auto;flex-wrap:nowrap;}
+    .listings-tabs .tab-btn{flex-shrink:0;}
+
+    .account-panel{max-width:none !important;}
+
+    .modal{padding:24px 18px;}
+
+    .binder-page{padding:12px;gap:6px;}
+
+    .detail-top{gap:20px;}
+    .buy-buttons, .collection-actions{flex-direction:column;}
+  }
 </style>
 </head>
 <body>
@@ -1782,6 +1826,7 @@ function renderListingsTable(){
   }
 
   container.innerHTML = `
+    <div class="table-scroll">
     <table class="listing-table">
       <thead>
         <tr>
@@ -1816,7 +1861,8 @@ function renderListingsTable(){
               </tr>`;
           }).join("")}
         </tbody>
-      </table>`;
+      </table>
+    </div>`;
 }
 
 /* ============================================================
@@ -2544,7 +2590,7 @@ async function adminSearchCards(term){
       results.innerHTML = `<div class="empty-state">Aucune carte trouvée.</div>`;
       return;
     }
-    results.innerHTML = `<table class="listing-table"><thead><tr><th></th><th>Carte</th><th>Extension</th><th>Numéro</th><th></th></tr></thead><tbody>
+    results.innerHTML = `<div class="table-scroll"><table class="listing-table"><thead><tr><th></th><th>Carte</th><th>Extension</th><th>Numéro</th><th></th></tr></thead><tbody>
       ${rows.map(r => {
         const img = (r.card_images && r.card_images[0]) ? r.card_images[0].image_url : null;
         return `
@@ -2556,7 +2602,7 @@ async function adminSearchCards(term){
           <td><button class="row-buy" onclick="adminEditCard(${r.id})">Modifier →</button></td>
         </tr>`;
       }).join("")}
-    </tbody></table>`;
+    </tbody></table></div>`;
   } catch (e) {
     results.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
@@ -2675,10 +2721,10 @@ async function renderAdminListings(){
         100 signalements les plus récents. "Marquer comme traité" retire uniquement le signalement — l'annonce
         elle-même reste active tant que vous ne la désactivez/supprimez pas explicitement.
       </p>
-      <table class="listing-table"><thead><tr><th>Carte</th><th>Extension / N°</th><th>Site</th><th>Raison</th><th>Langue</th><th>État</th><th></th></tr></thead>
+      <div class="table-scroll"><table class="listing-table"><thead><tr><th>Carte</th><th>Extension / N°</th><th>Site</th><th>Raison</th><th>Langue</th><th>État</th><th></th></tr></thead>
       <tbody id="admin-listings-tbody">
         ${withListing.map(r => adminReportRowHtml(r)).join("")}
-      </tbody></table>`;
+      </tbody></table></div>`;
   } catch (e) {
     content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
@@ -2778,7 +2824,7 @@ async function renderAdminMembers(){
         sensible côté client) — à faire depuis le tableau de bord Supabase pour l'instant, ou via une fonction
         serveur dédiée plus tard si le besoin devient fréquent.
       </p>
-      <table class="listing-table"><thead><tr><th>Pseudo</th><th>Email</th><th>Rôle</th><th>Inscrit le</th></tr></thead><tbody>
+      <div class="table-scroll"><table class="listing-table"><thead><tr><th>Pseudo</th><th>Email</th><th>Rôle</th><th>Inscrit le</th></tr></thead><tbody>
         ${rows.map(r => `
           <tr>
             <td>${r.display_name || "—"}</td>
@@ -2794,7 +2840,7 @@ async function renderAdminMembers(){
             </td>
             <td class="site-tag">${new Date(r.created_at).toLocaleDateString("fr-FR")}</td>
           </tr>`).join("")}
-      </tbody></table>`;
+      </tbody></table></div>`;
   } catch (e) {
     content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
@@ -2923,6 +2969,7 @@ async function loadAndRenderBinderPage(){
         html += `
           <div class="binder-slot" onclick="navigateCard(${filled.card_id})">
             <button class="binder-slot-remove" title="Retirer" onclick="event.stopPropagation();removeBinderSlot(${filled.id}, ${i})">×</button>
+            <button class="binder-slot-swap" title="Changer la carte" onclick="event.stopPropagation();openSlotPicker(${i})">⇄</button>
             ${filled.image ? `<img src="${imageVariants(filled.image,'low').webp}" alt="${filled.name}">` : `<span class="glyph">⚡</span>`}
           </div>`;
       } else {
