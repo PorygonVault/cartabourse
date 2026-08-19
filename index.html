@@ -196,6 +196,29 @@
   .collection-stats-row{display:flex;gap:32px;margin-bottom:32px;padding-bottom:24px;border-bottom:1px solid var(--border);}
   .collection-stat .label{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);text-transform:uppercase;margin-bottom:4px;}
   .collection-stat .value{font-family:var(--font-mono);font-size:22px;color:var(--gold-bright);font-weight:600;}
+
+  .collection-search-wrap{max-width:360px;margin-bottom:28px;}
+
+  .collection-set-accordion{border:1px solid var(--border);border-radius:var(--radius);margin-bottom:10px;overflow:hidden;}
+  .collection-set-accordion .collection-set-header{
+    display:flex;align-items:center;gap:10px;cursor:pointer;padding:14px 16px;margin:0;background:var(--panel);
+  }
+  .collection-set-accordion .collection-set-header h3{font-family:var(--font-display);font-size:15px;font-weight:600;margin:0;flex:1;}
+  .accordion-caret{font-family:var(--font-mono);color:var(--text-faint);transition:transform .15s;flex-shrink:0;}
+  .collection-set-accordion.open .accordion-caret{transform:rotate(90deg);}
+  .collection-set-accordion .progress-bar{margin:0;border-radius:0;}
+  .collection-set-accordion .collection-set-body{display:none;padding:16px;}
+  .collection-set-accordion.open .collection-set-body{display:block;}
+
+  .collection-tile.not-owned .art-img{filter:grayscale(100%) brightness(0.65);}
+  .collection-tile.not-owned .tile-body h3{color:var(--text-faint);}
+  .collection-tile.owned .art-img{filter:none;}
+  .tile-quick-add-btn{
+    position:absolute;top:6px;right:6px;z-index:3;width:22px;height:22px;border-radius:50%;
+    background:var(--panel-light);border:1px solid var(--border);color:var(--text-dim);
+    font-size:14px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;
+  }
+  .tile-quick-add-btn:hover{border-color:var(--gold);color:var(--gold-bright);}
   .collection-set-header{display:flex;align-items:center;justify-content:space-between;cursor:pointer;margin-bottom:8px;}
   .collection-set-header h3{font-family:var(--font-display);font-size:17px;font-weight:600;margin:0;}
   .collection-set-header:hover h3{color:var(--gold-bright);}
@@ -1746,64 +1769,47 @@ async function renderCollectionContent(){
       return;
     }
 
-    // Onglet "Ma collection" : groupé par set, avec une barre de progression
-    const rows = await supabaseAuthedFetch(
-      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,` +
-      `cards(id,card_number,card_names(locale,name),card_images(image_url,variant),` +
-      `sets(id,name_en,total_cards,set_names(locale,name)))`
+    // Onglet "Ma collection" : tous les sets en accordéon (léger, chargé
+    // d'un coup), les cartes de chaque set récupérées seulement au clic.
+    const collectionRows = await supabaseAuthedFetch(
+      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,cards(set_id)`
     );
 
-    if (!rows.length){
-      content.innerHTML = `<div class="empty-state">Votre collection est vide pour l'instant — ajoutez des cartes depuis leur fiche.</div>`;
-      return;
+    const ownedBySet = {};
+    const qtyByCard = {};
+    for (const r of collectionRows){
+      if (!r.cards) continue;
+      const setId = r.cards.set_id;
+      if (!ownedBySet[setId]) ownedBySet[setId] = { cardIds: new Set(), qtyByCard: {}, badgeByCard: {}, rowIdsByCard: {} };
+      const bucket = ownedBySet[setId];
+      bucket.cardIds.add(r.card_id);
+      bucket.qtyByCard[r.card_id] = (bucket.qtyByCard[r.card_id] || 0) + (r.quantity || 1);
+      if (!bucket.badgeByCard[r.card_id]) bucket.badgeByCard[r.card_id] = r.is_graded ? `${r.grade ?? ""} gradée` : (r.condition || "");
+      (bucket.rowIdsByCard[r.card_id] = bucket.rowIdsByCard[r.card_id] || []).push(r.id);
+      qtyByCard[r.card_id] = (qtyByCard[r.card_id] || 0) + (r.quantity || 1);
     }
+    const uniqueCardIds = Object.keys(qtyByCard).map(Number);
 
-    const bySet = {};
-    for (const row of rows){
-      if (!row.cards || !row.cards.sets) continue;
-      const setId = row.cards.sets.id;
-      if (!bySet[setId]){
-        bySet[setId] = {
-          setName: pickLocalized(row.cards.sets.set_names, LANG) || row.cards.sets.name_en,
-          totalCards: row.cards.sets.total_cards,
-          byCard: {},
-        };
-      }
-      // Regroupe par carte : deux lignes de la même carte comptent pour
-      // UNE seule carte dans la progression, pas deux — seule la quantité
-      // totale (affichée en badge) augmente.
-      const cardId = row.cards.id;
-      if (!bySet[setId].byCard[cardId]){
-        bySet[setId].byCard[cardId] = { card: row.cards, rowIds: [], totalQty: 0, badge: null };
-      }
-      const entry = bySet[setId].byCard[cardId];
-      entry.rowIds.push(row.id);
-      entry.totalQty += row.quantity || 1;
-      if (!entry.badge) entry.badge = row.is_graded ? `${row.grade ?? ""} gradée` : (row.condition || "");
-    }
-
-    // Statistiques globales : nombre total d'exemplaires, cartes uniques,
-    // et valeur estimée (dernier prix moyen connu x quantité possédée)
-    const totalCardCount = rows.reduce((sum, r) => sum + (r.quantity || 1), 0);
-    const uniqueCardIds = [...new Set(rows.map(r => r.card_id))];
+    // Statistiques globales
+    const totalCardCount = collectionRows.reduce((sum, r) => sum + (r.quantity || 1), 0);
     let totalValue = 0, valueCurrency = "EUR";
-    try {
-      const priceRows = await supabaseSelect(
-        `price_history?card_id=in.(${uniqueCardIds.join(",")})&select=card_id,period_date,avg_price,currency&order=period_date.desc`
-      );
-      const latestByCard = {};
-      for (const p of priceRows){
-        if (!(p.card_id in latestByCard) && p.avg_price != null) latestByCard[p.card_id] = p;
+    if (uniqueCardIds.length){
+      try {
+        const priceRows = await supabaseSelect(
+          `price_history?card_id=in.(${uniqueCardIds.join(",")})&select=card_id,period_date,avg_price,currency&order=period_date.desc`
+        );
+        const latestByCard = {};
+        for (const p of priceRows){
+          if (!(p.card_id in latestByCard) && p.avg_price != null) latestByCard[p.card_id] = p;
+        }
+        for (const cardId in latestByCard){
+          const p = latestByCard[cardId];
+          totalValue += Number(p.avg_price) * (qtyByCard[cardId] || 0);
+          valueCurrency = p.currency || "EUR";
+        }
+      } catch (e) {
+        console.warn("Valeur de collection non calculée :", e.message);
       }
-      const qtyByCard = {};
-      for (const r of rows) qtyByCard[r.card_id] = (qtyByCard[r.card_id] || 0) + (r.quantity || 1);
-      for (const cardId in latestByCard){
-        const p = latestByCard[cardId];
-        totalValue += Number(p.avg_price) * (qtyByCard[cardId] || 0);
-        valueCurrency = p.currency || "EUR";
-      }
-    } catch (e) {
-      console.warn("Valeur de collection non calculée :", e.message);
     }
 
     const statsHtml = `
@@ -1811,44 +1817,125 @@ async function renderCollectionContent(){
         <div class="collection-stat"><div class="label">Cartes</div><div class="value">${totalCardCount}</div></div>
         <div class="collection-stat"><div class="label">Cartes uniques</div><div class="value">${uniqueCardIds.length}</div></div>
         <div class="collection-stat"><div class="label">Valeur estimée</div><div class="value">${displayPrice(totalValue, valueCurrency)}</div></div>
-      </div>`;
+      </div>
+      <div class="search-wrap collection-search-wrap">
+        <span class="search-icon">⌕</span>
+        <input id="collection-search" type="text" placeholder="Filtrer par nom d'extension..." oninput="filterCollectionCatalog(this.value)">
+      </div>
+      <div id="collection-catalog"><div class="empty-state">Chargement des extensions...</div></div>`;
+    content.innerHTML = statsHtml;
 
-    content.innerHTML = statsHtml + Object.entries(bySet).map(([setId, group]) => {
-      const cardEntries = Object.values(group.byCard);
-      const ownedCount = cardEntries.length; // cartes UNIQUES, pas le nombre de lignes/exemplaires
-      const pct = group.totalCards ? Math.round((ownedCount / group.totalCards) * 100) : null;
-      return `
-        <div class="collection-set-group">
-          <div class="collection-set-header" onclick="navigateSet(${setId})">
-            <h3>${group.setName}</h3>
-            <span class="collection-set-progress">${ownedCount}${group.totalCards ? ` / ${group.totalCards}` : ""}${pct != null ? ` (${pct}%)` : ""}</span>
-          </div>
-          ${group.totalCards ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>` : ""}
-          <div class="grid">
-            ${cardEntries.map(entry => {
-              const c = shapeCard(entry.card);
-              const lastRowId = entry.rowIds[entry.rowIds.length - 1];
-              return `
-                <div class="card-tile collection-tile">
-                  <button class="tile-remove-btn" title="Retirer un exemplaire" onclick="event.stopPropagation();removeFromCollection(${lastRowId})">×</button>
-                  <div onclick="navigateCard(${c.id})">
-                    <div class="art">
-                      ${entry.totalQty > 1 ? `<span class="set-tag">×${entry.totalQty}</span>` : ""}
-                      ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
-                    </div>
-                    <div class="tile-body">
-                      <h3>${c.name}</h3>
-                      ${entry.badge ? `<div class="tcg-label">${entry.badge}</div>` : ""}
-                    </div>
-                  </div>
-                </div>`;
-            }).join("")}
-          </div>
-        </div>`;
-    }).join("");
+    // Léger : uniquement la liste des sets (présents et futurs), pas leurs
+    // cartes — chaque set charge les siennes à la demande, au premier clic.
+    const allSets = await fetchAllPaginated(`sets?select=id,name_en,total_cards,set_names(locale,name)&order=id.asc`);
+
+    collectionCatalogState = { allSets, ownedBySet };
+    renderCollectionCatalog();
   } catch (e) {
     content.innerHTML = `<div class="empty-state">Erreur de chargement : ${e.message}</div>`;
   }
+}
+
+/* Récupère la totalité des lignes d'une requête, en dépassant le plafond
+   de 1000 lignes par appel imposé par Supabase (PostgREST). */
+async function fetchAllPaginated(basePath){
+  let all = [];
+  let offset = 0;
+  while (true){
+    const sep = basePath.includes("?") ? "&" : "?";
+    const page = await supabaseSelect(`${basePath}${sep}limit=1000&offset=${offset}`);
+    all = all.concat(page);
+    if (page.length < 1000) break;
+    offset += 1000;
+  }
+  return all;
+}
+
+let collectionCatalogState = null;
+
+function renderCollectionCatalog(){
+  const { allSets, ownedBySet } = collectionCatalogState;
+  const container = document.getElementById("collection-catalog");
+
+  container.innerHTML = allSets.map(set => {
+    const setName = pickLocalized(set.set_names, LANG) || set.name_en;
+    const owned = ownedBySet[set.id];
+    const ownedCount = owned ? owned.cardIds.size : 0;
+    const pct = set.total_cards ? Math.round((ownedCount / set.total_cards) * 100) : null;
+
+    return `
+      <div class="collection-set-accordion" data-set-id="${set.id}" data-set-name="${setName.toLowerCase()}">
+        <div class="collection-set-header" onclick="toggleSetAccordion(${set.id}, this.parentElement)">
+          <span class="accordion-caret">▸</span>
+          <h3>${setName}</h3>
+          <span class="collection-set-progress">${ownedCount}${set.total_cards ? ` / ${set.total_cards}` : ""}${pct != null ? ` (${pct}%)` : ""}</span>
+        </div>
+        ${set.total_cards ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>` : ""}
+        <div class="collection-set-body"><div class="grid"><div class="empty-state">Cliquez pour charger les cartes de cette extension...</div></div></div>
+      </div>`;
+  }).join("");
+}
+
+/* Récupère les cartes d'UN set à la demande, seulement au premier
+   dépliage — pas tout le catalogue d'un coup, pour rester léger même
+   quand le nombre de sets continuera à grossir. */
+async function toggleSetAccordion(setId, accordionEl){
+  const isOpening = !accordionEl.classList.contains("open");
+  accordionEl.classList.toggle("open");
+  if (!isOpening || accordionEl.dataset.loaded) return;
+
+  const body = accordionEl.querySelector(".collection-set-body .grid");
+  body.innerHTML = `<div class="empty-state">Chargement...</div>`;
+
+  try {
+    const cards = await supabaseSelect(
+      `cards?set_id=eq.${setId}&select=id,card_number,card_names(locale,name),card_images(image_url,variant)&limit=1000`
+    );
+    cards.sort((a, b) => {
+      const na = parseInt(a.card_number, 10), nb = parseInt(b.card_number, 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return (a.card_number || "").localeCompare(b.card_number || "");
+    });
+
+    const owned = collectionCatalogState.ownedBySet[setId] || { cardIds: new Set(), qtyByCard: {}, badgeByCard: {}, rowIdsByCard: {} };
+
+    body.innerHTML = cards.map(cardRow => {
+      const c = shapeCard(cardRow);
+      const isOwned = owned.cardIds.has(c.id);
+      const qty = owned.qtyByCard[c.id] || 0;
+      const badge = owned.badgeByCard[c.id];
+      const lastRowId = isOwned ? owned.rowIdsByCard[c.id][owned.rowIdsByCard[c.id].length - 1] : null;
+      return `
+        <div class="card-tile collection-tile ${isOwned ? "owned" : "not-owned"}">
+          ${isOwned ? `<button class="tile-remove-btn" title="Retirer un exemplaire" onclick="event.stopPropagation();removeFromCollection(${lastRowId})">×</button>` : ""}
+          <div onclick="navigateCard(${c.id})">
+            <div class="art">
+              ${qty > 1 ? `<span class="set-tag">×${qty}</span>` : ""}
+              ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
+            </div>
+            <div class="tile-body">
+              <h3>${c.name}</h3>
+              ${isOwned && badge ? `<div class="tcg-label">${badge}</div>` : ""}
+            </div>
+          </div>
+          ${!isOwned ? `<button class="tile-quick-add-btn" title="Ajouter à la collection" onclick="event.stopPropagation();catalogAddToCollection(${c.id}, ${setId})">+</button>` : ""}
+        </div>`;
+    }).join("");
+
+    accordionEl.dataset.loaded = "1";
+  } catch (e) {
+    body.innerHTML = `<div class="empty-state">Erreur de chargement : ${e.message}</div>`;
+  }
+}
+
+/* Recherche sur le NOM DU SET, pas sur les cartes individuelles (qui ne
+   sont chargées qu'à la demande) — instantanée, sans requête réseau. */
+function filterCollectionCatalog(term){
+  const q = term.trim().toLowerCase();
+  document.querySelectorAll(".collection-set-accordion").forEach(setEl => {
+    const matches = !q || setEl.dataset.setName.includes(q);
+    setEl.style.display = matches ? "" : "none";
+  });
 }
 
 async function removeFromCollection(rowId){
@@ -1857,6 +1944,27 @@ async function removeFromCollection(rowId){
     renderCollectionContent();
   } catch (e) {
     alert(`Impossible de retirer cette carte : ${e.message}`);
+  }
+}
+
+async function catalogAddToCollection(cardId, setId){
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){ openAuthModal(); return; }
+  try {
+    await supabaseAuthedFetch("collection_items", {
+      method: "POST",
+      body: JSON.stringify({
+        card_id: cardId, user_id: data.session.user.id,
+        quantity: 1, condition: "NM", is_graded: false,
+      }),
+    });
+    // Rafraîchit tout (stats, progression) mais rouvre ce set plutôt que
+    // de tout refermer, puisqu'on est en train d'y travailler.
+    await renderCollectionContent();
+    const reopened = document.querySelector(`.collection-set-accordion[data-set-id="${setId}"]`);
+    if (reopened){ reopened.dataset.loaded = ""; toggleSetAccordion(setId, reopened); }
+  } catch (e) {
+    alert(`Impossible d'ajouter à la collection : ${e.message}`);
   }
 }
 
