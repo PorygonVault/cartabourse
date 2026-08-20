@@ -114,9 +114,11 @@
   }
   .report-flag-btn:hover{border-color:var(--red);color:var(--red);}
 
-  .binder-toolbar{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:24px;}
-  .binder-page-nav{display:flex;align-items:center;gap:10px;}
-  .binder-page-nav span{font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);min-width:64px;text-align:center;}
+  .binder-toolbar{margin-bottom:14px;}
+  .binder-controls-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:24px;}
+  .binder-page-nav{display:flex;align-items:center;gap:10px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .binder-page-nav span{font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);min-width:64px;text-align:center;flex-shrink:0;}
+  .binder-actions{display:flex;gap:10px;flex-shrink:0;}
 
   .binder-card-tile{
     background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:16px;margin-bottom:14px;
@@ -466,7 +468,7 @@
     /* Menu principal replié derrière un bouton ☰ — plutôt que d'entasser
        devise + connexion/liens dans la même ligne que le logo et la
        recherche, cause principale des débordements sur beaucoup de pages. */
-    .hamburger-btn{display:block;order:2;}
+    .hamburger-btn{display:block;order:2;margin-left:auto;}
     .header-menu-panel{
       display:none;position:absolute;top:100%;left:0;right:0;z-index:60;
       flex-direction:column;align-items:stretch;gap:10px;
@@ -479,10 +481,11 @@
 
     .grid{grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px;}
 
-    .binder-toolbar,
+    .binder-controls-row,
     .collection-catalog-toolbar,
     .collection-stats-row{flex-direction:column;align-items:stretch;gap:12px;}
-    .binder-page-nav{flex-wrap:wrap;justify-content:center;}
+    .binder-page-nav{justify-content:flex-start;} /* reste sur une seule ligne, défile si trop étroit */
+    .binder-actions{justify-content:center;}
     .collection-stat{flex:1;min-width:90px;}
 
     .listings-tabs{overflow-x:auto;flex-wrap:nowrap;}
@@ -744,6 +747,8 @@
 
     <div class="binder-toolbar">
       <h1 id="binder-title" style="font-family:var(--font-display);font-size:22px;font-weight:600;margin:0;"></h1>
+    </div>
+    <div class="binder-controls-row">
       <div class="binder-page-nav">
         <button class="qty-btn" onclick="changeBinderPage(-1)">←</button>
         <span>Page</span>
@@ -753,6 +758,8 @@
         <button class="qty-btn" onclick="changeBinderPage(1)">→</button>
         <button class="collection-btn" onclick="addBinderPage()">+ Page</button>
         <button class="collection-btn" onclick="deleteBinderPage()">− Page</button>
+      </div>
+      <div class="binder-actions">
         <button class="collection-btn" onclick="toggleEditBinderForm()">Modifier</button>
         <button class="collection-btn" onclick="deleteCurrentBinder()">Supprimer</button>
       </div>
@@ -1431,6 +1438,7 @@ window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", init);
 
 async function init(){
+  setupBinderSwipe();
   document.getElementById("currency-select").value = preferredCurrency;
   // Attendu (pas juste lancé en arrière-plan) : garantit que le taux est
   // disponible avant tout affichage de prix, sinon la conversion pouvait
@@ -3020,6 +3028,30 @@ async function loadAndRenderBinderPage(){
   } catch (e) {
     view.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
+}
+
+/* Glisser à gauche = page suivante, à droite = page précédente — actif
+   uniquement sur la zone d'affichage du classeur, pas sur tout le site. */
+function setupBinderSwipe(){
+  const el = document.getElementById("binder-page-view");
+  let startX = null, startY = null;
+
+  el.addEventListener("touchstart", (e) => {
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  el.addEventListener("touchend", (e) => {
+    if (startX === null || !currentBinder) return;
+    const dx = e.changedTouches[0].clientX - startX;
+    const dy = e.changedTouches[0].clientY - startY;
+    // Un mouvement surtout vertical (défilement normal de la page) ne
+    // doit jamais être interprété comme un changement de page.
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5){
+      changeBinderPage(dx < 0 ? 1 : -1);
+    }
+    startX = null; startY = null;
+  }, { passive: true });
 }
 
 function changeBinderPage(delta){
