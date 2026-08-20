@@ -168,6 +168,25 @@
     display:flex;align-items:center;justify-content:center;line-height:1;z-index:2;
   }
   .binder-slot-swap:hover{border-color:var(--gold);color:var(--gold-bright);}
+
+  /* Navigateur "par extension" du pop-up de sélection de carte (classeur) —
+     sets en liste, cartes d'un set ouvert en une seule ligne défilante,
+     jamais une grille qui s'enroule sur plusieurs lignes. */
+  .picker-set-accordion{border-bottom:1px solid var(--border);}
+  .picker-set-header{display:flex;align-items:center;gap:8px;padding:10px 4px;cursor:pointer;font-size:13.5px;}
+  .picker-set-header:hover{color:var(--gold-bright);}
+  .picker-set-accordion .accordion-caret{transition:transform .15s;}
+  .picker-set-accordion.open .accordion-caret{transform:rotate(90deg);}
+  .picker-set-body{display:none;padding:0 0 12px;}
+  .picker-set-accordion.open .picker-set-body{display:block;}
+  .picker-card-slider{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;}
+  .picker-card-item{flex:0 0 auto;width:66px;cursor:pointer;text-align:center;}
+  .picker-card-item img{width:66px;height:92px;object-fit:cover;border-radius:3px;border:1px solid var(--border);display:block;}
+  .picker-card-item:hover img{border-color:var(--gold);}
+  .picker-card-name{
+    display:block;font-size:9.5px;color:var(--text-dim);margin-top:3px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
   .modal-switch a{color:var(--gold-bright);font-weight:600;}
   .modal-switch a:hover{text-decoration:underline;}
 
@@ -182,6 +201,13 @@
   .section-title{font-family:var(--font-display);font-size:20px;font-weight:600;display:flex;align-items:center;justify-content:space-between;margin:0 0 18px;}
   .section-title .count{font-family:var(--font-mono);font-size:12px;color:var(--text-faint);font-weight:400;}
   .view-toggle{display:flex;gap:4px;}
+  .region-filter{display:flex;gap:4px;}
+  .region-filter .tab-btn{
+    font-family:var(--font-mono);font-size:11px;text-transform:uppercase;padding:6px 12px;
+    border:1px solid var(--border);border-radius:20px;background:var(--panel-light);color:var(--text-dim);cursor:pointer;
+  }
+  .region-filter .tab-btn.active{background:var(--gold);border-color:var(--gold);color:var(--ink-deep);font-weight:600;}
+  .region-filter .tab-btn:hover:not(.active){border-color:var(--gold);color:var(--text);}
   .view-toggle-btn{
     font-family:var(--font-mono);font-size:11px;text-transform:uppercase;letter-spacing:0.05em;
     padding:6px 12px;border:1px solid var(--border);border-radius:20px;background:transparent;
@@ -585,15 +611,32 @@
 </div>
 
 <div class="modal-overlay" id="slot-picker-overlay" onclick="if(event.target===this)closeSlotPicker()">
-  <div class="modal" style="max-width:440px;">
+  <div class="modal" style="max-width:540px;">
     <button class="modal-close" onclick="closeSlotPicker()">×</button>
     <h3>Choisir une carte</h3>
-    <div class="search-wrap collection-search-wrap" style="margin-top:12px;">
-      <span class="search-icon">⌕</span>
-      <input id="slot-picker-search" type="text" placeholder="Nom de la carte... (Entrée)"
-             onkeydown="if(event.key==='Enter')slotPickerSearch(this.value)">
+
+    <div class="listings-tabs" style="margin-top:10px;">
+      <button class="tab-btn active" data-mode="search" onclick="setSlotPickerMode('search', this)">Rechercher</button>
+      <button class="tab-btn" data-mode="browse" onclick="setSlotPickerMode('browse', this)">Parcourir les extensions</button>
     </div>
-    <div id="slot-picker-results" style="margin-top:14px;max-height:340px;overflow-y:auto;"></div>
+
+    <div id="slot-picker-search-mode">
+      <div class="search-wrap collection-search-wrap" style="margin-top:12px;">
+        <span class="search-icon">⌕</span>
+        <input id="slot-picker-search" type="text" placeholder="Nom de la carte... (Entrée)"
+               onkeydown="if(event.key==='Enter')slotPickerSearch(this.value)">
+      </div>
+      <div id="slot-picker-results" style="margin-top:14px;max-height:340px;overflow-y:auto;"></div>
+    </div>
+
+    <div id="slot-picker-browse-mode" style="display:none;">
+      <div class="region-filter" id="picker-region-filter" style="margin-top:12px;">
+        <button class="tab-btn active" data-region="all" onclick="setPickerRegionFilter('all', this)">Tout</button>
+        <button class="tab-btn" data-region="intl" onclick="setPickerRegionFilter('intl', this)">Inter</button>
+        <button class="tab-btn" data-region="jp" onclick="setPickerRegionFilter('jp', this)">Japon</button>
+      </div>
+      <div id="slot-picker-sets-list" style="margin-top:12px;max-height:420px;overflow-y:auto;"></div>
+    </div>
   </div>
 </div>
 
@@ -607,6 +650,11 @@
     </div>
     <div class="section-title">
       <span>Cartes <span class="count" id="grid-count"></span></span>
+      <div class="region-filter" id="home-region-filter">
+        <button class="tab-btn active" data-region="all" onclick="setHomeRegionFilter('all', this)">Tout</button>
+        <button class="tab-btn" data-region="intl" onclick="setHomeRegionFilter('intl', this)">Inter</button>
+        <button class="tab-btn" data-region="jp" onclick="setHomeRegionFilter('jp', this)">Japon</button>
+      </div>
       <div class="view-toggle">
         <button id="view-grid-btn" class="view-toggle-btn active" onclick="setViewMode('grid')">Grille</button>
         <button id="view-list-btn" class="view-toggle-btn" onclick="setViewMode('list')">Liste</button>
@@ -1208,12 +1256,39 @@ let allLoadedCards = [];
 let isSearching = false;
 let searchResults = [];
 let viewMode = "grid"; // "grid" | "list"
+let homeRegionFilter = "all"; // "all" | "intl" | "jp"
 const SEARCH_RESULTS_LIMIT = 200;
 
+function regionFilterClause(region){
+  // "!inner" indispensable pour que le filtre s'applique vraiment aux
+  // cartes elles-mêmes, pas seulement à ce qui est affiché du set associé
+  // (déjà rencontré comme piège ailleurs sur ce projet).
+  if (region === "all") return { setsEmbed: "sets(id,name_en,total_cards,set_names(locale,name))", extra: "" };
+  return {
+    setsEmbed: "sets!inner(id,name_en,total_cards,set_names(locale,name))",
+    extra: `&sets.release_region=eq.${region}`,
+  };
+}
+
+function setHomeRegionFilter(region, btn){
+  homeRegionFilter = region;
+  document.querySelectorAll("#home-region-filter .tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+
+  offset = 0;
+  allLoadedCards = [];
+  if (isSearching){
+    performSearch(document.getElementById("global-search").value);
+  } else {
+    loadMoreCards();
+  }
+}
+
 async function fetchCardsPage(){
+  const { setsEmbed, extra } = regionFilterClause(homeRegionFilter);
   const rows = await supabaseSelect(
-    `cards?select=id,card_number,sets(id,name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)` +
-    `&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}`
+    `cards?select=id,card_number,${setsEmbed},card_names(locale,name),card_images(image_url,variant)` +
+    `&order=id.asc&limit=${PAGE_SIZE}&offset=${offset}${extra}`
   );
   return rows.map(shapeCard);
 }
@@ -1247,7 +1322,7 @@ function showStatus(msg, isError){
    déjà renseignées) et sets.name_en directement (toujours renseigné,
    lui, depuis l'import initial) — pour ne jamais dépendre uniquement
    d'une table de traduction qui peut être incomplète. */
-async function searchCardsRemote(term){
+async function searchCardsRemote(term, region = "all"){
   const pattern = `*${term.replace(/\*/g, "**")}*`; // échappe un "*" littéral avant de l'utiliser comme joker PostgREST
   const encPattern = encodeURIComponent(pattern);
 
@@ -1271,8 +1346,9 @@ async function searchCardsRemote(term){
   const idList = [...ids].slice(0, SEARCH_RESULTS_LIMIT);
   if (idList.length === 0) return [];
 
+  const { setsEmbed, extra } = regionFilterClause(region);
   const rows = await supabaseSelect(
-    `cards?id=in.(${idList.join(",")})&select=id,card_number,sets(id,name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
+    `cards?id=in.(${idList.join(",")})&select=id,card_number,${setsEmbed},card_names(locale,name),card_images(image_url,variant)${extra}`
   );
   return rows.map(shapeCard);
 }
@@ -1416,7 +1492,7 @@ async function performSearch(term){
   isSearching = true;
   showStatus(`Recherche de "${term}" dans toute la base...`);
   try {
-    searchResults = await searchCardsRemote(term);
+    searchResults = await searchCardsRemote(term, homeRegionFilter);
     showStatus(`${searchResults.length} résultat${searchResults.length > 1 ? "s" : ""} pour "${term}".`);
     renderGrid();
   } catch (err) {
@@ -2186,6 +2262,11 @@ async function renderCollectionContent(){
           <span class="search-icon">⌕</span>
           <input id="collection-search" type="text" placeholder="Filtrer par nom d'extension..." oninput="filterCollectionCatalog(this.value)">
         </div>
+        <div class="region-filter" id="collection-region-filter">
+          <button class="tab-btn active" data-region="all" onclick="setCollectionRegionFilter('all', this)">Tout</button>
+          <button class="tab-btn" data-region="intl" onclick="setCollectionRegionFilter('intl', this)">Inter</button>
+          <button class="tab-btn" data-region="jp" onclick="setCollectionRegionFilter('jp', this)">Japon</button>
+        </div>
         <div class="view-toggle">
           <button id="sets-list-btn" class="view-toggle-btn active" onclick="setCollectionSetsViewMode('list')">Liste</button>
           <button id="sets-grid-btn" class="view-toggle-btn" onclick="setCollectionSetsViewMode('grid')">Grille</button>
@@ -2193,10 +2274,11 @@ async function renderCollectionContent(){
       </div>
       <div id="collection-catalog" class="collection-sets-container"><div class="empty-state">Chargement des extensions...</div></div>`;
     content.innerHTML = statsHtml;
+    collectionRegionFilter = "all"; // les boutons repartent sur "Tout" à chaque rendu de la page
 
     // Léger : uniquement la liste des sets (présents et futurs), pas leurs
     // cartes — chaque set charge les siennes à la demande, au premier clic.
-    const allSets = await fetchAllPaginated(`sets?select=id,name_en,total_cards,set_names(locale,name)&order=id.asc`);
+    const allSets = await fetchAllPaginated(`sets?select=id,name_en,total_cards,release_region,set_names(locale,name)&order=id.asc`);
 
     collectionCatalogState = { allSets, ownedBySet, loadedCardsBySet: {} };
     renderCollectionCatalog();
@@ -2243,7 +2325,7 @@ function renderCollectionCatalog(){
     const pct = set.total_cards ? Math.round((ownedCount / set.total_cards) * 100) : null;
 
     return `
-      <div class="collection-set-accordion" data-set-id="${set.id}" data-set-name="${setName.toLowerCase()}">
+      <div class="collection-set-accordion" data-set-id="${set.id}" data-set-name="${setName.toLowerCase()}" data-region="${set.release_region || "intl"}">
         <div class="collection-set-header" onclick="toggleSetAccordion(${set.id}, this.parentElement)">
           <span class="accordion-caret">▸</span>
           <h3>${setName}</h3>
@@ -2380,11 +2462,21 @@ function refreshCollectionStats(){
 
 /* Recherche sur le NOM DU SET, pas sur les cartes individuelles (qui ne
    sont chargées qu'à la demande) — instantanée, sans requête réseau. */
+let collectionRegionFilter = "all"; // "all" | "intl" | "jp"
+
+function setCollectionRegionFilter(region, btn){
+  collectionRegionFilter = region;
+  document.querySelectorAll("#collection-region-filter .tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  filterCollectionCatalog(document.getElementById("collection-search").value);
+}
+
 function filterCollectionCatalog(term){
   const q = term.trim().toLowerCase();
   document.querySelectorAll(".collection-set-accordion").forEach(setEl => {
-    const matches = !q || setEl.dataset.setName.includes(q);
-    setEl.style.display = matches ? "" : "none";
+    const matchesText = !q || setEl.dataset.setName.includes(q);
+    const matchesRegion = collectionRegionFilter === "all" || setEl.dataset.region === collectionRegionFilter;
+    setEl.style.display = (matchesText && matchesRegion) ? "" : "none";
   });
 }
 
@@ -3233,11 +3325,92 @@ function openSlotPicker(slotIndex){
   slotPickerTargetIndex = slotIndex;
   document.getElementById("slot-picker-search").value = "";
   document.getElementById("slot-picker-results").innerHTML = "";
+  setSlotPickerMode("search", document.querySelector('#slot-picker-overlay .tab-btn[data-mode="search"]'));
   document.getElementById("slot-picker-overlay").classList.add("active");
 }
 function closeSlotPicker(){
   document.getElementById("slot-picker-overlay").classList.remove("active");
   slotPickerTargetIndex = null;
+}
+
+function setSlotPickerMode(mode, btn){
+  document.querySelectorAll("#slot-picker-overlay .tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("slot-picker-search-mode").style.display = mode === "search" ? "block" : "none";
+  document.getElementById("slot-picker-browse-mode").style.display = mode === "browse" ? "block" : "none";
+  if (mode === "browse" && !cachedAllSetsForPicker){
+    loadSlotPickerSets();
+  }
+}
+
+let cachedAllSetsForPicker = null;
+
+async function loadSlotPickerSets(){
+  const list = document.getElementById("slot-picker-sets-list");
+  list.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    cachedAllSetsForPicker = await fetchAllPaginated(`sets?select=id,name_en,release_region,set_names(locale,name)&order=name_en.asc`);
+    list.innerHTML = cachedAllSetsForPicker.map(set => {
+      const setName = pickLocalized(set.set_names, LANG) || set.name_en;
+      return `
+        <div class="picker-set-accordion" data-set-id="${set.id}" data-region="${set.release_region || "intl"}">
+          <div class="picker-set-header" onclick="togglePickerSet(${set.id}, this.parentElement)">
+            <span class="accordion-caret">▸</span><span>${setName}</span>
+          </div>
+          <div class="picker-set-body"><div class="picker-card-slider"></div></div>
+        </div>`;
+    }).join("");
+    filterPickerSetsByRegion(); // applique le filtre déjà sélectionné, si on le rouvre après un premier passage
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+let pickerRegionFilter = "all"; // "all" | "intl" | "jp"
+
+function setPickerRegionFilter(region, btn){
+  pickerRegionFilter = region;
+  document.querySelectorAll("#picker-region-filter .tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  filterPickerSetsByRegion();
+}
+
+function filterPickerSetsByRegion(){
+  document.querySelectorAll(".picker-set-accordion").forEach(el => {
+    el.style.display = (pickerRegionFilter === "all" || el.dataset.region === pickerRegionFilter) ? "" : "none";
+  });
+}
+
+async function togglePickerSet(setId, accordionEl){
+  const isOpening = !accordionEl.classList.contains("open");
+  accordionEl.classList.toggle("open");
+  if (!isOpening || accordionEl.dataset.loaded) return;
+
+  const slider = accordionEl.querySelector(".picker-card-slider");
+  slider.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const cards = await supabaseSelect(
+      `cards?set_id=eq.${setId}&select=id,card_number,card_names(locale,name),card_images(image_url,variant)&limit=1000`
+    );
+    cards.sort((a, b) => {
+      const na = parseInt(a.card_number, 10), nb = parseInt(b.card_number, 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return (a.card_number || "").localeCompare(b.card_number || "");
+    });
+    // Une seule ligne défilante (pas une grille) : chaque carte est un
+    // élément de largeur fixe dans un conteneur à défilement horizontal.
+    slider.innerHTML = cards.map(cardRow => {
+      const c = shapeCard(cardRow);
+      return `
+        <div class="picker-card-item" onclick="assignCardToSlot(${c.id})" title="${c.name}">
+          ${c.image ? `<img src="${imageVariants(c.image,'low').webp}" alt="${c.name}">` : `<span class="glyph">⚡</span>`}
+          <span class="picker-card-name">${c.name}</span>
+        </div>`;
+    }).join("");
+    accordionEl.dataset.loaded = "1";
+  } catch (e) {
+    slider.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
 }
 
 async function slotPickerSearch(term){
