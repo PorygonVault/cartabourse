@@ -92,6 +92,14 @@
     padding:10px 12px;border-radius:var(--radius);font-size:14px;margin-bottom:10px;
   }
   .modal input:focus{border-color:var(--gold);outline:none;}
+  .password-field-wrap{position:relative;}
+  .password-field-wrap input{width:100%;padding-right:42px;}
+  .password-toggle-btn{
+    position:absolute;top:50%;right:6px;transform:translateY(-50%);
+    background:none;border:none;color:var(--text-faint);font-size:15px;cursor:pointer;
+    padding:4px 8px;line-height:1;
+  }
+  .password-toggle-btn:hover{color:var(--text);}
   .auth-error{font-family:var(--font-mono);font-size:12px;color:var(--red);margin-bottom:10px;min-height:14px;}
   .auth-error.success{color:var(--green);}
   .auth-submit{
@@ -189,6 +197,17 @@
   }
   .modal-switch a{color:var(--gold-bright);font-weight:600;}
   .modal-switch a:hover{text-decoration:underline;}
+
+  .scanner-upload-zone{
+    background:var(--panel);border:1px dashed var(--border);border-radius:8px;
+    padding:32px;text-align:center;max-width:420px;
+  }
+  .scan-result-tile{position:relative;}
+  .scan-score-badge{
+    position:absolute;top:8px;left:8px;z-index:3;background:rgba(13,14,21,0.85);
+    border:1px solid var(--gold);color:var(--gold-bright);border-radius:12px;
+    padding:2px 8px;font-family:var(--font-mono);font-size:10px;font-weight:600;
+  }
 
   main{max-width:1600px;margin:0 auto;padding:0 28px 80px;}
   .hero{padding:44px 0 30px;border-bottom:1px solid var(--border);margin-bottom:28px;}
@@ -583,7 +602,10 @@
     <div class="modal-divider"><span>ou</span></div>
 
     <input type="email" id="auth-email" placeholder="Adresse email" autocomplete="email">
-    <input type="password" id="auth-password" placeholder="Mot de passe" autocomplete="current-password">
+    <div class="password-field-wrap">
+      <input type="password" id="auth-password" placeholder="Mot de passe" autocomplete="current-password">
+      <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('auth-password', this)" title="Afficher/masquer le mot de passe">👁</button>
+    </div>
     <div class="auth-error" id="auth-error"></div>
     <button class="auth-submit" id="auth-submit-btn" onclick="handleEmailAuth()">Se connecter</button>
 
@@ -591,6 +613,30 @@
       <span id="auth-switch-text">Pas encore de compte ?</span>
       <a href="#" onclick="toggleAuthMode();return false;" id="auth-switch-link">Créer un compte</a>
     </div>
+    <div class="modal-switch" id="forgot-password-row">
+      <a href="#" onclick="openForgotPasswordForm();return false;">Mot de passe oublié ?</a>
+    </div>
+
+    <div id="forgot-password-panel" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--border);">
+      <p style="color:var(--text-dim);font-size:12.5px;margin:0 0 10px;">Recevez un lien pour choisir un nouveau mot de passe.</p>
+      <input type="email" id="forgot-password-email" placeholder="Votre adresse email" autocomplete="email">
+      <div class="auth-error" id="forgot-password-error"></div>
+      <button class="auth-submit" onclick="submitForgotPassword()">Envoyer le lien</button>
+      <div class="modal-switch"><a href="#" onclick="closeForgotPasswordForm();return false;">Retour à la connexion</a></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="reset-password-overlay">
+  <div class="modal">
+    <h3>Nouveau mot de passe</h3>
+    <p style="color:var(--text-dim);font-size:12.5px;margin:0 0 14px;">Choisissez un nouveau mot de passe pour votre compte.</p>
+    <div class="password-field-wrap">
+      <input type="password" id="reset-password-input" placeholder="Nouveau mot de passe" autocomplete="new-password">
+      <button type="button" class="password-toggle-btn" onclick="togglePasswordVisibility('reset-password-input', this)" title="Afficher/masquer le mot de passe">👁</button>
+    </div>
+    <div class="auth-error" id="reset-password-error"></div>
+    <button class="auth-submit" onclick="submitNewPassword()">Enregistrer le nouveau mot de passe</button>
   </div>
 </div>
 
@@ -839,6 +885,25 @@
     <div id="binder-page-view"><div class="empty-state">Chargement...</div></div>
   </section>
 
+  <section id="view-scanner" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Scanner</div>
+
+    <div class="section-title"><span>Scanner une carte</span></div>
+    <p style="color:var(--text-dim);font-size:13.5px;max-width:560px;margin-bottom:20px;">
+      Prenez en photo ou envoyez l'image d'une carte — le scanner cherche les cartes les plus ressemblantes dans le catalogue.
+    </p>
+
+    <div class="scanner-upload-zone">
+      <input type="file" id="scanner-file-input" accept="image/*" capture="environment" onchange="handleScannerFile(this.files[0])" style="display:none;">
+      <button class="auth-submit" style="width:auto;padding:12px 28px;" onclick="document.getElementById('scanner-file-input').click()">
+        📷 Prendre / choisir une photo
+      </button>
+      <img id="scanner-preview" style="display:none;max-width:220px;border-radius:6px;margin-top:16px;">
+    </div>
+
+    <div id="scanner-results" style="margin-top:28px;"></div>
+  </section>
+
   <section id="view-admin" class="view">
     <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Administration</div>
 
@@ -868,6 +933,9 @@
    ============================================================ */
 const SUPABASE_URL = "https://yxtkigoxixxuvudjumfw.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4dGtpZ294aXh4dXZ1ZGp1bWZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MzkzMDksImV4cCI6MjEwMTAxNTMwOX0.ZLWmbFUw34kLghouphKDGUvn9YA8Vz7kziX7zFZ4Ric";
+// À remplacer par l'URL réelle de votre Space une fois déployé
+// (Space → cliquez sur "..." → "Embed this Space" affiche l'URL directe).
+const SCANNER_API_URL = "https://VOTRE-NOM-VOTRE-SPACE.hf.space";
 
 const PAGE_SIZE = 40; // plus petit = premier affichage plus rapide ; "Charger plus" complète ensuite
 
@@ -996,6 +1064,7 @@ function closeAuthModal(){
   document.getElementById("auth-modal-overlay").classList.remove("active");
   document.getElementById("auth-error").textContent = "";
   document.getElementById("auth-error").className = "auth-error";
+  closeForgotPasswordForm();
 }
 
 let reportingListingId = null;
@@ -1078,12 +1147,95 @@ async function handleEmailAuth(){
       const { error } = await supabaseClient.auth.signUp({ email, password });
       if (error) throw error;
       errorEl.className = "auth-error success";
-      errorEl.textContent = "Compte créé — vérifiez vos emails pour confirmer votre inscription.";
+      errorEl.textContent = "Compte créé — vous pouvez vous connecter dès maintenant.";
     } else {
       const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
       if (error) throw error;
       closeAuthModal();
     }
+  } catch (e) {
+    if (e.message && e.message.toLowerCase().includes("email not confirmed")){
+      errorEl.innerHTML = `Ce compte n'a pas encore été confirmé. <a href="#" onclick="resendConfirmationEmail('${email.replace(/'/g,"\\'")}');return false;">Renvoyer l'email de confirmation</a>`;
+    } else {
+      errorEl.textContent = e.message;
+    }
+  }
+}
+
+async function resendConfirmationEmail(email){
+  const errorEl = document.getElementById("auth-error");
+  try {
+    const { error } = await supabaseClient.auth.resend({ type: "signup", email });
+    if (error) throw error;
+    errorEl.className = "auth-error success";
+    errorEl.textContent = "Email de confirmation renvoyé — vérifiez aussi vos spams.";
+  } catch (e) {
+    errorEl.className = "auth-error";
+    errorEl.textContent = e.message;
+  }
+}
+
+function togglePasswordVisibility(inputId, btn){
+  const input = document.getElementById(inputId);
+  const isHidden = input.type === "password";
+  input.type = isHidden ? "text" : "password";
+  btn.textContent = isHidden ? "🙈" : "👁";
+}
+
+function openForgotPasswordForm(){
+  document.getElementById("forgot-password-panel").style.display = "block";
+  document.getElementById("forgot-password-row").style.display = "none";
+  document.getElementById("forgot-password-email").value = document.getElementById("auth-email").value;
+  document.getElementById("forgot-password-error").textContent = "";
+}
+function closeForgotPasswordForm(){
+  document.getElementById("forgot-password-panel").style.display = "none";
+  document.getElementById("forgot-password-row").style.display = "block";
+}
+
+async function submitForgotPassword(){
+  const email = document.getElementById("forgot-password-email").value.trim();
+  const errorEl = document.getElementById("forgot-password-error");
+  errorEl.className = "auth-error";
+  errorEl.textContent = "";
+
+  if (!email){
+    errorEl.textContent = "Renseignez votre adresse email.";
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname,
+    });
+    if (error) throw error;
+    errorEl.className = "auth-error success";
+    errorEl.textContent = "Email envoyé — cliquez sur le lien reçu pour choisir un nouveau mot de passe.";
+  } catch (e) {
+    errorEl.textContent = e.message;
+  }
+}
+
+async function submitNewPassword(){
+  const password = document.getElementById("reset-password-input").value;
+  const errorEl = document.getElementById("reset-password-error");
+  errorEl.className = "auth-error";
+  errorEl.textContent = "";
+
+  if (!password || password.length < 6){
+    errorEl.textContent = "Le mot de passe doit faire au moins 6 caractères.";
+    return;
+  }
+
+  try {
+    const { error } = await supabaseClient.auth.updateUser({ password });
+    if (error) throw error;
+    errorEl.className = "auth-error success";
+    errorEl.textContent = "Mot de passe mis à jour !";
+    setTimeout(() => {
+      document.getElementById("reset-password-overlay").classList.remove("active");
+      document.getElementById("reset-password-input").value = "";
+    }, 1200);
   } catch (e) {
     errorEl.textContent = e.message;
   }
@@ -1142,6 +1294,7 @@ async function renderAuthArea(session){
       }
     } catch (_) { /* on garde l'email en repli si le profil n'est pas encore accessible */ }
     area.innerHTML = `
+      <a href="#" class="auth-btn" onclick="navigateScanner();return false;">Scanner</a>
       <a href="#" class="auth-btn" onclick="navigateCollection();return false;">Ma collection</a>
       <a href="#" class="auth-btn" onclick="navigateBinders();return false;">Mes classeurs</a>
       ${role === "admin" ? `<a href="#" class="auth-btn" onclick="navigateAdmin();return false;">Admin</a>` : ""}
@@ -1149,11 +1302,21 @@ async function renderAuthArea(session){
       <button class="auth-btn" onclick="signOut()">Se déconnecter</button>
     `;
   } else {
-    area.innerHTML = `<button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
+    area.innerHTML = `
+      <a href="#" class="auth-btn" onclick="navigateScanner();return false;">Scanner</a>
+      <button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
   }
 }
 
-supabaseClient.auth.onAuthStateChange((_event, session) => renderAuthArea(session));
+supabaseClient.auth.onAuthStateChange((event, session) => {
+  renderAuthArea(session);
+  if (event === "PASSWORD_RECOVERY"){
+    // L'utilisateur vient de cliquer sur le lien reçu par email — on lui
+    // demande son nouveau mot de passe avant de le laisser continuer.
+    document.getElementById("auth-modal-overlay").classList.remove("active");
+    document.getElementById("reset-password-overlay").classList.add("active");
+  }
+});
 supabaseClient.auth.getSession().then(({ data }) => renderAuthArea(data.session));
 
 /* ============================================================
@@ -1516,6 +1679,7 @@ function navigateFavorites(){ location.hash = "#/favorites"; }
 function navigateAdmin(tab = "cards"){ location.hash = "#/admin/" + tab; }
 function navigateBinders(){ location.hash = "#/binders"; }
 function navigateBinder(id){ location.hash = "#/binder/" + id; }
+function navigateScanner(){ location.hash = "#/scanner"; }
 
 window.addEventListener("hashchange", route);
 window.addEventListener("DOMContentLoaded", init);
@@ -1549,6 +1713,7 @@ function route(){
   const isAdminRoot = hash === "#/admin";
   const isBindersList = hash === "#/binders";
   const binderMatch = hash.match(/^#\/binder\/(\d+)$/);
+  const isScanner = hash === "#/scanner";
 
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
@@ -1558,6 +1723,7 @@ function route(){
   document.getElementById("view-admin").classList.remove("active");
   document.getElementById("view-binders").classList.remove("active");
   document.getElementById("view-binder").classList.remove("active");
+  document.getElementById("view-scanner").classList.remove("active");
 
   if (cardMatch){
     document.getElementById("view-card").classList.add("active");
@@ -1580,6 +1746,8 @@ function route(){
   } else if (binderMatch){
     document.getElementById("view-binder").classList.add("active");
     renderBinderPage(parseInt(binderMatch[1], 10));
+  } else if (isScanner){
+    document.getElementById("view-scanner").classList.add("active");
   } else if (searchMatch){
     document.getElementById("view-home").classList.add("active");
     const term = decodeURIComponent(searchMatch[1]);
@@ -3555,6 +3723,65 @@ async function deleteBinderFromList(binderId){
   } catch (e) {
     alert(`Impossible de supprimer ce classeur : ${e.message}`);
   }
+}
+
+/* ============================================================
+   SCANNER DE CARTES
+   ============================================================ */
+async function handleScannerFile(file){
+  if (!file) return;
+
+  const preview = document.getElementById("scanner-preview");
+  preview.src = URL.createObjectURL(file);
+  preview.style.display = "block";
+
+  const results = document.getElementById("scanner-results");
+  results.innerHTML = `<div class="empty-state">Analyse de la photo en cours... (le service peut mettre jusqu'à une minute à se réveiller s'il n'a pas été utilisé récemment)</div>`;
+
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const resp = await fetch(`${SCANNER_API_URL}/scan`, { method: "POST", body: formData });
+    if (!resp.ok){
+      const errBody = await resp.json().catch(() => ({}));
+      throw new Error(errBody.detail || `Erreur ${resp.status}`);
+    }
+    const data = await resp.json();
+    renderScannerResults(data.results || []);
+  } catch (e) {
+    results.innerHTML = `<div class="empty-state">Impossible d'analyser la photo : ${e.message}</div>`;
+  }
+}
+
+function renderScannerResults(results){
+  const container = document.getElementById("scanner-results");
+  if (!results.length){
+    container.innerHTML = `<div class="empty-state">Aucune carte ressemblante trouvée.</div>`;
+    return;
+  }
+
+  container.innerHTML = `
+    <div class="section-title"><span>Résultats</span></div>
+    <div class="grid">
+      ${results.map(r => {
+        const nameObj = r.names.find(n => n.locale === LANG) || r.names.find(n => n.locale === "en") || r.names[0];
+        const name = nameObj ? nameObj.name : "?";
+        const scorePct = Math.round((r.score || 0) * 100);
+        return `
+          <div class="card-tile scan-result-tile" onclick="navigateCard(${r.card_id})">
+            <span class="scan-score-badge">${scorePct}% ressemblant</span>
+            <div class="art">
+              ${quickActionsHtml(r.card_id)}
+              ${r.image_url ? cardImgTag(r.image_url, "low", "art-img", name, 'loading="lazy"') : `<span class="glyph">⚡</span>`}
+            </div>
+            <div class="tile-body">
+              <div class="tcg-label">${r.set_name || ""}</div>
+              <h3>${name}</h3>
+            </div>
+          </div>`;
+      }).join("")}
+    </div>`;
 }
 </script>
 </body>
