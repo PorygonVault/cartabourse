@@ -27,6 +27,12 @@
   .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:13px;}
 
   .auth-area{display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .hamburger-btn{
+    display:none;background:none;border:1px solid var(--border);color:var(--text);
+    border-radius:var(--radius);padding:6px 11px;font-size:16px;cursor:pointer;flex-shrink:0;
+  }
+  .hamburger-btn:hover{border-color:var(--gold);}
+  .header-menu-panel{display:flex;align-items:center;gap:14px;}
   .currency-select{
     font-family:var(--font-mono);font-size:12px;background:var(--panel);border:1px solid var(--border);
     color:var(--text-dim);padding:7px 10px;border-radius:20px;cursor:pointer;flex-shrink:0;
@@ -412,7 +418,7 @@
   .row-buy:hover{border-color:var(--gold);color:var(--gold-bright);}
   tr:hover .row-buy{border-color:var(--gold);color:var(--gold-bright);}
 
-  .listings-tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:1px solid var(--border);}
+  .listings-tabs{display:flex;gap:4px;margin-bottom:18px;border-bottom:1px solid var(--border);overflow-y:hidden;}
   .tab-btn{
     font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.04em;
     padding:9px 16px;border:none;background:transparent;color:var(--text-dim);cursor:pointer;
@@ -451,11 +457,25 @@
      ============================================================ */
   @media (max-width:640px){
     main{padding:0 14px 60px;}
-    .header-inner{padding:12px 14px;gap:12px;}
+    .header-inner{padding:12px 14px;gap:12px;position:relative;}
     .search-wrap{min-width:0;flex-basis:100%;order:3;max-width:none;}
     .brand{flex-shrink:0;}
     .auth-area{gap:6px;}
     .auth-btn{padding:7px 10px;font-size:11.5px;}
+
+    /* Menu principal replié derrière un bouton ☰ — plutôt que d'entasser
+       devise + connexion/liens dans la même ligne que le logo et la
+       recherche, cause principale des débordements sur beaucoup de pages. */
+    .hamburger-btn{display:block;order:2;}
+    .header-menu-panel{
+      display:none;position:absolute;top:100%;left:0;right:0;z-index:60;
+      flex-direction:column;align-items:stretch;gap:10px;
+      background:var(--panel);border:1px solid var(--border);border-top:none;
+      padding:14px;border-radius:0 0 8px 8px;
+    }
+    .header-menu-panel.mobile-open{display:flex;}
+    .header-menu-panel .auth-area{flex-direction:column;align-items:stretch;gap:8px;}
+    .header-menu-panel .currency-select{width:100%;}
 
     .grid{grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px;}
 
@@ -476,6 +496,19 @@
 
     .detail-top{gap:20px;}
     .buy-buttons, .collection-actions{flex-direction:column;}
+
+    /* Exemplaires référencés (fiche carte) : au lieu d'une ligne de
+       tableau qui pousse tout vers la droite hors écran, chaque annonce
+       s'affiche en grille de 3 colonnes — 6 cellules -> exactement 2 lignes. */
+    #listings-table-container .listing-table{min-width:0;}
+    #listings-table-container .listing-table thead{display:none;}
+    #listings-table-container .listing-table,
+    #listings-table-container .listing-table tbody{display:block;width:100%;}
+    #listings-table-container .listing-table tr{
+      display:grid;grid-template-columns:repeat(3,1fr);gap:6px 10px;align-items:center;
+      padding:10px 4px;border-bottom:1px solid var(--border);
+    }
+    #listings-table-container .listing-table td{padding:0;border:none;font-size:12px;}
   }
 </style>
 </head>
@@ -488,12 +521,15 @@
       <span class="search-icon">⌕</span>
       <input id="global-search" type="text" placeholder="Rechercher une carte ou une extension… (Entrée pour lancer)" onkeydown="onSearchKeydown(event)">
     </div>
-    <select class="currency-select" id="currency-select" onchange="setCurrency(this.value)">
-      <option value="EUR">€ EUR</option>
-      <option value="GBP">£ GBP</option>
-    </select>
-    <div class="auth-area" id="auth-area">
-      <button class="auth-btn" onclick="openAuthModal()">Se connecter</button>
+    <button class="hamburger-btn" id="hamburger-btn" onclick="toggleMobileMenu()">☰</button>
+    <div class="header-menu-panel" id="header-menu-panel">
+      <select class="currency-select" id="currency-select" onchange="setCurrency(this.value)">
+        <option value="EUR">€ EUR</option>
+        <option value="GBP">£ GBP</option>
+      </select>
+      <div class="auth-area" id="auth-area">
+        <button class="auth-btn" onclick="openAuthModal()">Se connecter</button>
+      </div>
     </div>
   </div>
 </header>
@@ -716,6 +752,7 @@
         <span id="binder-page-total"> / 1</span>
         <button class="qty-btn" onclick="changeBinderPage(1)">→</button>
         <button class="collection-btn" onclick="addBinderPage()">+ Page</button>
+        <button class="collection-btn" onclick="deleteBinderPage()">− Page</button>
         <button class="collection-btn" onclick="toggleEditBinderForm()">Modifier</button>
         <button class="collection-btn" onclick="deleteCurrentBinder()">Supprimer</button>
       </div>
@@ -1379,6 +1416,7 @@ async function performSearch(term){
    ou un lien partagé la retrouve telle quelle, au lieu de repartir à zéro.
    ============================================================ */
 function navigateHome(){ location.hash = "#/"; }
+function toggleMobileMenu(){ document.getElementById("header-menu-panel").classList.toggle("mobile-open"); }
 function navigateCard(id){ location.hash = "#/card/" + id; }
 function navigateSearch(term){ location.hash = "#/search/" + encodeURIComponent(term); }
 function navigateAccount(){ location.hash = "#/account"; }
@@ -1408,6 +1446,7 @@ async function init(){
 }
 
 function route(){
+  document.getElementById("header-menu-panel").classList.remove("mobile-open");
   const hash = location.hash || "#/";
   const cardMatch = hash.match(/^#\/card\/(\d+)$/);
   const setMatch = hash.match(/^#\/set\/(\d+)$/);
@@ -3002,15 +3041,74 @@ function jumpToBinderPage(value){
 
 async function addBinderPage(){
   try {
+    // Décale toutes les pages APRÈS la page actuelle d'un cran, pour
+    // insérer la nouvelle page juste après celle qu'on regarde — pas
+    // systématiquement à la toute fin du classeur.
+    const toShift = await supabaseAuthedFetch(
+      `binder_slots?binder_id=eq.${currentBinder.id}&page_number=gt.${currentBinderPage}&select=id,page_number,slot_index,card_id`
+    );
+    if (toShift.length){
+      await supabaseAuthedFetch(`binder_slots?binder_id=eq.${currentBinder.id}&page_number=gt.${currentBinderPage}`, {
+        method: "DELETE",
+      });
+      const shifted = toShift.map(s => ({
+        binder_id: currentBinder.id, page_number: s.page_number + 1, slot_index: s.slot_index, card_id: s.card_id,
+      }));
+      await supabaseAuthedFetch("binder_slots", { method: "POST", body: JSON.stringify(shifted) });
+    }
+
     const newCount = currentBinder.page_count + 1;
     await supabaseAuthedFetch(`binders?id=eq.${currentBinder.id}`, {
       method: "PATCH", body: JSON.stringify({ page_count: newCount }),
     });
     currentBinder.page_count = newCount;
-    currentBinderPage = newCount;
+    currentBinderPage = currentBinderPage + 1; // la page qu'on vient de créer
     loadAndRenderBinderPage();
   } catch (e) {
     alert(`Impossible d'ajouter une page : ${e.message}`);
+  }
+}
+
+async function deleteBinderPage(){
+  if (currentBinder.page_count <= 1){
+    alert("Un classeur doit garder au moins une page — supprimez le classeur entier si besoin.");
+    return;
+  }
+
+  const cardsOnPage = Object.keys(currentBinderSlots).length;
+  const warning = cardsOnPage > 0
+    ? `Cette page contient ${cardsOnPage} carte${cardsOnPage > 1 ? "s" : ""} — elles seront retirées définitivement. `
+    : "";
+  if (!confirm(`${warning}Supprimer la page ${currentBinderPage} ?`)) return;
+
+  try {
+    // Retire les cartes de la page supprimée, puis décale toutes les
+    // pages suivantes d'un cran vers le bas pour combler le vide.
+    await supabaseAuthedFetch(`binder_slots?binder_id=eq.${currentBinder.id}&page_number=eq.${currentBinderPage}`, {
+      method: "DELETE",
+    });
+    const toShift = await supabaseAuthedFetch(
+      `binder_slots?binder_id=eq.${currentBinder.id}&page_number=gt.${currentBinderPage}&select=id,page_number,slot_index,card_id`
+    );
+    if (toShift.length){
+      await supabaseAuthedFetch(`binder_slots?binder_id=eq.${currentBinder.id}&page_number=gt.${currentBinderPage}`, {
+        method: "DELETE",
+      });
+      const shifted = toShift.map(s => ({
+        binder_id: currentBinder.id, page_number: s.page_number - 1, slot_index: s.slot_index, card_id: s.card_id,
+      }));
+      await supabaseAuthedFetch("binder_slots", { method: "POST", body: JSON.stringify(shifted) });
+    }
+
+    const newCount = currentBinder.page_count - 1;
+    await supabaseAuthedFetch(`binders?id=eq.${currentBinder.id}`, {
+      method: "PATCH", body: JSON.stringify({ page_count: newCount }),
+    });
+    currentBinder.page_count = newCount;
+    currentBinderPage = Math.min(currentBinderPage, newCount);
+    loadAndRenderBinderPage();
+  } catch (e) {
+    alert(`Impossible de supprimer cette page : ${e.message}`);
   }
 }
 
