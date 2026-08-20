@@ -116,7 +116,13 @@
 
   .binder-toolbar{margin-bottom:14px;}
   .binder-controls-row{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:24px;}
-  .binder-page-nav{display:flex;align-items:center;gap:10px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .binder-page-nav{display:flex;align-items:center;gap:6px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .binder-page-nav .qty-btn{width:24px;height:24px;font-size:12px;}
+  .binder-page-nav .page-btn{
+    width:24px;height:24px;border:1px solid var(--border);background:var(--panel-light);color:var(--text-dim);
+    border-radius:3px;cursor:pointer;font-family:var(--font-mono);font-size:14px;line-height:1;flex-shrink:0;
+  }
+  .binder-page-nav .page-btn:hover{border-color:var(--gold);color:var(--text);}
   .binder-page-nav span{font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);min-width:64px;text-align:center;flex-shrink:0;}
   .binder-actions{display:flex;gap:10px;flex-shrink:0;}
 
@@ -131,8 +137,10 @@
   /* Page de classeur : grille de cases au format carte à jouer, avec
      bordure autour et entre chaque case. La couleur du fond change selon
      le thème choisi (noir/blanc/gris), la case elle-même reste neutre. */
+  #binder-page-view{perspective:1400px;}
   .binder-page{
     display:grid;gap:10px;padding:20px;border-radius:8px;max-width:900px;
+    transform-origin:left center;backface-visibility:hidden;
   }
   .binder-page.color-black{background:#0a0a0d;border:1px solid #2a2a30;}
   .binder-page.color-white{background:#e8e6e0;border:1px solid #c9c6bc;}
@@ -751,13 +759,12 @@
     <div class="binder-controls-row">
       <div class="binder-page-nav">
         <button class="qty-btn" onclick="changeBinderPage(-1)">←</button>
-        <span>Page</span>
-        <input type="number" id="binder-page-input" min="1" style="width:56px;text-align:center;"
+        <input type="number" id="binder-page-input" min="1" style="width:42px;text-align:center;"
                onchange="jumpToBinderPage(this.value)" onkeydown="if(event.key==='Enter')this.blur()">
         <span id="binder-page-total"> / 1</span>
         <button class="qty-btn" onclick="changeBinderPage(1)">→</button>
-        <button class="collection-btn" onclick="addBinderPage()">+ Page</button>
-        <button class="collection-btn" onclick="deleteBinderPage()">− Page</button>
+        <button class="page-btn" title="Ajouter une page" onclick="addBinderPage()">+</button>
+        <button class="page-btn" title="Supprimer cette page" onclick="deleteBinderPage()">−</button>
       </div>
       <div class="binder-actions">
         <button class="collection-btn" onclick="toggleEditBinderForm()">Modifier</button>
@@ -2962,7 +2969,8 @@ async function createBinder(){
 
 let currentBinder = null;
 let currentBinderPage = 1;
-let currentBinderSlots = {}; // slot_index -> {id, card_id, name, image}
+let currentBinderSlots = {}; // slot_index -> {id, card_id, name, image} de la page AFFICHÉE
+let binderPageCache = {};    // page_number -> même structure, pour les pages déjà visitées/préchargées
 
 async function renderBinderPage(binderId){
   const { data } = await supabaseClient.auth.getSession();
@@ -2978,6 +2986,7 @@ async function renderBinderPage(binderId){
     }
     currentBinder = rows[0];
     currentBinderPage = 1;
+    binderPageCache = {}; // nouveau classeur : le cache de l'ancien ne vaut plus rien
     document.getElementById("binder-bc-name").textContent = currentBinder.name;
     document.getElementById("binder-title").textContent = currentBinder.name;
     await loadAndRenderBinderPage();
@@ -2986,48 +2995,109 @@ async function renderBinderPage(binderId){
   }
 }
 
-async function loadAndRenderBinderPage(){
+/* Récupère (sans jamais toucher à l'affichage) le contenu d'UNE page —
+   utilisée aussi bien pour la page demandée que pour le préchargement
+   silencieux des pages voisines. */
+async function fetchBinderPageSlots(pageNumber){
+  const slotRows = await supabaseAuthedFetch(
+    `binder_slots?binder_id=eq.${currentBinder.id}&page_number=eq.${pageNumber}` +
+    `&select=id,slot_index,card_id,cards(card_names(locale,name),card_images(image_url,variant))`
+  );
+  const map = {};
+  for (const row of slotRows){
+    const names = row.cards ? row.cards.card_names : [];
+    const nameObj = names.find(n => n.locale === LANG) || names.find(n => n.locale === "en") || names[0];
+    const image = row.cards && row.cards.card_images && row.cards.card_images[0] ? row.cards.card_images[0].image_url : null;
+    map[row.slot_index] = { id: row.id, card_id: row.card_id, name: nameObj ? nameObj.name : "?", image };
+  }
+  return map;
+}
+
+function buildBinderPageHtml(slotsMap){
+  const [rows, cols] = currentBinder.format.split("x").map(Number);
+  const totalSlots = rows * cols;
+  let html = `<div class="binder-page color-${currentBinder.color}" style="grid-template-columns:repeat(${cols},1fr);">`;
+  for (let i = 0; i < totalSlots; i++){
+    const filled = slotsMap[i];
+    if (filled){
+      html += `
+        <div class="binder-slot" onclick="navigateCard(${filled.card_id})">
+          <button class="binder-slot-remove" title="Retirer" onclick="event.stopPropagation();removeBinderSlot(${filled.id}, ${i})">×</button>
+          <button class="binder-slot-swap" title="Changer la carte" onclick="event.stopPropagation();openSlotPicker(${i})">⇄</button>
+          ${filled.image ? `<img src="${imageVariants(filled.image,'low').webp}" alt="${filled.name}">` : `<span class="glyph">⚡</span>`}
+        </div>`;
+    } else {
+      html += `<div class="binder-slot" onclick="openSlotPicker(${i})"><span class="slot-plus">+</span></div>`;
+    }
+  }
+  html += `</div>`;
+  return html;
+}
+
+/* direction : 0 = pas d'animation (premier affichage), 1 = va vers une
+   page suivante ("tourne" vers la gauche), -1 = vers une page précédente. */
+async function loadAndRenderBinderPage(direction = 0){
   document.getElementById("binder-page-input").value = currentBinderPage;
   document.getElementById("binder-page-input").max = currentBinder.page_count;
   document.getElementById("binder-page-total").textContent = ` / ${currentBinder.page_count}`;
   const view = document.getElementById("binder-page-view");
-  view.innerHTML = `<div class="empty-state">Chargement...</div>`;
 
   try {
-    const slotRows = await supabaseAuthedFetch(
-      `binder_slots?binder_id=eq.${currentBinder.id}&page_number=eq.${currentBinderPage}` +
-      `&select=id,slot_index,card_id,cards(card_names(locale,name),card_images(image_url,variant))`
-    );
-    currentBinderSlots = {};
-    for (const row of slotRows){
-      const names = row.cards ? row.cards.card_names : [];
-      const nameObj = names.find(n => n.locale === LANG) || names.find(n => n.locale === "en") || names[0];
-      const image = row.cards && row.cards.card_images && row.cards.card_images[0] ? row.cards.card_images[0].image_url : null;
-      currentBinderSlots[row.slot_index] = { id: row.id, card_id: row.card_id, name: nameObj ? nameObj.name : "?", image };
+    let slotsMap = binderPageCache[currentBinderPage];
+    if (!slotsMap){
+      // Pas déjà préchargée : on doit attendre le réseau, donc pas
+      // d'animation possible tant que le contenu n'est pas là.
+      if (!view.querySelector(".binder-page")) view.innerHTML = `<div class="empty-state">Chargement...</div>`;
+      slotsMap = await fetchBinderPageSlots(currentBinderPage);
+      binderPageCache[currentBinderPage] = slotsMap;
+    }
+    currentBinderSlots = slotsMap;
+
+    const html = buildBinderPageHtml(slotsMap);
+    if (direction !== 0 && view.querySelector(".binder-page")){
+      animateBinderPageTurn(view, html, direction);
+    } else {
+      view.innerHTML = html;
     }
 
-    const [rows, cols] = currentBinder.format.split("x").map(Number);
-    const totalSlots = rows * cols;
-
-    let html = `<div class="binder-page color-${currentBinder.color}" style="grid-template-columns:repeat(${cols},1fr);">`;
-    for (let i = 0; i < totalSlots; i++){
-      const filled = currentBinderSlots[i];
-      if (filled){
-        html += `
-          <div class="binder-slot" onclick="navigateCard(${filled.card_id})">
-            <button class="binder-slot-remove" title="Retirer" onclick="event.stopPropagation();removeBinderSlot(${filled.id}, ${i})">×</button>
-            <button class="binder-slot-swap" title="Changer la carte" onclick="event.stopPropagation();openSlotPicker(${i})">⇄</button>
-            ${filled.image ? `<img src="${imageVariants(filled.image,'low').webp}" alt="${filled.name}">` : `<span class="glyph">⚡</span>`}
-          </div>`;
-      } else {
-        html += `<div class="binder-slot" onclick="openSlotPicker(${i})"><span class="slot-plus">+</span></div>`;
-      }
-    }
-    html += `</div>`;
-    view.innerHTML = html;
+    preloadAdjacentBinderPages();
   } catch (e) {
     view.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
+}
+
+/* Chargement silencieux des pages juste avant/après — pour que le
+   changement de page (clic, saut direct, ou glissement tactile) soit
+   quasi instantané la plupart du temps, sans attendre le réseau. */
+function preloadAdjacentBinderPages(){
+  [currentBinderPage - 1, currentBinderPage + 1]
+    .filter(p => p >= 1 && p <= currentBinder.page_count && !binderPageCache[p])
+    .forEach(p => {
+      fetchBinderPageSlots(p).then(map => { binderPageCache[p] = map; }).catch(() => {});
+    });
+}
+
+/* Petite animation façon "page qui se tourne" : l'ancienne page pivote et
+   disparaît, la nouvelle prend le relais et pivote pour se remettre bien
+   en face — purement visuel, n'affecte jamais les données. */
+function animateBinderPageTurn(view, newHtml, direction){
+  const old = view.querySelector(".binder-page");
+  const outAngle = direction > 0 ? -90 : 90;
+  old.style.transition = "transform .15s ease-in, opacity .15s ease-in";
+  old.style.transform = `rotateY(${outAngle}deg)`;
+  old.style.opacity = "0";
+
+  setTimeout(() => {
+    view.innerHTML = newHtml;
+    const fresh = view.querySelector(".binder-page");
+    fresh.style.transform = `rotateY(${-outAngle}deg)`;
+    fresh.style.opacity = "0";
+    fresh.style.transition = "none";
+    void fresh.offsetWidth; // force le navigateur à appliquer l'état de départ avant d'animer
+    fresh.style.transition = "transform .15s ease-out, opacity .15s ease-out";
+    fresh.style.transform = "rotateY(0deg)";
+    fresh.style.opacity = "1";
+  }, 150);
 }
 
 /* Glisser à gauche = page suivante, à droite = page précédente — actif
@@ -3058,7 +3128,7 @@ function changeBinderPage(delta){
   const next = currentBinderPage + delta;
   if (next < 1 || next > currentBinder.page_count) return;
   currentBinderPage = next;
-  loadAndRenderBinderPage();
+  loadAndRenderBinderPage(delta > 0 ? 1 : -1);
 }
 
 function jumpToBinderPage(value){
@@ -3067,8 +3137,9 @@ function jumpToBinderPage(value){
     document.getElementById("binder-page-input").value = currentBinderPage; // valeur invalide : on revient à la page actuelle
     return;
   }
+  const direction = target === currentBinderPage ? 0 : (target > currentBinderPage ? 1 : -1);
   currentBinderPage = target;
-  loadAndRenderBinderPage();
+  loadAndRenderBinderPage(direction);
 }
 
 async function addBinderPage(){
@@ -3095,6 +3166,7 @@ async function addBinderPage(){
     });
     currentBinder.page_count = newCount;
     currentBinderPage = currentBinderPage + 1; // la page qu'on vient de créer
+    binderPageCache = {}; // les numéros de page ont tous décalé, le cache ne vaut plus rien
     loadAndRenderBinderPage();
   } catch (e) {
     alert(`Impossible d'ajouter une page : ${e.message}`);
@@ -3138,6 +3210,7 @@ async function deleteBinderPage(){
     });
     currentBinder.page_count = newCount;
     currentBinderPage = Math.min(currentBinderPage, newCount);
+    binderPageCache = {}; // les numéros de page ont tous décalé, le cache ne vaut plus rien
     loadAndRenderBinderPage();
   } catch (e) {
     alert(`Impossible de supprimer cette page : ${e.message}`);
@@ -3202,6 +3275,7 @@ async function assignCardToSlot(cardId){
       headers: { Prefer: "resolution=merge-duplicates" },
     });
     closeSlotPicker();
+    delete binderPageCache[currentBinderPage]; // sinon la page rechargée afficherait encore l'ancien contenu mis en cache
     loadAndRenderBinderPage();
   } catch (e) {
     alert(`Impossible de placer cette carte : ${e.message}`);
@@ -3287,6 +3361,7 @@ async function reflowBinderCards(newFormat){
     method: "PATCH", body: JSON.stringify({ page_count: newPageCount }),
   });
   currentBinder.page_count = newPageCount;
+  binderPageCache = {}; // le contenu de chaque page a potentiellement changé
 }
 
 async function deleteCurrentBinder(){
