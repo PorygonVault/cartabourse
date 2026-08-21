@@ -1841,7 +1841,7 @@ async function renderCardDetail(id){
       supabaseSelect(
         `cards?id=eq.${id}&select=id,card_number,sets(id,name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
       ),
-      supabaseSelect(`card_variants?card_id=eq.${id}&type=eq.normal&select=cardmarket_id&limit=1`),
+      supabaseSelect(`card_variants?card_id=eq.${id}&select=cardmarket_id&cardmarket_id=not.is.null&limit=1`),
     ]);
     if (!rows.length){
       document.getElementById("detail-name").textContent = "Carte introuvable";
