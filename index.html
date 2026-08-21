@@ -1837,14 +1837,18 @@ function route(){
 async function renderCardDetail(id){
   document.getElementById("detail-name").textContent = "Chargement...";
   try {
-    const rows = await supabaseSelect(
-      `cards?id=eq.${id}&select=id,card_number,sets(id,name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
-    );
+    const [rows, variantRows] = await Promise.all([
+      supabaseSelect(
+        `cards?id=eq.${id}&select=id,card_number,sets(id,name_en,total_cards,set_names(locale,name)),card_names(locale,name),card_images(image_url,variant)`
+      ),
+      supabaseSelect(`card_variants?card_id=eq.${id}&type=eq.normal&select=cardmarket_id&limit=1`),
+    ]);
     if (!rows.length){
       document.getElementById("detail-name").textContent = "Carte introuvable";
       return;
     }
     const card = shapeCard(rows[0]);
+    const cardmarketId = (variantRows[0] && variantRows[0].cardmarket_id) || null;
 
     document.getElementById("bc-name").textContent = card.name;
     const numberSuffix = card.cardNumber ? ` <span class="detail-number">${card.cardNumber}${card.setTotalCards ? "/" + card.setTotalCards : ""}</span>` : "";
@@ -1858,9 +1862,14 @@ async function renderCardDetail(id){
       ? cardImgTag(card.image, "high", "art-img", card.name)
       : `<span class="glyph">⚡</span>`;
 
-    const cmSet = slugify(card.setName);
-    const cmCard = slugify(card.nameEn);
-    const cardmarketUrl = `https://www.cardmarket.com/${LANG}/Pokemon/Products/Singles/${cmSet}/${cmCard}`;
+    let cardmarketUrl;
+    if (cardmarketId){
+      cardmarketUrl = `https://www.cardmarket.com/Pokemon/Products?idProduct=${cardmarketId}`;
+    } else {
+      const cmSet = slugify(card.setName);
+      const cmCard = slugify(card.nameEn);
+      cardmarketUrl = `https://www.cardmarket.com/${LANG}/Pokemon/Products/Singles/${cmSet}/${cmCard}`;
+    }
 
     // Requête localisée commune à eBay/Voggt/Whatnot : nom + numéro/total
     // + extension, tous dans la langue détectée du site (LANG).
