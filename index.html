@@ -176,6 +176,15 @@
     display:flex;align-items:center;justify-content:center;line-height:1;z-index:2;
   }
   .binder-slot-swap:hover{border-color:var(--gold);color:var(--gold-bright);}
+  .binder-slot.slot-target-active{border-color:var(--gold);box-shadow:0 0 0 2px var(--gold) inset;}
+
+  /* Zone de travail du classeur : sur mobile, simple colonne (comportement
+     d'origine, inchangé) — le panneau latéral n'existe que sur PC. */
+  .binder-workspace{display:block;}
+  .binder-sidebar{display:none;}
+
+  .binder-sidebar-hint{color:var(--text-faint);font-size:11.5px;margin:8px 0 0;}
+  .binder-sidebar-scroll{overflow-y:auto;}
 
   /* Navigateur "par extension" du pop-up de sélection de carte (classeur) —
      sets en liste, cartes d'un set ouvert en une seule ligne défilante,
@@ -566,6 +575,28 @@
     }
     #listings-table-container .listing-table td{padding:0;border:none;font-size:12px;}
   }
+
+  /* ============================================================
+     CLASSEUR — mise en page PC : classeur + panneau de sélection côte à
+     côte, tous deux calés sur la hauteur d'écran restante (plus besoin de
+     scroller pour voir tout le classeur).
+     ============================================================ */
+  @media (min-width:960px){
+    .binder-workspace{
+      display:flex;gap:24px;align-items:stretch;
+      height:calc(100vh - 260px); /* estimation : en-tête + fil d'ariane + titre + barre de contrôles */
+      min-height:420px;
+    }
+    #binder-page-view{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;min-width:0;}
+    .binder-page{height:100%;width:auto;}
+    .binder-slot{aspect-ratio:auto;} /* la hauteur vient de la grille (calée sur l'écran), pas d'un ratio fixe */
+
+    .binder-sidebar{
+      display:flex;flex-direction:column;width:300px;flex-shrink:0;
+      background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;overflow:hidden;
+    }
+    .binder-sidebar-scroll{flex:1;margin-top:10px;}
+  }
 </style>
 </head>
 <body>
@@ -677,9 +708,9 @@
 
     <div id="slot-picker-browse-mode" style="display:none;">
       <div class="region-filter" id="picker-region-filter" style="margin-top:12px;">
-        <button class="tab-btn active" data-region="all" onclick="setPickerRegionFilter('all', this)">Tout</button>
-        <button class="tab-btn" data-region="intl" onclick="setPickerRegionFilter('intl', this)">Inter</button>
-        <button class="tab-btn" data-region="jp" onclick="setPickerRegionFilter('jp', this)">Japon</button>
+        <button class="tab-btn active" data-region="all" onclick="setPickerRegionFilter('all', this, 'slot-picker-sets-list')">Tout</button>
+        <button class="tab-btn" data-region="intl" onclick="setPickerRegionFilter('intl', this, 'slot-picker-sets-list')">Inter</button>
+        <button class="tab-btn" data-region="jp" onclick="setPickerRegionFilter('jp', this, 'slot-picker-sets-list')">Japon</button>
       </div>
       <div id="slot-picker-sets-list" style="margin-top:12px;max-height:420px;overflow-y:auto;"></div>
     </div>
@@ -882,7 +913,35 @@
       <button class="auth-submit" onclick="saveBinderEdit()">Enregistrer</button>
     </div>
 
-    <div id="binder-page-view"><div class="empty-state">Chargement...</div></div>
+    <div class="binder-workspace">
+      <div id="binder-page-view"><div class="empty-state">Chargement...</div></div>
+
+      <div class="binder-sidebar" id="binder-sidebar">
+        <div class="listings-tabs" style="margin-bottom:0;">
+          <button class="tab-btn active" data-mode="search" onclick="setSidebarPickerMode('search', this)">Rechercher</button>
+          <button class="tab-btn" data-mode="browse" onclick="setSidebarPickerMode('browse', this)">Parcourir</button>
+        </div>
+        <p class="binder-sidebar-hint">Cliquez une case du classeur, puis une carte ici pour la placer.</p>
+
+        <div id="sidebar-search-mode">
+          <div class="search-wrap collection-search-wrap" style="margin-top:10px;">
+            <span class="search-icon">⌕</span>
+            <input id="sidebar-search-input" type="text" placeholder="Nom de la carte... (Entrée)"
+                   onkeydown="if(event.key==='Enter')slotPickerSearch(this.value,'sidebar-search-results')">
+          </div>
+          <div id="sidebar-search-results" class="binder-sidebar-scroll"></div>
+        </div>
+
+        <div id="sidebar-browse-mode" style="display:none;">
+          <div class="region-filter" id="sidebar-region-filter" style="margin-top:10px;">
+            <button class="tab-btn active" data-region="all" onclick="setPickerRegionFilter('all', this, 'sidebar-sets-list')">Tout</button>
+            <button class="tab-btn" data-region="intl" onclick="setPickerRegionFilter('intl', this, 'sidebar-sets-list')">Inter</button>
+            <button class="tab-btn" data-region="jp" onclick="setPickerRegionFilter('jp', this, 'sidebar-sets-list')">Japon</button>
+          </div>
+          <div id="sidebar-sets-list" class="binder-sidebar-scroll"></div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <section id="view-scanner" class="view">
@@ -1294,7 +1353,6 @@ async function renderAuthArea(session){
       }
     } catch (_) { /* on garde l'email en repli si le profil n'est pas encore accessible */ }
     area.innerHTML = `
-      <a href="#" class="auth-btn" onclick="navigateScanner();return false;">Scanner</a>
       <a href="#" class="auth-btn" onclick="navigateCollection();return false;">Ma collection</a>
       <a href="#" class="auth-btn" onclick="navigateBinders();return false;">Mes classeurs</a>
       ${role === "admin" ? `<a href="#" class="auth-btn" onclick="navigateAdmin();return false;">Admin</a>` : ""}
@@ -1302,9 +1360,7 @@ async function renderAuthArea(session){
       <button class="auth-btn" onclick="signOut()">Se déconnecter</button>
     `;
   } else {
-    area.innerHTML = `
-      <a href="#" class="auth-btn" onclick="navigateScanner();return false;">Scanner</a>
-      <button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
+    area.innerHTML = `<button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
   }
 }
 
@@ -1682,6 +1738,17 @@ function navigateBinder(id){ location.hash = "#/binder/" + id; }
 function navigateScanner(){ location.hash = "#/scanner"; }
 
 window.addEventListener("hashchange", route);
+
+// Flèches gauche/droite du clavier = page précédente/suivante du
+// classeur — seulement quand on est sur cette vue, et jamais en tapant
+// dans un champ texte (recherche, saut de page...).
+document.addEventListener("keydown", (e) => {
+  if (!document.getElementById("view-binder").classList.contains("active")) return;
+  const tag = document.activeElement.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+  if (e.key === "ArrowLeft") changeBinderPage(-1);
+  else if (e.key === "ArrowRight") changeBinderPage(1);
+});
 window.addEventListener("DOMContentLoaded", init);
 
 async function init(){
@@ -1747,7 +1814,10 @@ function route(){
     document.getElementById("view-binder").classList.add("active");
     renderBinderPage(parseInt(binderMatch[1], 10));
   } else if (isScanner){
-    document.getElementById("view-scanner").classList.add("active");
+    // Section gardée dans le code (facile à réactiver), mais pas encore
+    // fonctionnelle — on redirige plutôt que de laisser une page vide/cassée.
+    navigateHome();
+    return;
   } else if (searchMatch){
     document.getElementById("view-home").classList.add("active");
     const term = decodeURIComponent(searchMatch[1]);
@@ -3276,7 +3346,7 @@ async function fetchBinderPageSlots(pageNumber){
 function buildBinderPageHtml(slotsMap){
   const [rows, cols] = currentBinder.format.split("x").map(Number);
   const totalSlots = rows * cols;
-  let html = `<div class="binder-page color-${currentBinder.color}" style="grid-template-columns:repeat(${cols},1fr);">`;
+  let html = `<div class="binder-page color-${currentBinder.color}" style="grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},1fr);">`;
   for (let i = 0; i < totalSlots; i++){
     const filled = slotsMap[i];
     if (filled){
@@ -3491,6 +3561,17 @@ let slotPickerTargetIndex = null;
 
 function openSlotPicker(slotIndex){
   slotPickerTargetIndex = slotIndex;
+
+  // Sur PC, le classeur a un panneau latéral toujours visible pour choisir
+  // une carte — pas besoin d'un pop-up qui cache tout : on se contente de
+  // marquer la case cliquée, la sélection se termine dans le panneau.
+  if (window.innerWidth >= 960 && document.getElementById("binder-sidebar")){
+    const slots = document.querySelectorAll("#binder-page-view .binder-slot");
+    slots.forEach(el => el.classList.remove("slot-target-active"));
+    if (slots[slotIndex]) slots[slotIndex].classList.add("slot-target-active");
+    return;
+  }
+
   document.getElementById("slot-picker-search").value = "";
   document.getElementById("slot-picker-results").innerHTML = "";
   setSlotPickerMode("search", document.querySelector('#slot-picker-overlay .tab-btn[data-mode="search"]'));
@@ -3506,18 +3587,27 @@ function setSlotPickerMode(mode, btn){
   btn.classList.add("active");
   document.getElementById("slot-picker-search-mode").style.display = mode === "search" ? "block" : "none";
   document.getElementById("slot-picker-browse-mode").style.display = mode === "browse" ? "block" : "none";
-  if (mode === "browse" && !cachedAllSetsForPicker){
-    loadSlotPickerSets();
-  }
+  if (mode === "browse") loadSlotPickerSets("slot-picker-sets-list");
 }
 
-let cachedAllSetsForPicker = null;
+function setSidebarPickerMode(mode, btn){
+  btn.closest(".listings-tabs").querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("sidebar-search-mode").style.display = mode === "search" ? "block" : "none";
+  document.getElementById("sidebar-browse-mode").style.display = mode === "browse" ? "block" : "none";
+  if (mode === "browse") loadSlotPickerSets("sidebar-sets-list");
+}
 
-async function loadSlotPickerSets(){
-  const list = document.getElementById("slot-picker-sets-list");
+let cachedAllSetsForPicker = null; // partagé : une seule récupération réseau, même si utilisé aux deux endroits
+
+async function loadSlotPickerSets(listId){
+  const list = document.getElementById(listId);
+  if (list.dataset.rendered) return; // déjà construit dans CE conteneur précis, pas besoin de refaire
   list.innerHTML = `<div class="empty-state">Chargement...</div>`;
   try {
-    cachedAllSetsForPicker = await fetchAllPaginated(`sets?select=id,name_en,release_region,set_names(locale,name)&order=name_en.asc`);
+    if (!cachedAllSetsForPicker){
+      cachedAllSetsForPicker = await fetchAllPaginated(`sets?select=id,name_en,release_region,set_names(locale,name)&order=name_en.asc`);
+    }
     list.innerHTML = cachedAllSetsForPicker.map(set => {
       const setName = pickLocalized(set.set_names, LANG) || set.name_en;
       return `
@@ -3528,24 +3618,28 @@ async function loadSlotPickerSets(){
           <div class="picker-set-body"><div class="picker-card-slider"></div></div>
         </div>`;
     }).join("");
-    filterPickerSetsByRegion(); // applique le filtre déjà sélectionné, si on le rouvre après un premier passage
+    list.dataset.rendered = "1";
+    filterPickerSetsByRegion(listId); // applique le filtre déjà sélectionné dans CE conteneur, si on le rouvre après un premier passage
   } catch (e) {
     list.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
 }
 
-let pickerRegionFilter = "all"; // "all" | "intl" | "jp"
+let pickerRegionFilterByContainer = {}; // listId -> "all" | "intl" | "jp" — indépendant entre pop-up et panneau latéral
 
-function setPickerRegionFilter(region, btn){
-  pickerRegionFilter = region;
-  document.querySelectorAll("#picker-region-filter .tab-btn").forEach(b => b.classList.remove("active"));
+function setPickerRegionFilter(region, btn, listId){
+  pickerRegionFilterByContainer[listId] = region;
+  btn.closest(".region-filter").querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
-  filterPickerSetsByRegion();
+  filterPickerSetsByRegion(listId);
 }
 
-function filterPickerSetsByRegion(){
-  document.querySelectorAll(".picker-set-accordion").forEach(el => {
-    el.style.display = (pickerRegionFilter === "all" || el.dataset.region === pickerRegionFilter) ? "" : "none";
+function filterPickerSetsByRegion(listId){
+  const region = pickerRegionFilterByContainer[listId] || "all";
+  const list = document.getElementById(listId);
+  if (!list) return;
+  list.querySelectorAll(".picker-set-accordion").forEach(el => {
+    el.style.display = (region === "all" || el.dataset.region === region) ? "" : "none";
   });
 }
 
@@ -3581,8 +3675,9 @@ async function togglePickerSet(setId, accordionEl){
   }
 }
 
-async function slotPickerSearch(term){
-  const results = document.getElementById("slot-picker-results");
+async function slotPickerSearch(term, resultsId){
+  resultsId = resultsId || "slot-picker-results";
+  const results = document.getElementById(resultsId);
   results.innerHTML = `<div class="empty-state">Recherche...</div>`;
   try {
     const rows = await supabaseSelect(
@@ -3617,7 +3712,7 @@ async function assignCardToSlot(cardId){
     });
     closeSlotPicker();
     delete binderPageCache[currentBinderPage]; // sinon la page rechargée afficherait encore l'ancien contenu mis en cache
-    loadAndRenderBinderPage();
+    loadAndRenderBinderPage(); // reconstruit la grille — la case ciblée n'est plus surlignée après coup, normal
   } catch (e) {
     alert(`Impossible de placer cette carte : ${e.message}`);
   }
