@@ -1,46 +1,58 @@
 """
-Collecte des prix Cardmarket via TCGdex.dev — CartaBourse
+Collecte des prix Cardmarket via le fichier price guide officiel
+CartaBourse
 
-Contrairement à eBay, aucune inscription ni clé API n'est nécessaire :
-TCGdex inclut directement les statistiques de prix Cardmarket (moyennes,
-tendance, prix bas) dans la fiche de chaque carte.
+Remplace l'ancienne version (qui interrogeait TCGdex carte par carte,
+avec le prix avg1 — ne se mettait à jour qu'une fois par semaine).
+Utilise maintenant directement le fichier officiel de Cardmarket, avec
+le prix "trend" (mis à jour chaque jour, confirmé sur ce projet), stocké
+dans une colonne "price" volontairement neutre — si la méthode de calcul
+change encore un jour, pas besoin de renommer la colonne à nouveau.
 
-Important : ce sont des statistiques de MARCHÉ AGRÉGÉES (comme celles que
-Cardmarket affiche lui-même sur ses propres pages), pas des annonces
-vendeur individuelles. Ça alimente price_history (le futur graphique de
-prix), pas listings (le tableau "exemplaires référencés", qui restera lié
-à eBay et à une éventuelle collecte Cardmarket au niveau vendeur plus tard).
+Fait deux choses, dans l'ordre, à chaque exécution :
+  1. Télécharge le fichier price_guide_6.json depuis Cardmarket, et le
+     commit/push dans le dépôt Git (utile pour l'historique, le debug,
+     et pour que d'autres outils du dépôt puissent s'en servir sans
+     retélécharger) — mêmes commandes git que vos automatisations
+     GitHub Actions existantes (ebay-daily.yml, etc.)
+  2. Utilise ce même fichier pour mettre à jour price_history, en
+     rapprochant via card_variants.cardmarket_id (jamais par nom).
 
-Utilise le prix moyen sur 1 jour (avg1), pas la moyenne globale.
-
-Purge automatique : à chaque exécution, les points de prix vieux de plus
-de 2 semaines sont supprimés — price_history ne garde qu'un historique
-récent, pas une accumulation illimitée.
+Purge automatique : comme avant, les points de plus de 2 semaines sont
+supprimés à chaque exécution.
 
 Prérequis :
-  1. price-history-fix.sql exécuté dans Supabase
+  1. reinit-price-history-colonne-price.sql exécuté dans Supabase
   2. pip install requests
+  3. Lancé depuis un dépôt Git déjà cloné (avec les identifiants git
+     configurés — c'est le cas automatiquement dans GitHub Actions)
 
 Utilisation :
   SUPABASE_URL=https://xxxx.supabase.co SUPABASE_SERVICE_KEY=... \
   python import_cardmarket_prices.py
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import os
 import sys
+import json
 import time
 import datetime
+import subprocess
 import requests
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY")
 RETENTION_DAYS = int(os.environ.get("RETENTION_DAYS", "14"))
-# Supabase (PostgREST) plafonne chaque requête à 1000 lignes par défaut,
-# quelle que soit la valeur demandée dans "limit" — inutile de monter plus
-# haut, ça serait silencieusement ramené à 1000 de toute façon. Le script
-# boucle en interne sur des pages de cette taille pour couvrir tout le
-# catalogue en une seule exécution (voir main()).
-PAGE_SIZE = int(os.environ.get("PAGE_SIZE", "1000"))
+PRICE_GUIDE_URL = os.environ.get(
+    "PRICE_GUIDE_URL", "https://downloads.s3.cardmarket.com/productCatalog/priceGuide/price_guide_6.json"
+)
+LOCAL_JSON_PATH = os.environ.get("LOCAL_JSON_PATH", "price_guide_6.json")
+CARD_CATEGORY_ID = 51  # cartes individuelles chez Cardmarket — 52/53 = produits scellés
+UPSERT_BATCH_SIZE = int(os.environ.get("UPSERT_BATCH_SIZE", "500"))
+SKIP_GIT_PUSH = os.environ.get("SKIP_GIT_PUSH", "false").lower() == "true"  # pratique pour tester en local
 
 if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
     sys.exit("Erreur : SUPABASE_URL et SUPABASE_SERVICE_KEY doivent être définies en variables d'environnement.")
@@ -49,96 +61,55 @@ SUPABASE_HEADERS = {
     "apikey": SUPABASE_SERVICE_KEY,
     "Authorization": f"Bearer {SUPABASE_SERVICE_KEY}",
     "Content-Type": "application/json",
-    "Prefer": "resolution=merge-duplicates,return=representation",
+    "Prefer": "resolution=merge-duplicates,return=minimal",
 }
-TCGDEX_BASE = "https://api.tcgdex.net/v2"
-PROGRESS_FILE = "cardmarket_progress.txt"
 
 
-def get_with_retry(url, allow_404=True, max_attempts=5):
+def get_with_retry(url, max_attempts=5):
     for attempt in range(1, max_attempts + 1):
         try:
-            resp = requests.get(url, timeout=30)
+            resp = requests.get(url, timeout=120)
         except requests.exceptions.RequestException as e:
             if attempt == max_attempts:
                 raise
             wait = 2 ** attempt
-            print(f"    Erreur réseau ({e}) — nouvel essai dans {wait}s ({attempt}/{max_attempts})...")
+            print(f"  Erreur réseau ({e}) — nouvel essai dans {wait}s ({attempt}/{max_attempts})...")
             time.sleep(wait)
             continue
-        if allow_404 and resp.status_code == 404:
-            return None
         if resp.status_code in (500, 502, 503, 504, 429):
             if attempt == max_attempts:
                 resp.raise_for_status()
             wait = 2 ** attempt
-            print(f"    Erreur temporaire ({resp.status_code}) — nouvel essai dans {wait}s ({attempt}/{max_attempts})...")
+            print(f"  Erreur temporaire ({resp.status_code}) — nouvel essai dans {wait}s ({attempt}/{max_attempts})...")
             time.sleep(wait)
             continue
         resp.raise_for_status()
-        return resp.json()
+        return resp
+    return None
 
 
-def supabase_get(path):
-    resp = requests.get(f"{SUPABASE_URL}/rest/v1/{path}", headers=SUPABASE_HEADERS)
-    resp.raise_for_status()
-    return resp.json()
+def supabase_get_all(path):
+    all_rows = []
+    offset = 0
+    while True:
+        sep = "&" if "?" in path else "?"
+        resp = requests.get(f"{SUPABASE_URL}/rest/v1/{path}{sep}limit=1000&offset={offset}", headers=SUPABASE_HEADERS)
+        resp.raise_for_status()
+        page = resp.json()
+        all_rows.extend(page)
+        if len(page) < 1000:
+            break
+        offset += 1000
+    return all_rows
 
 
 def supabase_upsert(table, rows, on_conflict):
     if not rows:
-        return []
+        return
     url = f"{SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}"
     resp = requests.post(url, headers=SUPABASE_HEADERS, json=rows)
-    if resp.status_code not in (200, 201):
+    if resp.status_code not in (200, 201, 204):
         print(f"  Erreur upsert {table} : {resp.status_code} — {resp.text[:300]}")
-        return []
-    return resp.json()
-
-
-def process_page(cards, today):
-    """Traite une page de cartes : interroge TCGdex et upsert les prix trouvés.
-    Renvoie (nb_avec_prix, nb_sans_prix)."""
-    rows = []
-    no_pricing = 0
-
-    for i, card in enumerate(cards, 1):
-        try:
-            set_code = card["sets"]["code"] if card["sets"] else None
-            if not set_code:
-                continue
-            tcgdex_id = f"{set_code}-{card['card_number']}"
-
-            detail = get_with_retry(f"{TCGDEX_BASE}/en/cards/{tcgdex_id}")
-            # (detail or {}).get("pricing", {}) plantait si "pricing" était
-            # présent mais valait null (le défaut {} ne s'applique que si la
-            # clé est absente, pas si elle vaut explicitement None) — corrigé.
-            pricing = (detail or {}).get("pricing") or {}
-            cardmarket = pricing.get("cardmarket")
-
-            if not cardmarket:
-                no_pricing += 1
-                continue
-
-            rows.append({
-                "card_id": card["id"],
-                "period_date": today,
-                "avg_price": cardmarket.get("avg1"),
-                "min_price": cardmarket.get("low"),
-                "max_price": None,  # Cardmarket ne fournit pas de "haut" agrégé, seulement bas/moyenne/tendance
-                "currency": cardmarket.get("unit", "EUR"),
-            })
-        except Exception as e:
-            print(f"    Erreur inattendue sur la carte id={card.get('id')} ({e}) — carte ignorée, poursuite du script.")
-            no_pricing += 1
-            continue
-
-        if i % 100 == 0:
-            print(f"    [{i}/{len(cards)}] traité...")
-        time.sleep(0.1)
-
-    supabase_upsert("price_history", rows, on_conflict="target_key,period_date,currency")
-    return len(rows), no_pricing
 
 
 def purge_old_prices():
@@ -153,63 +124,100 @@ def purge_old_prices():
     print(f"Purge : points de prix antérieurs au {cutoff} supprimés ({RETENTION_DAYS} jours de rétention).")
 
 
-def main():
-    # Nécessaire sur GitHub Actions (et plus généralement dès que le script
-    # n'est pas lancé depuis son propre dossier) : sans ça, le fichier de
-    # progression seraient cherché/écrit au mauvais endroit.
-    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+def run_git(*args):
+    result = subprocess.run(["git", *args], capture_output=True, text=True)
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
 
-    purge_old_prices()
 
-    last_id = 0
-    if os.path.exists(PROGRESS_FILE):
-        with open(PROGRESS_FILE, encoding="utf-8") as f:
-            last_id = int(f.read().strip() or 0)
+def download_and_publish_json():
+    """Fonction 1 : télécharge le fichier officiel Cardmarket et le
+    commit/push dans le dépôt — mêmes commandes que les automatisations
+    GitHub Actions déjà en place ailleurs sur ce projet (pull --rebase
+    avant de pousser, pour éviter un rejet en cas de push concurrent)."""
+    print(f"Téléchargement de {PRICE_GUIDE_URL}...")
+    resp = get_with_retry(PRICE_GUIDE_URL)
+    with open(LOCAL_JSON_PATH, "wb") as f:
+        f.write(resp.content)
+    print(f"  Enregistré dans {LOCAL_JSON_PATH} ({len(resp.content) / 1_000_000:.1f} Mo).")
+
+    if SKIP_GIT_PUSH:
+        print("  SKIP_GIT_PUSH activé — pas de commit/push (utile en test local).")
+        return
+
+    code, out, err = run_git("status", "--porcelain", LOCAL_JSON_PATH)
+    if not out.strip():
+        print("  Aucun changement dans le fichier depuis la dernière fois — rien à pousser.")
+        return
+
+    run_git("pull", "--rebase")
+    run_git("add", LOCAL_JSON_PATH)
+    code, out, err = run_git("commit", "-m", f"Mise à jour price_guide_6.json ({datetime.date.today().isoformat()})")
+    if code != 0:
+        print(f"  Rien à committer ou erreur : {err}")
+        return
+    code, out, err = run_git("push")
+    if code != 0:
+        print(f"  Erreur lors du push : {err}")
+    else:
+        print("  Fichier poussé sur le dépôt.")
+
+
+def update_prices_from_json():
+    """Fonction 2 : utilise le fichier déjà téléchargé localement pour
+    mettre à jour price_history, en rapprochant via card_variants.cardmarket_id."""
+    print("\nRécupération des identifiants Cardmarket déjà connus (card_variants)...")
+    variants = supabase_get_all("card_variants?cardmarket_id=not.is.null&select=card_id,cardmarket_id")
+    cardmarket_to_card = {}
+    for v in variants:
+        cardmarket_to_card.setdefault(str(v["cardmarket_id"]), v["card_id"])
+    print(f"  {len(cardmarket_to_card)} identifiant(s) Cardmarket connu(s) en base.")
+
+    with open(LOCAL_JSON_PATH, encoding="utf-8") as f:
+        data = json.load(f)
+    guides = data.get("priceGuides", [])
+    print(f"  {len(guides)} entrée(s) dans le fichier (Pokémon uniquement, créé le {data.get('createdAt')}).")
 
     today = datetime.date.today().isoformat()
-    total_with_price = 0
-    total_without_price = 0
-    total_cards = 0
-    page_num = 0
+    rows = []
+    matched = 0
 
-    print(f"Départ à l'id {last_id}, pages de {PAGE_SIZE}.")
+    for g in guides:
+        if g.get("idCategory") != CARD_CATEGORY_ID:
+            continue
+        card_id = cardmarket_to_card.get(str(g.get("idProduct")))
+        if card_id is None:
+            continue
 
-    while True:
-        page_num += 1
-        cards = supabase_get(
-            f"cards?select=id,card_number,sets(code)&id=gt.{last_id}&order=id.asc&limit={PAGE_SIZE}"
-        )
+        trend = g.get("trend")
+        if trend is None:
+            continue
 
-        if not cards:
-            print("Fin du catalogue atteinte — on repart du début au prochain lancement.")
-            last_id = 0
-            with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
-                f.write("0")
-            break
+        matched += 1
+        rows.append({
+            "card_id": card_id,
+            "period_date": today,
+            "price": trend,
+            "min_price": g.get("low"),
+            "max_price": None,
+            "currency": "EUR",
+        })
 
-        print(f"Page {page_num} : {len(cards)} carte(s), à partir de l'id {last_id}...")
-        with_price, without_price = process_page(cards, today)
-        total_with_price += with_price
-        total_without_price += without_price
-        total_cards += len(cards)
+    print(f"{matched} carte(s) avec un prix trouvé.\n")
 
-        last_id = cards[-1]["id"]
-        # Écrit la progression après CHAQUE page (pas seulement à la fin) :
-        # une interruption en cours de route ne fait pas tout reperdre.
-        with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
-            f.write(str(last_id))
+    print("Écriture dans price_history par lots...")
+    for i in range(0, len(rows), UPSERT_BATCH_SIZE):
+        batch = rows[i:i + UPSERT_BATCH_SIZE]
+        supabase_upsert("price_history", batch, on_conflict="target_key,period_date,currency")
+        print(f"  [{min(i + UPSERT_BATCH_SIZE, len(rows))}/{len(rows)}] écrit(s)...")
 
-        if len(cards) < PAGE_SIZE:
-            print("Fin du catalogue atteinte dans cette page — on repart du début au prochain lancement.")
-            last_id = 0
-            with open(PROGRESS_FILE, "w", encoding="utf-8") as f:
-                f.write("0")
-            break
+    print(f"\nTerminé — {matched} prix mis à jour pour aujourd'hui ({today}).")
 
-    print(f"\n{total_cards} carte(s) traitée(s) au total cette exécution.")
-    print(f"{total_with_price} avec un prix Cardmarket enregistré, {total_without_price} sans prix disponible.")
-    print("Pour un vrai historique, ce script doit être relancé chaque jour (ex. via une tâche planifiée) "
-          "afin d'ajouter un nouveau point à price_history quotidiennement.")
+
+def main():
+    os.chdir(os.path.dirname(os.path.abspath(__file__)))
+    purge_old_prices()
+    download_and_publish_json()
+    update_prices_from_json()
 
 
 if __name__ == "__main__":
