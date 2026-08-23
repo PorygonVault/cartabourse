@@ -1908,7 +1908,7 @@ async function renderMarketSection(cardId){
   const section = document.getElementById("market-section");
   try {
     const history = await supabaseSelect(
-      `price_history?card_id=eq.${cardId}&select=period_date,avg_price,min_price,currency&order=period_date.asc`
+      `price_history?card_id=eq.${cardId}&select=period_date,price,min_price,currency&order=period_date.asc`
     );
 
     if (!history.length){
@@ -1923,13 +1923,13 @@ async function renderMarketSection(cardId){
 
     const latest = history[history.length - 1];
     const currency = latest.currency || "EUR";
-    const prices = history.map(h => h.avg_price).filter(p => p != null);
-    const low = Math.min(...history.map(h => h.min_price ?? h.avg_price).filter(p => p != null));
+    const prices = history.map(h => h.price).filter(p => p != null);
+    const low = Math.min(...history.map(h => h.min_price ?? h.price).filter(p => p != null));
 
     section.innerHTML = `
       <div class="price-chart-wrap">
         <div class="price-stat-row">
-          <div class="price-stat"><div class="label">Prix moyen actuel</div><div class="value">${latest.avg_price != null ? displayPrice(latest.avg_price, currency) : "—"}</div></div>
+          <div class="price-stat"><div class="label">Prix actuel</div><div class="value">${latest.price != null ? displayPrice(latest.price, currency) : "—"}</div></div>
           <div class="price-stat"><div class="label">Prix bas observé</div><div class="value">${isFinite(low) ? displayPrice(low, currency) : "—"}</div></div>
         </div>
         <div id="price-chart-svg"></div>
@@ -1948,7 +1948,7 @@ function drawPriceChart(history){
   const padL = 50, padR = 10, padT = 14, padB = 26;
   const plotW = W - padL - padR, plotH = H - padT - padB;
 
-  const prices = history.map(h => h.avg_price).filter(p => p != null);
+  const prices = history.map(h => h.price).filter(p => p != null);
   const minP = Math.min(...prices), maxP = Math.max(...prices);
   const span = (maxP - minP) || Math.max(minP * 0.1, 1);
   // Marge dynamique : proportionnelle à l'échelle réelle de la carte, pas
@@ -1961,7 +1961,7 @@ function drawPriceChart(history){
   const xFor = (i) => padL + (i / (history.length - 1)) * plotW;
   const yFor = (p) => padT + plotH - (((p ?? minP) - niceMin) / niceSpan) * plotH;
 
-  const coords = history.map((h, i) => [xFor(i), yFor(h.avg_price)]);
+  const coords = history.map((h, i) => [xFor(i), yFor(h.price)]);
   const linePath = coords.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const areaPath = linePath + ` L${coords[coords.length-1][0].toFixed(1)} ${H-padB} L${coords[0][0].toFixed(1)} ${H-padB} Z`;
 
@@ -2019,7 +2019,7 @@ function drawPriceChart(history){
     tooltip.style.opacity = 1;
     const d = new Date(history[i].period_date);
     const dateLabel = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
-    const priceLabel = history[i].avg_price != null ? displayPrice(history[i].avg_price, currency) : "—";
+    const priceLabel = history[i].price != null ? displayPrice(history[i].price, currency) : "—";
     tooltip.textContent = `${dateLabel} · ${priceLabel}`;
   }
   function hidePoint(){
@@ -2313,7 +2313,7 @@ async function renderSetPage(setId){
     if (cards.length){
       const cardIds = cards.map(c => c.id);
       const history = await supabaseSelect(
-        `price_history?card_id=in.(${cardIds.join(",")})&select=card_id,period_date,avg_price,currency&order=period_date.asc`
+        `price_history?card_id=in.(${cardIds.join(",")})&select=card_id,period_date,price,currency&order=period_date.asc`
       );
       renderSetTotalChart(history);
       renderSetMovers(history, shaped);
@@ -2339,8 +2339,8 @@ function renderSetTotalChart(history){
   const byDate = {};
   const currency = history[0].currency || "EUR";
   for (const row of history){
-    if (row.avg_price == null) continue;
-    byDate[row.period_date] = (byDate[row.period_date] || 0) + Number(row.avg_price);
+    if (row.price == null) continue;
+    byDate[row.period_date] = (byDate[row.period_date] || 0) + Number(row.price);
   }
   const dates = Object.keys(byDate).sort();
   if (dates.length < 2){
@@ -2376,7 +2376,7 @@ function renderSetMovers(history, shapedCards){
 
   const byCard = {};
   for (const row of history){
-    if (row.avg_price == null || row.period_date < cutoffStr) continue;
+    if (row.price == null || row.period_date < cutoffStr) continue;
     (byCard[row.card_id] = byCard[row.card_id] || []).push(row);
   }
 
@@ -2384,7 +2384,7 @@ function renderSetMovers(history, shapedCards){
   for (const cardId in byCard){
     const points = byCard[cardId].sort((a, b) => a.period_date.localeCompare(b.period_date));
     if (points.length < 2) continue;
-    const first = Number(points[0].avg_price), last = Number(points[points.length - 1].avg_price);
+    const first = Number(points[0].price), last = Number(points[points.length - 1].price);
     if (!first) continue;
     const pct = ((last - first) / first) * 100;
     changes.push({ cardId: Number(cardId), pct, currency: points[points.length - 1].currency, lastPrice: last });
@@ -2482,15 +2482,15 @@ async function renderCollectionContent(){
     if (uniqueCardIds.length){
       try {
         const priceRows = await supabaseSelect(
-          `price_history?card_id=in.(${uniqueCardIds.join(",")})&select=card_id,period_date,avg_price,currency&order=period_date.desc`
+          `price_history?card_id=in.(${uniqueCardIds.join(",")})&select=card_id,period_date,price,currency&order=period_date.desc`
         );
         const latestByCard = {};
         for (const p of priceRows){
-          if (!(p.card_id in latestByCard) && p.avg_price != null) latestByCard[p.card_id] = p;
+          if (!(p.card_id in latestByCard) && p.price != null) latestByCard[p.card_id] = p;
         }
         for (const cardId in latestByCard){
           const p = latestByCard[cardId];
-          totalValue += Number(p.avg_price) * (qtyByCard[cardId] || 0);
+          totalValue += Number(p.price) * (qtyByCard[cardId] || 0);
           valueCurrency = p.currency || "EUR";
         }
       } catch (e) {
@@ -2689,18 +2689,18 @@ function refreshCollectionStats(){
     return;
   }
   supabaseSelect(
-    `price_history?card_id=in.(${[...uniqueIds].join(",")})&select=card_id,period_date,avg_price,currency&order=period_date.desc`
+    `price_history?card_id=in.(${[...uniqueIds].join(",")})&select=card_id,period_date,price,currency&order=period_date.desc`
   ).then(priceRows => {
     const latestByCard = {};
     for (const p of priceRows){
-      if (!(p.card_id in latestByCard) && p.avg_price != null) latestByCard[p.card_id] = p;
+      if (!(p.card_id in latestByCard) && p.price != null) latestByCard[p.card_id] = p;
     }
     let totalValue = 0, currency = "EUR";
     for (const setId in collectionCatalogState.ownedBySet){
       const bucket = collectionCatalogState.ownedBySet[setId];
       for (const cardId in bucket.qtyByCard){
         const p = latestByCard[cardId];
-        if (p){ totalValue += Number(p.avg_price) * bucket.qtyByCard[cardId]; currency = p.currency || "EUR"; }
+        if (p){ totalValue += Number(p.price) * bucket.qtyByCard[cardId]; currency = p.currency || "EUR"; }
       }
     }
     if (statsRow) statsRow.children[2].querySelector(".value").textContent = displayPrice(totalValue, currency);
