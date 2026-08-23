@@ -132,8 +132,15 @@ def run_git(*args):
 def download_and_publish_json():
     """Fonction 1 : télécharge le fichier officiel Cardmarket et le
     commit/push dans le dépôt — mêmes commandes que les automatisations
-    GitHub Actions déjà en place ailleurs sur ce projet (pull --rebase
-    avant de pousser, pour éviter un rejet en cas de push concurrent)."""
+    GitHub Actions déjà en place ailleurs sur ce projet.
+
+    Ordre important : on se synchronise avec le dépôt distant AVANT
+    d'écrire le fichier localement — un pull --rebase avec une
+    modification locale déjà présente (mais non commitée) risquerait
+    d'échouer ou de mal se comporter en cas de changement distant entre-temps."""
+    if not SKIP_GIT_PUSH:
+        run_git("pull", "--rebase")
+
     print(f"Téléchargement de {PRICE_GUIDE_URL}...")
     resp = get_with_retry(PRICE_GUIDE_URL)
     with open(LOCAL_JSON_PATH, "wb") as f:
@@ -149,7 +156,6 @@ def download_and_publish_json():
         print("  Aucun changement dans le fichier depuis la dernière fois — rien à pousser.")
         return
 
-    run_git("pull", "--rebase")
     run_git("add", LOCAL_JSON_PATH)
     code, out, err = run_git("commit", "-m", f"Mise à jour price_guide_6.json ({datetime.date.today().isoformat()})")
     if code != 0:
