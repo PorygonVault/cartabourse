@@ -32,8 +32,11 @@ Utilisation :
   python import_cardmarket_prices.py
 """
 
-from dotenv import load_dotenv
-load_dotenv()
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # charge .env en local si présent — absent en CI (GitHub Actions fournit déjà les variables), ce n'est pas un problème
+except ImportError:
+    pass  # python-dotenv non installé (ex. GitHub Actions) — les variables d'environnement sont déjà fournies autrement
 
 import os
 import sys
