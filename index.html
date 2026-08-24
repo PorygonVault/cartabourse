@@ -640,6 +640,7 @@
 .ie-preview-field{margin-bottom:10px;}
 .ie-preview-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-faint);margin-bottom:3px;}
 .ie-preview-value{background:var(--ink);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--text);white-space:pre-wrap;}
+.ie-generate-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
 
 @media (min-width:960px){
   .ie-workspace{display:flex;gap:24px;align-items:flex-start;}
@@ -1083,13 +1084,19 @@
           </div>
 
           <div class="ie-section">
-            <button class="auth-btn" onclick="generateExport()">Générer le fichier CSV</button>
+            <div class="ie-generate-buttons">
+              <button class="auth-btn" onclick="generateExport()">Générer un CSV Voggt</button>
+              <button class="auth-btn" onclick="ieGenerateResumeCSV()" id="ie-btn-generate-resume">Générer un CSV d'import</button>
+              <button class="auth-btn" onclick="ieGeneratePackCSV()">Générer un pack CSV (import + export)</button>
+            </div>
             <div id="ie-export-status"></div>
           </div>
         </div>
 
         <div class="ie-right" id="ie-add-panel">
           <h3>Ajouter des cartes</h3>
+          <input type="file" id="ie-resume-import-input" accept=".csv" style="display:none;" onchange="ieImportResumeFile(event)">
+          <button class="collection-btn" style="width:100%;margin-bottom:10px;" id="ie-btn-import-resume" onclick="document.getElementById('ie-resume-import-input').click()">Importer un CSV d'import</button>
           <button class="collection-btn" style="width:100%;margin-bottom:10px;" onclick="ieImportFromCollection()">Importer depuis ma collection</button>
 
           <div class="listings-tabs" style="margin-bottom:0;">
@@ -1876,6 +1883,11 @@ async function performSearch(term){
    Utilise les fonctions de javascript/export-voggt.js (resolveBlocks,
    buildDescription, exportToVoggt, ValidationError).
    ============================================================ */
+// Nom provisoire du site — un seul endroit à changer le jour où le nom
+// définitif sera choisi ; tous les libellés/noms de fichier ci-dessous
+// s'y réfèrent plutôt que de le répéter en dur.
+const IE_SITE_NAME = "Cartabourse";
+
 let ieExportItems = [];
 let ieItemSeq = 0;
 let ieCurrentPlatform = "voggt";
@@ -1988,6 +2000,8 @@ function setExportPlatform(platform, btn){
 function renderImportExportPage(){
   document.getElementById("ie-search-results").innerHTML = "";
   document.getElementById("ie-search-input").value = "";
+  document.getElementById("ie-btn-generate-resume").textContent = `Générer un CSV d'import ${IE_SITE_NAME}`;
+  document.getElementById("ie-btn-import-resume").textContent = `Importer un CSV ${IE_SITE_NAME}`;
   renderIeBlockChips();
   ieUpdateDisclaimerLabel();
   ieToggleLiveDisclaimer(document.getElementById("ie-live-disclaimer").checked);
@@ -2387,6 +2401,151 @@ function generateExport(){
   } catch (err) {
     statusEl.textContent = `Erreur : ${err.message}`;
   }
+}
+
+/* ------------------------------------------------------------
+   CSV de reprise (format propre au site, nom défini via IE_SITE_NAME
+   plus haut) — capture l'état complet de la liste en cours, pour
+   reprendre le travail plus tard ou sur plusieurs jours, indépendamment
+   du format Voggt (qui, lui, ne sert qu'à l'envoi final sur la
+   plateforme, pas à la reprise de travail).
+   ------------------------------------------------------------ */
+const IE_RESUME_COLUMNS = [
+  "card_id", "card_name", "card_number", "total_cards", "set_name",
+  "set_abbreviation", "set_code", "image_url", "language",
+  "condition_mode", "condition", "grading_company", "grade",
+  "starting_price", "instant_buy_price", "quantity",
+];
+
+function ieCsvEscape(value){
+  const s = value == null ? "" : String(value);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+function ieDownloadCsv(csvContent, filename){
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
+function ieBuildResumeCsv(){
+  const rows = ieExportItems.map(item => IE_RESUME_COLUMNS.map(col => {
+    if (col === "condition_mode") return item.conditionMode;
+    return item[col];
+  }).map(ieCsvEscape).join(","));
+  return [IE_RESUME_COLUMNS.join(","), ...rows].join("\n");
+}
+
+function ieGenerateResumeCSV(){
+  const statusEl = document.getElementById("ie-export-status");
+  if (ieExportItems.length === 0){
+    statusEl.textContent = "Ajoutez au moins une carte avant de générer un CSV d'import.";
+    return;
+  }
+  ieDownloadCsv(ieBuildResumeCsv(), `${IE_SITE_NAME.toLowerCase()}_import.csv`);
+  statusEl.textContent = `CSV d'import ${IE_SITE_NAME} généré (${ieExportItems.length} carte(s)) — à réimporter plus tard pour reprendre ce travail.`;
+}
+
+function ieGeneratePackCSV(){
+  const statusEl = document.getElementById("ie-export-status");
+  if (ieExportItems.length === 0){
+    statusEl.textContent = "Ajoutez au moins une carte avant de générer un pack CSV.";
+    return;
+  }
+  generateExport();
+  ieDownloadCsv(ieBuildResumeCsv(), `${IE_SITE_NAME.toLowerCase()}_import.csv`);
+  statusEl.textContent = `Pack généré — CSV Voggt et CSV d'import ${IE_SITE_NAME} téléchargés.`;
+}
+
+/** Analyseur CSV minimal (RFC4180) — suffisant pour relire un fichier
+ * qu'on a nous-mêmes généré (guillemets doublés pour échapper, virgule
+ * comme séparateur), pas pensé pour n'importe quel CSV externe. */
+function ieParseCsv(text){
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (inQuotes){
+      if (c === '"' && text[i + 1] === '"'){ field += '"'; i++; }
+      else if (c === '"'){ inQuotes = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ','){ row.push(field); field = ""; }
+      else if (c === '\n' || c === '\r'){
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); field = "";
+        if (row.length > 1 || row[0] !== "") rows.push(row);
+        row = [];
+      } else field += c;
+    }
+  }
+  if (field !== "" || row.length){ row.push(field); rows.push(row); }
+  if (rows.length === 0) return [];
+  const headers = rows[0];
+  return rows.slice(1).map(r => Object.fromEntries(headers.map((h, i) => [h, r[i]])));
+}
+
+function ieImportResumeFile(event){
+  const file = event.target.files[0];
+  event.target.value = ""; // permet de réimporter le même fichier deux fois de suite si besoin
+  if (!file) return;
+
+  const statusEl = document.getElementById("ie-export-status");
+
+  if (ieExportItems.length > 0){
+    const proceed = confirm(
+      `Votre liste contient déjà ${ieExportItems.length} carte(s). Importer ce fichier va ajouter ` +
+      `ses cartes à la suite — pas les remplacer. Continuer ?`
+    );
+    if (!proceed) return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = ieParseCsv(reader.result);
+      if (parsed.length === 0){
+        statusEl.textContent = "Fichier vide ou format non reconnu.";
+        return;
+      }
+      let added = 0;
+      for (const r of parsed){
+        ieItemSeq += 1;
+        ieExportItems.push({
+          localId: ieItemSeq,
+          card_id: r.card_id || null,
+          card_name: r.card_name || "?",
+          card_number: r.card_number || "",
+          total_cards: r.total_cards ? parseInt(r.total_cards, 10) : null,
+          set_name: r.set_name || "",
+          set_abbreviation: r.set_abbreviation || "",
+          set_code: r.set_code || "",
+          image_url: r.image_url || "",
+          language: r.language || LANG,
+          conditionMode: r.condition_mode === "grading" ? "grading" : "condition",
+          condition: r.condition || "NM",
+          grading_company: r.grading_company || "",
+          grade: r.grade || "",
+          starting_price: r.starting_price || "",
+          instant_buy_price: r.instant_buy_price || "",
+          quantity: r.quantity ? parseInt(r.quantity, 10) : 1,
+        });
+        added += 1;
+      }
+      renderIeItemsList();
+      statusEl.textContent = `${added} carte(s) importée(s) depuis le fichier ${IE_SITE_NAME}.`;
+    } catch (err) {
+      statusEl.textContent = `Erreur de lecture du fichier : ${err.message}`;
+    }
+  };
+  reader.readAsText(file, "utf-8");
 }
 
 /* ============================================================
