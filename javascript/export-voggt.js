@@ -93,11 +93,12 @@
   }
 
   /** Comme resolveBlocks, mais ajoute par défaut la mention indiquant que
-   * l'état réel est montré en direct — désactivable via includeLiveDisclaimer=false. */
-  function buildDescription(template, context, includeLiveDisclaimer = true) {
-    const text = resolveBlocks(template, context);
-    if (!includeLiveDisclaimer) return text;
-    return text ? `${text}\n\n${LIVE_CONDITION_DISCLAIMER}` : LIVE_CONDITION_DISCLAIMER;
+   * l'état réel est montré en direct — désactivable via liveDisclaimerOnly=false — true remplace entièrement la description par la mention. */
+  function buildDescription(template, context, liveDisclaimerOnly = false) {
+    // Un seul des deux est utilisé, jamais les deux ensemble : soit la
+    // mention par défaut seule, soit le gabarit personnalisé seul.
+    if (liveDisclaimerOnly) return LIVE_CONDITION_DISCLAIMER;
+    return resolveBlocks(template, context);
   }
 
   class ValidationError extends Error {}
@@ -123,10 +124,10 @@
     }
   }
 
-  function buildVoggtRow(item, nameTemplate, descriptionTemplate, includeLiveDisclaimer = true) {
+  function buildVoggtRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly = false) {
     return {
       name: resolveBlocks(nameTemplate, item),
-      description: buildDescription(descriptionTemplate, item, includeLiveDisclaimer),
+      description: buildDescription(descriptionTemplate, item, liveDisclaimerOnly),
       quantity: item.quantity,
       startingPrice: item.starting_price != null ? item.starting_price : "",
       instantBuyPrice: item.instant_buy_price != null ? item.instant_buy_price : "",
@@ -138,10 +139,10 @@
    * Valide TOUS les items avant d'écrire quoi que ce soit — un seul item
    * invalide bloque tout l'export plutôt que de produire un fichier à
    * moitié correct. */
-  function exportToVoggt(items, nameTemplate, descriptionTemplate, filename = "export_voggt.csv", includeLiveDisclaimer = true) {
+  function exportToVoggt(items, nameTemplate, descriptionTemplate, filename = "export_voggt.csv", liveDisclaimerOnly = false) {
     items.forEach((item, i) => validateItem(item, i + 1));
 
-    const rows = items.map((item) => buildVoggtRow(item, nameTemplate, descriptionTemplate, includeLiveDisclaimer));
+    const rows = items.map((item) => buildVoggtRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly));
 
     const headers = ["name", "description", "quantity", "startingPrice", "instantBuyPrice", "imagesUrls"];
     const csvEscape = (val) => {
