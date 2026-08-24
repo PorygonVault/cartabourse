@@ -641,6 +641,18 @@
 .ie-preview-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-faint);margin-bottom:3px;}
 .ie-preview-value{background:var(--ink);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--text);white-space:pre-wrap;}
 .ie-generate-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+.ie-drag-handle{cursor:grab;color:var(--text-faint);font-size:16px;touch-action:none;padding:2px 4px;}
+.ie-drag-handle:active{cursor:grabbing;}
+.ie-order-arrows{display:flex;flex-direction:column;gap:1px;}
+.ie-order-arrow{background:none;border:1px solid var(--border);color:var(--text-dim);border-radius:3px;font-size:9px;line-height:1;padding:2px 4px;cursor:pointer;}
+.ie-order-arrow:hover:not(:disabled){border-color:var(--gold);color:var(--gold-bright);}
+.ie-order-arrow:disabled{opacity:0.3;cursor:default;}
+.ie-item-row.ie-dragging{opacity:0.5;background:var(--panel-light);}
+.ie-collection-strategy{display:flex;flex-wrap:wrap;gap:12px;font-size:12.5px;color:var(--text-dim);}
+.ie-collection-strategy label{display:flex;align-items:center;gap:5px;white-space:nowrap;}
+.ie-collection-modal-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
+.ie-collection-modal-info{display:flex;flex-direction:column;gap:2px;font-size:13px;color:var(--text);}
+.ie-collection-modal-info span{font-size:11.5px;color:var(--text-dim);}
 
 @media (min-width:960px){
   .ie-workspace{display:flex;gap:24px;align-items:flex-start;}
@@ -777,6 +789,29 @@
       </div>
       <div id="slot-picker-sets-list" style="margin-top:12px;max-height:420px;overflow-y:auto;"></div>
     </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="ie-collection-modal-overlay" onclick="if(event.target===this)ieCloseCollectionModal()">
+  <div class="modal" style="max-width:640px;">
+    <button class="modal-close" onclick="ieCloseCollectionModal()">×</button>
+    <h3>Importer depuis ma collection</h3>
+
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-dim);margin-bottom:10px;">
+      <input type="checkbox" id="ie-collection-select-all" checked onchange="ieCollectionToggleAll(this.checked)">
+      Tout sélectionner
+    </label>
+
+    <div id="ie-collection-modal-list" class="ie-right-scroll" style="max-height:360px;"></div>
+
+    <div class="ie-collection-strategy">
+      <p class="ie-hint" style="margin:14px 0 6px;">En cas de doublon avec la liste actuelle :</p>
+      <label><input type="radio" name="ie-dup-strategy" value="ignore" checked> ...et ignorer</label>
+      <label><input type="radio" name="ie-dup-strategy" value="increase"> ...et augmenter la quantité</label>
+      <label><input type="radio" name="ie-dup-strategy" value="duplicate"> ...et dupliquer la ligne</label>
+    </div>
+
+    <button class="auth-submit" id="ie-collection-import-confirm" onclick="ieConfirmCollectionImport()">Importer toutes les cartes</button>
   </div>
 </div>
 
@@ -1096,29 +1131,33 @@
         <div class="ie-right" id="ie-add-panel">
           <h3>Ajouter des cartes</h3>
           <input type="file" id="ie-resume-import-input" accept=".csv" style="display:none;" onchange="ieImportResumeFile(event)">
-          <button class="collection-btn" style="width:100%;margin-bottom:10px;" id="ie-btn-import-resume" onclick="document.getElementById('ie-resume-import-input').click()">Importer un CSV d'import</button>
-          <button class="collection-btn" style="width:100%;margin-bottom:10px;" onclick="ieImportFromCollection()">Importer depuis ma collection</button>
+          <button class="collection-btn" style="width:100%;margin-bottom:6px;" id="ie-btn-import-resume" onclick="document.getElementById('ie-resume-import-input').click()">Importer un CSV d'import</button>
+          <div class="ie-collection-strategy" style="margin-bottom:10px;">
+            <label><input type="radio" name="ie-resume-dup-strategy" value="ignore" checked> ...et ignorer les doublons</label>
+            <label><input type="radio" name="ie-resume-dup-strategy" value="increase"> ...et augmenter la quantité</label>
+            <label><input type="radio" name="ie-resume-dup-strategy" value="duplicate"> ...et dupliquer la ligne</label>
+          </div>
+          <button class="collection-btn" style="width:100%;margin-bottom:10px;" onclick="ieOpenCollectionModal()">Importer depuis ma collection</button>
 
           <div class="listings-tabs" style="margin-bottom:0;">
-            <button class="tab-btn active" data-mode="search" onclick="ieSetPickerMode('search', this)">Rechercher</button>
-            <button class="tab-btn" data-mode="browse" onclick="ieSetPickerMode('browse', this)">Parcourir les extensions</button>
+            <button class="tab-btn active" data-mode="extensions" onclick="ieSetPickerMode('extensions', this)">Extensions</button>
+            <button class="tab-btn" data-mode="collection" onclick="ieSetPickerMode('collection', this)">Collection</button>
           </div>
 
-          <div id="ie-picker-search-mode">
+          <div id="ie-picker-extensions-mode">
             <div class="ie-search-row" style="margin-top:10px;">
-              <input type="text" id="ie-search-input" placeholder="Rechercher une carte par nom..." onkeydown="if(event.key==='Enter'){ieSearch();}">
-              <button class="auth-btn" onclick="ieSearch()">Rechercher</button>
-            </div>
-            <div id="ie-search-results" class="ie-right-scroll"></div>
-          </div>
-
-          <div id="ie-picker-browse-mode" style="display:none;">
-            <div class="region-filter" id="ie-picker-region-filter" style="margin-top:10px;">
-              <button class="tab-btn active" data-region="all" onclick="setPickerRegionFilter('all', this, 'ie-sets-list')">Tout</button>
-              <button class="tab-btn" data-region="intl" onclick="setPickerRegionFilter('intl', this, 'ie-sets-list')">Inter</button>
-              <button class="tab-btn" data-region="asia" onclick="setPickerRegionFilter('asia', this, 'ie-sets-list')">Asie</button>
+              <input type="text" id="ie-extension-search-input" placeholder="Nom, code ou abréviation d'extension..." oninput="ieFilterExtensions()">
+              <select id="ie-extension-region-filter" onchange="ieFilterExtensions()">
+                <option value="all">Toutes régions</option>
+                <option value="intl">Inter</option>
+                <option value="asia">Asie</option>
+              </select>
             </div>
             <div id="ie-sets-list" class="ie-right-scroll"></div>
+          </div>
+
+          <div id="ie-picker-collection-mode" style="display:none;">
+            <div id="ie-collection-tab-list" class="ie-right-scroll"></div>
           </div>
         </div>
       </div>
@@ -2008,47 +2047,8 @@ function renderImportExportPage(){
   renderIeItemsList();
 }
 
-async function ieSearch(){
-  const term = document.getElementById("ie-search-input").value.trim();
-  const resultsEl = document.getElementById("ie-search-results");
-  if (!term){ resultsEl.innerHTML = ""; return; }
-  resultsEl.innerHTML = `<div class="empty-state">Recherche...</div>`;
-  try {
-    const pattern = encodeURIComponent(`*${term.replace(/\*/g, "**")}*`);
-    const nameMatches = await supabaseSelect(`card_names?select=card_id&name=ilike.${pattern}&limit=50`);
-    const ids = [...new Set(nameMatches.map(m => m.card_id))].slice(0, 50);
-    if (ids.length === 0){ resultsEl.innerHTML = `<div class="empty-state">Aucun résultat pour "${term}".</div>`; return; }
-
-    const rows = await supabaseSelect(
-      `cards?id=in.(${ids.join(",")})&select=id,card_number,sets(id,name_en,total_cards,official_abbreviation,code),card_names(locale,name),card_images(image_url)`
-    );
-
-    resultsEl.innerHTML = rows.map(r => {
-      // Nom affiché dans la langue du visiteur (LANG), repli sur l'anglais
-      // puis sur la première langue disponible — même logique que shapeCard.
-      const nameObj = r.card_names.find(n => n.locale === LANG) || r.card_names.find(n => n.locale === "en") || r.card_names[0];
-      const name = nameObj ? nameObj.name : "?";
-      const setName = r.sets ? r.sets.name_en : "";
-      const img = r.card_images && r.card_images[0] ? r.card_images[0].image_url : "";
-      const payload = encodeURIComponent(JSON.stringify({
-        card_id: r.id, card_name: name, card_number: r.card_number,
-        total_cards: r.sets ? r.sets.total_cards : null,
-        set_name: setName,
-        set_abbreviation: r.sets ? r.sets.official_abbreviation : "",
-        set_code: r.sets ? r.sets.code : "",
-        image_url: img || "",
-      }));
-      return `
-        <div class="ie-result-row">
-          ${img ? `<img src="${img}" class="ie-search-result-thumb">` : ""}
-          <span>${name} — ${setName} #${r.card_number || "?"}</span>
-          <button class="auth-btn" onclick="ieAddItem('${payload}')">Ajouter</button>
-        </div>`;
-    }).join("") || `<div class="empty-state">Aucun résultat pour "${term}".</div>`;
-  } catch (err) {
-    resultsEl.innerHTML = `<div class="empty-state">Erreur de recherche : ${err.message}</div>`;
-  }
-}
+// (l'ancienne recherche de carte par nom a été remplacée par la
+// recherche d'extensions fusionnée — voir ieFilterExtensions ci-dessous)
 
 /* ------------------------------------------------------------
    Navigation par sets — pendant du mode "Parcourir les extensions"
@@ -2062,9 +2062,206 @@ let ieCachedAllSets = null;
 function ieSetPickerMode(mode, btn){
   btn.closest(".listings-tabs").querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
-  document.getElementById("ie-picker-search-mode").style.display = mode === "search" ? "flex" : "none";
-  document.getElementById("ie-picker-browse-mode").style.display = mode === "browse" ? "flex" : "none";
-  if (mode === "browse") ieLoadPickerSets();
+  document.getElementById("ie-picker-extensions-mode").style.display = mode === "extensions" ? "flex" : "none";
+  document.getElementById("ie-picker-collection-mode").style.display = mode === "collection" ? "flex" : "none";
+  if (mode === "extensions") ieLoadPickerSets();
+  if (mode === "collection") ieLoadCollectionTab();
+}
+
+function ieFilterExtensions(){
+  const term = document.getElementById("ie-extension-search-input").value.trim().toLowerCase();
+  const region = document.getElementById("ie-extension-region-filter").value;
+  document.querySelectorAll("#ie-sets-list .ie-picker-set-accordion").forEach(acc => {
+    const setId = parseInt(acc.dataset.setId, 10);
+    const set = ieCachedAllSets.find(s => s.id === setId);
+    if (!set){ acc.style.display = "none"; return; }
+    const matchesRegion = region === "all" || acc.dataset.region === region;
+    // Correspondance PARTIELLE (pas juste "commence par") sur nom, code
+    // ou abréviation — "anniversary" ou "llectio" doivent tous deux
+    // trouver "25th Anniversary Collection".
+    const haystack = `${set.name_en} ${set.code} ${set.official_abbreviation || ""}`.toLowerCase();
+    const matchesTerm = !term || haystack.includes(term);
+    acc.style.display = (matchesRegion && matchesTerm) ? "" : "none";
+  });
+}
+
+/* ------------------------------------------------------------
+   Onglet Collection — parcourir sa collection carte par carte, pour
+   n'en ajouter que quelques-unes (complémentaire au bouton "Importer
+   depuis ma collection", qui lui ouvre la modale d'import en masse).
+   ------------------------------------------------------------ */
+let ieCollectionTabLoaded = false;
+
+async function ieLoadCollectionTab(){
+  if (ieCollectionTabLoaded) return;
+  const container = document.getElementById("ie-collection-tab-list");
+  container.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const { data } = await supabaseClient.auth.getSession();
+    if (!data.session){
+      container.innerHTML = `<div class="empty-state">Connectez-vous pour voir votre collection.</div>`;
+      return;
+    }
+    const rows = await supabaseAuthedFetch(
+      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,` +
+      `cards(id,card_number,card_names(locale,name),card_images(image_url),sets(id,name_en,total_cards,official_abbreviation,code))`
+    );
+    const withCards = rows.filter(r => r.cards);
+    container.innerHTML = withCards.map(r => {
+      const c = r.cards;
+      const nameObj = c.card_names.find(n => n.locale === LANG) || c.card_names.find(n => n.locale === "en") || c.card_names[0];
+      const name = nameObj ? nameObj.name : "?";
+      const img = (c.card_images && c.card_images[0]) ? c.card_images[0].image_url : "";
+      const payload = encodeURIComponent(JSON.stringify({
+        card_id: c.id, card_name: name, card_number: c.card_number,
+        total_cards: c.sets ? c.sets.total_cards : null,
+        set_name: c.sets ? c.sets.name_en : "",
+        set_abbreviation: c.sets ? c.sets.official_abbreviation : "",
+        set_code: c.sets ? c.sets.code : "",
+        image_url: img,
+      }));
+      return `
+        <div class="ie-result-row">
+          ${img ? `<img src="${img}" class="ie-search-result-thumb">` : ""}
+          <span>${name} — ${c.sets ? c.sets.name_en : ""} #${c.card_number || "?"}</span>
+          <button class="auth-btn" onclick="ieAddItem('${payload}')">Ajouter</button>
+        </div>`;
+    }).join("") || `<div class="empty-state">Votre collection est vide.</div>`;
+    ieCollectionTabLoaded = true;
+  } catch (err) {
+    container.innerHTML = `<div class="empty-state">Erreur : ${err.message}</div>`;
+  }
+}
+
+/* ------------------------------------------------------------
+   Détection et résolution des doublons — partagée entre la modale
+   collection et l'import de CSV de reprise.
+   ------------------------------------------------------------ */
+function ieFindDuplicateIndex(cardId){
+  if (cardId == null) return -1;
+  return ieExportItems.findIndex(it => String(it.card_id) === String(cardId));
+}
+
+function ieApplyItemWithStrategy(itemData, strategy){
+  const dupIdx = ieFindDuplicateIndex(itemData.card_id);
+  if (dupIdx === -1 || strategy === "duplicate"){
+    ieItemSeq += 1;
+    ieExportItems.push({ localId: ieItemSeq, ...itemData });
+    return "added";
+  }
+  if (strategy === "increase"){
+    const current = parseInt(ieExportItems[dupIdx].quantity, 10) || 0;
+    const toAdd = parseInt(itemData.quantity, 10) || 1;
+    ieExportItems[dupIdx].quantity = current + toAdd;
+    return "increased";
+  }
+  return "ignored"; // strategy === "ignore"
+}
+
+/* ------------------------------------------------------------
+   Modale d'import en masse depuis la collection.
+   ------------------------------------------------------------ */
+let ieCollectionModalData = [];
+
+async function ieOpenCollectionModal(){
+  document.getElementById("ie-collection-modal-overlay").classList.add("active");
+  const listEl = document.getElementById("ie-collection-modal-list");
+  listEl.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const { data } = await supabaseClient.auth.getSession();
+    if (!data.session){
+      listEl.innerHTML = `<div class="empty-state">Connectez-vous pour voir votre collection.</div>`;
+      document.getElementById("ie-collection-import-confirm").disabled = true;
+      return;
+    }
+    const rows = await supabaseAuthedFetch(
+      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,grading_companies(name),` +
+      `cards(id,card_number,card_names(locale,name),card_images(image_url),sets(id,name_en,total_cards,official_abbreviation,code))`
+    );
+    ieCollectionModalData = rows.filter(r => r.cards).map(r => {
+      const c = r.cards;
+      const nameObj = c.card_names.find(n => n.locale === LANG) || c.card_names.find(n => n.locale === "en") || c.card_names[0];
+      return {
+        checked: true,
+        card_id: c.id,
+        card_name: nameObj ? nameObj.name : "?",
+        card_number: c.card_number,
+        total_cards: c.sets ? c.sets.total_cards : null,
+        set_name: c.sets ? c.sets.name_en : "",
+        set_abbreviation: c.sets ? c.sets.official_abbreviation : "",
+        set_code: c.sets ? c.sets.code : "",
+        image_url: (c.card_images && c.card_images[0]) ? c.card_images[0].image_url : "",
+        language: LANG,
+        conditionMode: r.is_graded ? "grading" : "condition",
+        condition: r.is_graded ? "NM" : (r.condition || "NM"),
+        grading_company: (r.grading_companies && r.grading_companies.name) || "",
+        grade: r.is_graded ? (r.grade || "") : "",
+        starting_price: "",
+        instant_buy_price: "",
+        quantity: r.quantity || 1,
+      };
+    });
+    ieRenderCollectionModalList();
+  } catch (err) {
+    listEl.innerHTML = `<div class="empty-state">Erreur : ${err.message}</div>`;
+  }
+}
+
+function ieCloseCollectionModal(){
+  document.getElementById("ie-collection-modal-overlay").classList.remove("active");
+}
+
+function ieRenderCollectionModalList(){
+  const listEl = document.getElementById("ie-collection-modal-list");
+  if (ieCollectionModalData.length === 0){
+    listEl.innerHTML = `<div class="empty-state">Votre collection est vide.</div>`;
+  } else {
+    listEl.innerHTML = ieCollectionModalData.map((it, idx) => `
+      <div class="ie-collection-modal-row">
+        <input type="checkbox" ${it.checked ? "checked" : ""} onchange="ieCollectionModalData[${idx}].checked=this.checked;ieUpdateCollectionImportLabel();">
+        ${it.image_url ? `<img src="${it.image_url}" class="ie-item-thumb">` : ""}
+        <div class="ie-collection-modal-info">
+          <strong>${it.card_name}</strong>
+          <span>${it.set_name} #${it.card_number || "?"} — ${LANGUAGE_NAMES_IE[it.language] || it.language}</span>
+          <span>${it.conditionMode === "grading" ? `${it.grading_company || "Gradée"} ${it.grade || ""}`.trim() : it.condition}</span>
+        </div>
+      </div>`).join("");
+  }
+  ieUpdateCollectionImportLabel();
+}
+
+function ieCollectionToggleAll(checked){
+  ieCollectionModalData.forEach(it => it.checked = checked);
+  document.getElementById("ie-collection-select-all").checked = checked;
+  ieRenderCollectionModalList();
+}
+
+function ieUpdateCollectionImportLabel(){
+  const btn = document.getElementById("ie-collection-import-confirm");
+  if (!btn) return;
+  const total = ieCollectionModalData.length;
+  const selected = ieCollectionModalData.filter(it => it.checked).length;
+  btn.textContent = (selected === total && total > 0) ? `Importer toutes les cartes (${total})` : `Importer ${selected} carte(s)`;
+  btn.disabled = selected === 0;
+}
+
+function ieConfirmCollectionImport(){
+  const strategy = document.querySelector('input[name="ie-dup-strategy"]:checked').value;
+  const selectedItems = ieCollectionModalData.filter(it => it.checked);
+  let added = 0, increased = 0, ignored = 0;
+  for (const it of selectedItems){
+    const { checked, ...itemData } = it;
+    const result = ieApplyItemWithStrategy(itemData, strategy);
+    if (result === "added") added += 1;
+    else if (result === "increased") increased += 1;
+    else ignored += 1;
+  }
+  renderIeItemsList();
+  ieCloseCollectionModal();
+  const parts = [`${added} ajoutée(s)`];
+  if (increased) parts.push(`${increased} quantité augmentée`);
+  if (ignored) parts.push(`${ignored} ignorée(s) (déjà présente(s))`);
+  document.getElementById("ie-export-status").textContent = `Import collection : ${parts.join(", ")}.`;
 }
 
 async function ieLoadPickerSets(){
@@ -2088,7 +2285,7 @@ async function ieLoadPickerSets(){
         </div>`;
     }).join("");
     list.dataset.rendered = "1";
-    filterPickerSetsByRegion("ie-sets-list"); // réutilise le filtre déjà actif pour ce conteneur, si on revient dessus
+    ieFilterExtensions(); // applique tout de suite le filtre déjà en place (texte + région), si on revient sur cet onglet
   } catch (e) {
     list.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
@@ -2153,65 +2350,58 @@ function ieAddItem(payloadEncoded){
   renderIeItemsList();
 }
 
-async function ieImportFromCollection(){
-  const statusEl = document.getElementById("ie-export-status");
+// (ancien import direct sans confirmation, remplacé par la modale ieOpenCollectionModal ci-dessus)
 
-  if (ieCollectionImportedOnce){
-    const proceed = confirm(
-      "Vous avez déjà importé votre collection dans cette liste. La réimporter risque " +
-      "d'ajouter des cartes en double. Continuer quand même ?"
-    );
-    if (!proceed) return;
-  }
-
-  statusEl.textContent = "Chargement de votre collection...";
-  try {
-    const { data } = await supabaseClient.auth.getSession();
-    if (!data.session){
-      statusEl.textContent = "Connectez-vous pour importer votre collection.";
-      return;
-    }
-
-    const rows = await supabaseAuthedFetch(
-      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,` +
-      `cards(id,card_number,card_names(locale,name),card_images(image_url),sets(id,name_en,total_cards,official_abbreviation,code))`
-    );
-
-    let added = 0;
-    for (const r of rows){
-      if (!r.cards) continue;
-      const c = r.cards;
-      const nameObj = c.card_names.find(n => n.locale === LANG) || c.card_names.find(n => n.locale === "en") || c.card_names[0];
-      ieItemSeq += 1;
-      ieExportItems.push({
-        localId: ieItemSeq,
-        card_id: c.id,
-        card_name: nameObj ? nameObj.name : "?",
-        card_number: c.card_number,
-        total_cards: c.sets ? c.sets.total_cards : null,
-        set_name: c.sets ? c.sets.name_en : "",
-        set_abbreviation: c.sets ? c.sets.official_abbreviation : "",
-        set_code: c.sets ? c.sets.code : "",
-        image_url: (c.card_images && c.card_images[0]) ? c.card_images[0].image_url : "",
-        language: LANG, // la collection ne suit pas la langue de l'exemplaire — repli sur la locale du visiteur
-        conditionMode: r.is_graded ? "grading" : "condition",
-        condition: r.is_graded ? "NM" : (r.condition || "NM"),
-        grading_company: "", // pas de société de gradation distincte en collection actuellement — à compléter à la main si besoin
-        grade: r.is_graded ? (r.grade || "") : "",
-        starting_price: "",
-        instant_buy_price: "",
-        quantity: r.quantity || 1,
-      });
-      added += 1;
-    }
-
-    renderIeItemsList();
-    ieCollectionImportedOnce = true;
-    statusEl.textContent = `${added} carte(s) importée(s) depuis votre collection.`;
-  } catch (err) {
-    statusEl.textContent = `Erreur lors de l'import de la collection : ${err.message}`;
-  }
+/* ------------------------------------------------------------
+   Réordonnancement de la liste — flèches (fiable partout) et glisser
+   via Pointer Events (fonctionne identiquement à la souris et au
+   tactile, contrairement au glisser-déposer HTML5 natif qui ne
+   fonctionne pas sur mobile).
+   ------------------------------------------------------------ */
+function ieMoveItem(localId, direction){
+  const idx = ieExportItems.findIndex(it => it.localId === localId);
+  if (idx === -1) return;
+  const newIdx = idx + direction;
+  if (newIdx < 0 || newIdx >= ieExportItems.length) return;
+  [ieExportItems[idx], ieExportItems[newIdx]] = [ieExportItems[newIdx], ieExportItems[idx]];
+  renderIeItemsList();
 }
+
+let ieDragLocalId = null;
+
+function ieDragStart(e, localId){
+  ieDragLocalId = localId;
+  e.target.setPointerCapture(e.pointerId);
+  document.querySelector(`.ie-item-row[data-local-id="${localId}"]`)?.classList.add("ie-dragging");
+}
+
+function ieDragMove(e){
+  if (ieDragLocalId == null) return;
+  const rows = [...document.querySelectorAll("#ie-items-list .ie-item-row")];
+  const overRow = rows.find(r => {
+    const rect = r.getBoundingClientRect();
+    return e.clientY >= rect.top && e.clientY <= rect.bottom;
+  });
+  if (!overRow) return;
+  const overId = parseInt(overRow.dataset.localId, 10);
+  if (overId === ieDragLocalId) return;
+  const fromIdx = ieExportItems.findIndex(it => it.localId === ieDragLocalId);
+  const toIdx = ieExportItems.findIndex(it => it.localId === overId);
+  if (fromIdx === -1 || toIdx === -1) return;
+  const [moved] = ieExportItems.splice(fromIdx, 1);
+  ieExportItems.splice(toIdx, 0, moved);
+  renderIeItemsList();
+  document.querySelector(`.ie-item-row[data-local-id="${ieDragLocalId}"]`)?.classList.add("ie-dragging");
+}
+
+function ieDragEnd(){
+  document.querySelector(`.ie-item-row[data-local-id="${ieDragLocalId}"]`)?.classList.remove("ie-dragging");
+  ieDragLocalId = null;
+}
+
+document.addEventListener("pointermove", ieDragMove);
+document.addEventListener("pointerup", ieDragEnd);
+document.addEventListener("pointercancel", ieDragEnd);
 
 function ieRemoveItem(localId){
   ieExportItems = ieExportItems.filter(it => it.localId !== localId);
@@ -2223,8 +2413,6 @@ function ieUpdateItem(localId, field, value){
   if (item) item[field] = value;
   if (ieExportItems[0] && ieExportItems[0].localId === localId) ieRenderPreview();
 }
-
-let ieCollectionImportedOnce = false;
 
 function renderIeBulkBars(){
   const selectedCount = ieExportItems.filter(it => it.selected).length;
@@ -2290,7 +2478,6 @@ function ieRemoveAllItems(){
   if (ieExportItems.length === 0) return;
   if (!confirm(`Retirer TOUTES les cartes (${ieExportItems.length}) de la liste ? Cette action ne peut pas être annulée.`)) return;
   ieExportItems = [];
-  ieCollectionImportedOnce = false; // liste vide = plus aucun risque de doublon au prochain import
   renderIeItemsList();
 }
 
@@ -2306,10 +2493,15 @@ function renderIeItemsList(){
   const languageOptions = Object.keys(LANGUAGE_NAMES_IE)
     .map(code => `<option value="${code}">${LANGUAGE_NAMES_IE[code]}</option>`).join("");
 
-  listEl.innerHTML = ieExportItems.map(item => `
+  listEl.innerHTML = ieExportItems.map((item, idx) => `
     <div class="ie-item-row" data-local-id="${item.localId}">
       <div class="ie-item-header">
         <label style="display:flex;align-items:center;gap:10px;">
+          <span class="ie-drag-handle" title="Glisser pour réordonner" onpointerdown="ieDragStart(event, ${item.localId})">⠿</span>
+          <span class="ie-order-arrows">
+            <button class="ie-order-arrow" title="Monter" ${idx === 0 ? "disabled" : ""} onclick="ieMoveItem(${item.localId}, -1)">▲</button>
+            <button class="ie-order-arrow" title="Descendre" ${idx === ieExportItems.length - 1 ? "disabled" : ""} onclick="ieMoveItem(${item.localId}, 1)">▼</button>
+          </span>
           <input type="checkbox" ${item.selected ? "checked" : ""} onchange="ieToggleSelectItem(${item.localId},this.checked)">
           ${item.image_url ? `<img src="${item.image_url}" class="ie-item-thumb">` : ""}
           <strong>${item.card_name} — ${item.set_name} #${item.card_number || "?"}</strong>
@@ -2498,14 +2690,7 @@ function ieImportResumeFile(event){
   if (!file) return;
 
   const statusEl = document.getElementById("ie-export-status");
-
-  if (ieExportItems.length > 0){
-    const proceed = confirm(
-      `Votre liste contient déjà ${ieExportItems.length} carte(s). Importer ce fichier va ajouter ` +
-      `ses cartes à la suite — pas les remplacer. Continuer ?`
-    );
-    if (!proceed) return;
-  }
+  const strategy = document.querySelector('input[name="ie-resume-dup-strategy"]:checked').value;
 
   const reader = new FileReader();
   reader.onload = () => {
@@ -2515,11 +2700,9 @@ function ieImportResumeFile(event){
         statusEl.textContent = "Fichier vide ou format non reconnu.";
         return;
       }
-      let added = 0;
+      let added = 0, increased = 0, ignored = 0;
       for (const r of parsed){
-        ieItemSeq += 1;
-        ieExportItems.push({
-          localId: ieItemSeq,
+        const itemData = {
           card_id: r.card_id || null,
           card_name: r.card_name || "?",
           card_number: r.card_number || "",
@@ -2536,11 +2719,17 @@ function ieImportResumeFile(event){
           starting_price: r.starting_price || "",
           instant_buy_price: r.instant_buy_price || "",
           quantity: r.quantity ? parseInt(r.quantity, 10) : 1,
-        });
-        added += 1;
+        };
+        const result = ieApplyItemWithStrategy(itemData, strategy);
+        if (result === "added") added += 1;
+        else if (result === "increased") increased += 1;
+        else ignored += 1;
       }
       renderIeItemsList();
-      statusEl.textContent = `${added} carte(s) importée(s) depuis le fichier ${IE_SITE_NAME}.`;
+      const parts = [`${added} ajoutée(s)`];
+      if (increased) parts.push(`${increased} quantité augmentée`);
+      if (ignored) parts.push(`${ignored} ignorée(s) (déjà présente(s))`);
+      statusEl.textContent = `Import CSV ${IE_SITE_NAME} : ${parts.join(", ")}.`;
     } catch (err) {
       statusEl.textContent = `Erreur de lecture du fichier : ${err.message}`;
     }
