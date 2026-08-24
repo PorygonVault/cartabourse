@@ -597,26 +597,40 @@
     }
     .binder-sidebar-scroll{flex:1;margin-top:10px;}
   }
-.ie-section{margin:24px 0;padding:16px;border:1px solid #e2e2e2;border-radius:8px;}
-.ie-section h3{margin-top:0;}
+.ie-section{margin:24px 0;padding:16px;border:1px solid var(--border);border-radius:8px;background:var(--panel);}
+.ie-section h3{margin-top:0;color:var(--text);}
 .ie-search-row{display:flex;gap:8px;margin-bottom:12px;}
-.ie-search-row input{flex:1;padding:8px;}
-.ie-result-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid #eee;}
+.ie-search-row input{flex:1;padding:8px;background:var(--ink);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);}
+.ie-result-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);color:var(--text);}
 .ie-result-thumb{width:56px;height:auto;border-radius:6px;flex-shrink:0;}
-.ie-item-row{padding:12px 0;border-bottom:1px solid #eee;}
-.ie-item-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.ie-item-row{padding:12px 0;border-bottom:1px solid var(--border);}
+.ie-item-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;color:var(--text);}
 .ie-item-fields{display:flex;flex-wrap:wrap;gap:12px;align-items:end;}
-.ie-item-fields label{display:flex;flex-direction:column;font-size:12px;gap:4px;}
-.ie-item-fields input,.ie-item-fields select{padding:6px;}
-.ie-hint{font-size:13px;color:#666;}
-.ie-checkbox-label{display:flex;align-items:flex-start;gap:8px;font-size:13px;margin-top:10px;}
-#ie-export-status{margin-top:10px;font-size:14px;}
-#ie-name-template,#ie-description-template{width:100%;font-size:15px;padding:10px;font-family:inherit;box-sizing:border-box;resize:vertical;}
+.ie-item-fields label{display:flex;flex-direction:column;font-size:12px;gap:4px;color:var(--text-dim);}
+.ie-item-fields input,.ie-item-fields select{padding:6px;background:var(--ink);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);}
+.ie-hint{font-size:13px;color:var(--text-dim);}
+.ie-checkbox-label{display:flex;align-items:flex-start;gap:8px;font-size:13px;margin-top:10px;color:var(--text-dim);}
+#ie-export-status{margin-top:10px;font-size:14px;color:var(--text);}
+#ie-name-template,#ie-description-template{width:100%;font-size:15px;padding:10px;font-family:inherit;box-sizing:border-box;resize:vertical;background:var(--ink);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);}
+#ie-description-template:disabled{opacity:0.5;}
 .ie-blocks{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px;}
-.ie-block-chip{background:#f2f2f2;border:1px solid #ddd;border-radius:6px;padding:4px 9px;font-size:12.5px;cursor:pointer;font-family:monospace;}
-.ie-block-chip:hover{background:#e6e6e6;}
+.ie-block-chip{background:var(--panel-light);border:1px solid var(--border);color:var(--gold-bright);border-radius:6px;padding:4px 9px;font-size:12.5px;cursor:pointer;font-family:var(--font-mono);}
+.ie-block-chip:hover{background:var(--border);}
 .ie-workspace{display:block;}
 .ie-right-scroll{overflow-y:auto;}
+.ie-bulk-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px;margin-bottom:10px;background:var(--panel-light);border:1px solid var(--border);border-radius:8px;color:var(--text-dim);font-size:13px;}
+.ie-bulk-bar input,.ie-bulk-bar select{padding:5px;background:var(--ink);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);}
+.ie-bulk-bar .danger-btn{background:var(--red);border-color:var(--red);color:#fff;}
+.ie-picker-set-accordion{border-bottom:1px solid var(--border);}
+.ie-picker-set-header{padding:8px 4px;cursor:pointer;display:flex;align-items:center;gap:6px;color:var(--text);}
+.ie-picker-set-header:hover{color:var(--gold-bright);}
+.ie-picker-card-slider{display:none;flex-wrap:wrap;gap:8px;padding:8px 4px 14px;}
+.ie-picker-set-accordion.open .ie-picker-card-slider{display:flex;}
+.ie-picker-card-item{width:88px;cursor:pointer;text-align:center;}
+.ie-picker-card-item img{width:88px;height:123px;object-fit:cover;border-radius:4px;border:1px solid var(--border);display:block;}
+.ie-picker-card-item:hover img{border-color:var(--gold);}
+.ie-picker-card-name{font-size:11px;color:var(--text-dim);display:block;margin-top:3px;}
+.ie-search-result-thumb{width:56px;height:78px;object-fit:cover;border-radius:5px;flex-shrink:0;}
 
 @media (min-width:960px){
   .ie-workspace{display:flex;gap:24px;align-items:flex-start;}
@@ -626,9 +640,9 @@
     position:sticky;top:84px; /* sous l'en-tête collant du site */
     max-height:calc(100vh - 104px);
     display:flex;flex-direction:column;overflow:hidden;
-    background:var(--panel,#fff);border:1px solid var(--border,#e2e2e2);border-radius:8px;padding:16px;
+    background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;
   }
-  .ie-right h3{margin-top:0;}
+  .ie-right h3{margin-top:0;color:var(--text);}
   .ie-right-scroll{flex:1;margin-top:4px;}
 }
 </style>
@@ -1027,7 +1041,9 @@
         <div class="ie-left">
           <div class="ie-section">
             <h3>Cartes à exporter (<span id="ie-item-count">0</span>)</h3>
+            <div id="ie-bulk-bar-top"></div>
             <div id="ie-items-list"><div class="empty-state">Aucune carte ajoutée pour l'instant — utilisez le panneau de droite.</div></div>
+            <div id="ie-bulk-bar-bottom"></div>
           </div>
 
           <div class="ie-section">
@@ -1058,11 +1074,27 @@
           <h3>Ajouter des cartes</h3>
           <button class="collection-btn" style="width:100%;margin-bottom:10px;" onclick="ieImportFromCollection()">Importer depuis ma collection</button>
 
-          <div class="ie-search-row">
-            <input type="text" id="ie-search-input" placeholder="Rechercher une carte par nom..." onkeydown="if(event.key==='Enter'){ieSearch();}">
-            <button class="auth-btn" onclick="ieSearch()">Rechercher</button>
+          <div class="listings-tabs" style="margin-bottom:0;">
+            <button class="tab-btn active" data-mode="search" onclick="ieSetPickerMode('search', this)">Rechercher</button>
+            <button class="tab-btn" data-mode="browse" onclick="ieSetPickerMode('browse', this)">Parcourir les extensions</button>
           </div>
-          <div id="ie-search-results" class="ie-right-scroll"></div>
+
+          <div id="ie-picker-search-mode">
+            <div class="ie-search-row" style="margin-top:10px;">
+              <input type="text" id="ie-search-input" placeholder="Rechercher une carte par nom..." onkeydown="if(event.key==='Enter'){ieSearch();}">
+              <button class="auth-btn" onclick="ieSearch()">Rechercher</button>
+            </div>
+            <div id="ie-search-results" class="ie-right-scroll"></div>
+          </div>
+
+          <div id="ie-picker-browse-mode" style="display:none;">
+            <div class="region-filter" id="ie-picker-region-filter" style="margin-top:10px;">
+              <button class="tab-btn active" data-region="all" onclick="setPickerRegionFilter('all', this, 'ie-sets-list')">Tout</button>
+              <button class="tab-btn" data-region="intl" onclick="setPickerRegionFilter('intl', this, 'ie-sets-list')">Inter</button>
+              <button class="tab-btn" data-region="asia" onclick="setPickerRegionFilter('asia', this, 'ie-sets-list')">Asie</button>
+            </div>
+            <div id="ie-sets-list" class="ie-right-scroll"></div>
+          </div>
         </div>
       </div>
     </div>
@@ -1923,13 +1955,98 @@ async function ieSearch(){
       }));
       return `
         <div class="ie-result-row">
-          ${img ? `<img src="${img}" class="ie-result-thumb">` : ""}
+          ${img ? `<img src="${img}" class="ie-search-result-thumb">` : ""}
           <span>${name} — ${setName} #${r.card_number || "?"}</span>
           <button class="auth-btn" onclick="ieAddItem('${payload}')">Ajouter</button>
         </div>`;
     }).join("") || `<div class="empty-state">Aucun résultat pour "${term}".</div>`;
   } catch (err) {
     resultsEl.innerHTML = `<div class="empty-state">Erreur de recherche : ${err.message}</div>`;
+  }
+}
+
+/* ------------------------------------------------------------
+   Navigation par sets — pendant du mode "Parcourir les extensions"
+   du classeur, mais avec sa propre logique (pas de partage de fonctions
+   avec le classeur, pour ne jamais risquer d'affecter son fonctionnement).
+   Réutilise uniquement setPickerRegionFilter/filterPickerSetsByRegion,
+   déjà génériques (juste un filtrage CSS par listId, sans dépendance).
+   ------------------------------------------------------------ */
+let ieCachedAllSets = null;
+
+function ieSetPickerMode(mode, btn){
+  btn.closest(".listings-tabs").querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("ie-picker-search-mode").style.display = mode === "search" ? "block" : "none";
+  document.getElementById("ie-picker-browse-mode").style.display = mode === "browse" ? "block" : "none";
+  if (mode === "browse") ieLoadPickerSets();
+}
+
+async function ieLoadPickerSets(){
+  const list = document.getElementById("ie-sets-list");
+  if (list.dataset.rendered) return;
+  list.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    if (!ieCachedAllSets){
+      ieCachedAllSets = await fetchAllPaginated(
+        `sets?select=id,name_en,release_region,total_cards,official_abbreviation,code,set_names(locale,name)&order=name_en.asc`
+      );
+    }
+    list.innerHTML = ieCachedAllSets.map(set => {
+      const setName = pickLocalized(set.set_names, LANG) || set.name_en;
+      return `
+        <div class="ie-picker-set-accordion" data-set-id="${set.id}" data-region="${set.release_region || "intl"}">
+          <div class="ie-picker-set-header" onclick="ieTogglePickerSet(${set.id}, this.parentElement)">
+            <span class="accordion-caret">▸</span><span>${setName}</span>
+          </div>
+          <div class="ie-picker-card-slider"></div>
+        </div>`;
+    }).join("");
+    list.dataset.rendered = "1";
+    filterPickerSetsByRegion("ie-sets-list"); // réutilise le filtre déjà actif pour ce conteneur, si on revient dessus
+  } catch (e) {
+    list.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function ieTogglePickerSet(setId, accordionEl){
+  const isOpening = !accordionEl.classList.contains("open");
+  accordionEl.classList.toggle("open");
+  if (!isOpening || accordionEl.dataset.loaded) return;
+
+  const setInfo = ieCachedAllSets.find(s => s.id === setId);
+  const slider = accordionEl.querySelector(".ie-picker-card-slider");
+  slider.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const cards = await supabaseSelect(
+      `cards?set_id=eq.${setId}&select=id,card_number,card_names(locale,name),card_images(image_url)&limit=1000`
+    );
+    cards.sort((a, b) => {
+      const na = parseInt(a.card_number, 10), nb = parseInt(b.card_number, 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      return (a.card_number || "").localeCompare(b.card_number || "");
+    });
+    slider.innerHTML = cards.map(c => {
+      const nameObj = c.card_names.find(n => n.locale === LANG) || c.card_names.find(n => n.locale === "en") || c.card_names[0];
+      const name = nameObj ? nameObj.name : "?";
+      const img = c.card_images && c.card_images[0] ? c.card_images[0].image_url : "";
+      const payload = encodeURIComponent(JSON.stringify({
+        card_id: c.id, card_name: name, card_number: c.card_number,
+        total_cards: setInfo ? setInfo.total_cards : null,
+        set_name: setInfo ? setInfo.name_en : "",
+        set_abbreviation: setInfo ? setInfo.official_abbreviation : "",
+        set_code: setInfo ? setInfo.code : "",
+        image_url: img || "",
+      }));
+      return `
+        <div class="ie-picker-card-item" onclick="ieAddItem('${payload}')" title="${name} — cliquez pour ajouter">
+          ${img ? `<img src="${img}" alt="${name}">` : `<span class="glyph">⚡</span>`}
+          <span class="ie-picker-card-name">${name}</span>
+        </div>`;
+    }).join("");
+    accordionEl.dataset.loaded = "1";
+  } catch (e) {
+    slider.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
 }
 
@@ -1953,6 +2070,15 @@ function ieAddItem(payloadEncoded){
 
 async function ieImportFromCollection(){
   const statusEl = document.getElementById("ie-export-status");
+
+  if (ieCollectionImportedOnce){
+    const proceed = confirm(
+      "Vous avez déjà importé votre collection dans cette liste. La réimporter risque " +
+      "d'ajouter des cartes en double. Continuer quand même ?"
+    );
+    if (!proceed) return;
+  }
+
   statusEl.textContent = "Chargement de votre collection...";
   try {
     const { data } = await supabaseClient.auth.getSession();
@@ -1995,6 +2121,7 @@ async function ieImportFromCollection(){
     }
 
     renderIeItemsList();
+    ieCollectionImportedOnce = true;
     statusEl.textContent = `${added} carte(s) importée(s) depuis votre collection.`;
   } catch (err) {
     statusEl.textContent = `Erreur lors de l'import de la collection : ${err.message}`;
@@ -2011,8 +2138,79 @@ function ieUpdateItem(localId, field, value){
   if (item) item[field] = value;
 }
 
+let ieCollectionImportedOnce = false;
+
+function renderIeBulkBars(){
+  const selectedCount = ieExportItems.filter(it => it.selected).length;
+  const allSelected = ieExportItems.length > 0 && selectedCount === ieExportItems.length;
+
+  const html = ieExportItems.length === 0 ? "" : `
+    <div class="ie-bulk-bar">
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" ${allSelected ? "checked" : ""} onchange="ieToggleSelectAll(this.checked)">
+        Tout sélectionner
+      </label>
+      <span>${selectedCount} sélectionnée(s)</span>
+      <select id="ie-bulk-language-select">
+        ${Object.keys(LANGUAGE_NAMES_IE).map(code => `<option value="${code}">${LANGUAGE_NAMES_IE[code]}</option>`).join("")}
+      </select>
+      <button class="auth-btn" onclick="ieBulkSetLanguage(document.getElementById('ie-bulk-language-select').value)">Langue →</button>
+      <input type="number" step="0.01" id="ie-bulk-starting-price" placeholder="Prix départ" style="width:100px;">
+      <button class="auth-btn" onclick="ieBulkSetPrice('starting_price', document.getElementById('ie-bulk-starting-price').value)">Appliquer</button>
+      <input type="number" step="0.01" id="ie-bulk-instant-price" placeholder="Prix immédiat" style="width:100px;">
+      <button class="auth-btn" onclick="ieBulkSetPrice('instant_buy_price', document.getElementById('ie-bulk-instant-price').value)">Appliquer</button>
+      <button class="auth-btn" onclick="ieRemoveSelected()">Retirer la sélection</button>
+      <button class="auth-btn danger-btn" onclick="ieRemoveAllItems()">Retirer toutes les cartes</button>
+    </div>`;
+
+  document.getElementById("ie-bulk-bar-top").innerHTML = html;
+  document.getElementById("ie-bulk-bar-bottom").innerHTML = html;
+}
+
+function ieToggleSelectAll(checked){
+  ieExportItems.forEach(it => it.selected = checked);
+  renderIeItemsList();
+}
+
+function ieToggleSelectItem(localId, checked){
+  const item = ieExportItems.find(it => it.localId === localId);
+  if (item) item.selected = checked;
+  renderIeBulkBars(); // pas besoin de redessiner toute la liste, juste les compteurs/case "tout sélectionner"
+}
+
+function ieBulkSetLanguage(lang){
+  const count = ieExportItems.filter(it => it.selected).length;
+  if (count === 0){ alert("Sélectionnez au moins une carte."); return; }
+  ieExportItems.forEach(it => { if (it.selected) it.language = lang; });
+  renderIeItemsList();
+}
+
+function ieBulkSetPrice(field, value){
+  const count = ieExportItems.filter(it => it.selected).length;
+  if (count === 0){ alert("Sélectionnez au moins une carte."); return; }
+  ieExportItems.forEach(it => { if (it.selected) it[field] = value; });
+  renderIeItemsList();
+}
+
+function ieRemoveSelected(){
+  const count = ieExportItems.filter(it => it.selected).length;
+  if (count === 0){ alert("Sélectionnez au moins une carte."); return; }
+  if (!confirm(`Retirer les ${count} carte(s) sélectionnée(s) de la liste ?`)) return;
+  ieExportItems = ieExportItems.filter(it => !it.selected);
+  renderIeItemsList();
+}
+
+function ieRemoveAllItems(){
+  if (ieExportItems.length === 0) return;
+  if (!confirm(`Retirer TOUTES les cartes (${ieExportItems.length}) de la liste ? Cette action ne peut pas être annulée.`)) return;
+  ieExportItems = [];
+  ieCollectionImportedOnce = false; // liste vide = plus aucun risque de doublon au prochain import
+  renderIeItemsList();
+}
+
 function renderIeItemsList(){
   document.getElementById("ie-item-count").textContent = ieExportItems.length;
+  renderIeBulkBars();
   const listEl = document.getElementById("ie-items-list");
   if (ieExportItems.length === 0){
     listEl.innerHTML = `<div class="empty-state">Aucune carte ajoutée pour l'instant — utilisez le panneau de droite.</div>`;
@@ -2024,7 +2222,10 @@ function renderIeItemsList(){
   listEl.innerHTML = ieExportItems.map(item => `
     <div class="ie-item-row" data-local-id="${item.localId}">
       <div class="ie-item-header">
-        <strong>${item.card_name} — ${item.set_name} #${item.card_number || "?"}</strong>
+        <label style="display:flex;align-items:center;gap:8px;">
+          <input type="checkbox" ${item.selected ? "checked" : ""} onchange="ieToggleSelectItem(${item.localId},this.checked)">
+          <strong>${item.card_name} — ${item.set_name} #${item.card_number || "?"}</strong>
+        </label>
         <button class="auth-btn" onclick="ieRemoveItem(${item.localId})">Retirer</button>
       </div>
       <div class="ie-item-fields">
