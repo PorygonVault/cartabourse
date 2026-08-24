@@ -1514,7 +1514,7 @@ async function renderAuthArea(session){
       <a href="#" class="auth-btn" onclick="navigateCollection();return false;">Ma collection</a>
       <a href="#" class="auth-btn" onclick="navigateBinders();return false;">Mes classeurs</a>
       ${role === "admin" ? `<a href="#" class="auth-btn" onclick="navigateAdmin();return false;">Admin</a>` : ""}
-      ${role === "admin" ? `<a href="#" class="auth-btn" onclick="navigateImportExport();return false;">Import/Export</a>` : ""}
+      <a href="#" class="auth-btn" onclick="navigateImportExport();return false;">Import/Export</a>
       <span class="auth-user" onclick="navigateAccount()" title="Mon compte">${label}</span>
       <button class="auth-btn" onclick="signOut()">Se déconnecter</button>
     `;
