@@ -597,6 +597,21 @@
     }
     .binder-sidebar-scroll{flex:1;margin-top:10px;}
   }
+.ie-section{margin:24px 0;padding:16px;border:1px solid #e2e2e2;border-radius:8px;}
+.ie-section h3{margin-top:0;}
+.ie-search-row{display:flex;gap:8px;margin-bottom:12px;}
+.ie-search-row input{flex:1;padding:8px;}
+.ie-result-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #eee;}
+.ie-result-thumb{width:32px;height:auto;border-radius:4px;}
+.ie-item-row{padding:12px 0;border-bottom:1px solid #eee;}
+.ie-item-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;}
+.ie-item-fields{display:flex;flex-wrap:wrap;gap:12px;align-items:end;}
+.ie-item-fields label{display:flex;flex-direction:column;font-size:12px;gap:4px;}
+.ie-item-fields input,.ie-item-fields select{padding:6px;}
+.ie-hint{font-size:13px;color:#666;}
+.ie-hint code{background:#f2f2f2;padding:2px 5px;border-radius:4px;margin-right:4px;}
+.ie-checkbox-label{display:flex;align-items:center;gap:8px;font-size:13px;margin-top:10px;}
+#ie-export-status{margin-top:10px;font-size:14px;}
 </style>
 </head>
 <body>
@@ -710,7 +725,7 @@
       <div class="region-filter" id="picker-region-filter" style="margin-top:12px;">
         <button class="tab-btn active" data-region="all" onclick="setPickerRegionFilter('all', this, 'slot-picker-sets-list')">Tout</button>
         <button class="tab-btn" data-region="intl" onclick="setPickerRegionFilter('intl', this, 'slot-picker-sets-list')">Inter</button>
-        <button class="tab-btn" data-region="jp" onclick="setPickerRegionFilter('jp', this, 'slot-picker-sets-list')">Japon</button>
+        <button class="tab-btn" data-region="asia" onclick="setPickerRegionFilter('asia', this, 'slot-picker-sets-list')">Asie</button>
       </div>
       <div id="slot-picker-sets-list" style="margin-top:12px;max-height:420px;overflow-y:auto;"></div>
     </div>
@@ -730,7 +745,7 @@
       <div class="region-filter" id="home-region-filter">
         <button class="tab-btn active" data-region="all" onclick="setHomeRegionFilter('all', this)">Tout</button>
         <button class="tab-btn" data-region="intl" onclick="setHomeRegionFilter('intl', this)">Inter</button>
-        <button class="tab-btn" data-region="jp" onclick="setHomeRegionFilter('jp', this)">Japon</button>
+        <button class="tab-btn" data-region="asia" onclick="setHomeRegionFilter('asia', this)">Asie</button>
       </div>
       <div class="view-toggle">
         <button id="view-grid-btn" class="view-toggle-btn active" onclick="setViewMode('grid')">Grille</button>
@@ -936,7 +951,7 @@
           <div class="region-filter" id="sidebar-region-filter" style="margin-top:10px;">
             <button class="tab-btn active" data-region="all" onclick="setPickerRegionFilter('all', this, 'sidebar-sets-list')">Tout</button>
             <button class="tab-btn" data-region="intl" onclick="setPickerRegionFilter('intl', this, 'sidebar-sets-list')">Inter</button>
-            <button class="tab-btn" data-region="jp" onclick="setPickerRegionFilter('jp', this, 'sidebar-sets-list')">Japon</button>
+            <button class="tab-btn" data-region="asia" onclick="setPickerRegionFilter('asia', this, 'sidebar-sets-list')">Asie</button>
           </div>
           <div id="sidebar-sets-list" class="binder-sidebar-scroll"></div>
         </div>
@@ -973,6 +988,63 @@
     </div>
 
     <div id="admin-content"><div class="empty-state">Chargement...</div></div>
+  </section>
+
+  <section id="view-import-export" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Import / Export</div>
+
+    <div class="listings-tabs" id="ie-mode-tabs">
+      <button class="tab-btn active" data-mode="export" onclick="setImportExportMode('export')">Export</button>
+      <button class="tab-btn" data-mode="import" onclick="setImportExportMode('import')">Import</button>
+    </div>
+
+    <div id="ie-export-panel">
+      <div class="listings-tabs" id="ie-platform-tabs">
+        <button class="tab-btn active" data-platform="voggt" onclick="setExportPlatform('voggt', this)">Voggt</button>
+        <button class="tab-btn" data-platform="whatnot" disabled title="Bientôt disponible">Whatnot (bientôt)</button>
+      </div>
+
+      <div class="ie-section">
+        <h3>1. Ajouter des cartes</h3>
+        <div class="ie-search-row">
+          <input type="text" id="ie-search-input" placeholder="Rechercher une carte par nom..." onkeydown="if(event.key==='Enter'){ieSearch();}">
+          <button class="auth-btn" onclick="ieSearch()">Rechercher</button>
+        </div>
+        <div id="ie-search-results"></div>
+      </div>
+
+      <div class="ie-section">
+        <h3>2. Cartes à exporter (<span id="ie-item-count">0</span>)</h3>
+        <div id="ie-items-list"><div class="empty-state">Aucune carte ajoutée pour l'instant.</div></div>
+      </div>
+
+      <div class="ie-section">
+        <h3>3. Format du titre et de la description</h3>
+        <p class="ie-hint">
+          Blocs disponibles : <code>[card_name]</code> <code>[number]</code> <code>[number_complete]</code>
+          <code>[set_name]</code> <code>[set_abbreviation]</code> <code>[set_code]</code>
+          <code>[condition]</code> <code>[condition_full]</code> <code>[grading_company]</code>
+          <code>[grade]</code> <code>[grading_full]</code> <code>[language_name]</code> <code>[flag]</code> <code>[price]</code>
+        </p>
+        <label>Titre (name)</label>
+        <input type="text" id="ie-name-template" value="[flag] [card_name] [number_complete] - [set_name] [set_abbreviation]">
+        <label>Description</label>
+        <input type="text" id="ie-description-template" value="[card_name] [number_complete] - [condition_full][grading_full]">
+        <label class="ie-checkbox-label">
+          <input type="checkbox" id="ie-live-disclaimer" checked>
+          Ajouter automatiquement "État montré en live / Condition showed during live" à la description
+        </label>
+      </div>
+
+      <div class="ie-section">
+        <button class="auth-btn" onclick="generateExport()">Générer le fichier CSV</button>
+        <div id="ie-export-status"></div>
+      </div>
+    </div>
+
+    <div id="ie-import-panel" style="display:none;">
+      <div class="empty-state">Fonctionnalité d'import en cours de conception — bientôt disponible.</div>
+    </div>
   </section>
 
   <section id="view-account" class="view">
@@ -1356,6 +1428,7 @@ async function renderAuthArea(session){
       <a href="#" class="auth-btn" onclick="navigateCollection();return false;">Ma collection</a>
       <a href="#" class="auth-btn" onclick="navigateBinders();return false;">Mes classeurs</a>
       ${role === "admin" ? `<a href="#" class="auth-btn" onclick="navigateAdmin();return false;">Admin</a>` : ""}
+      ${role === "admin" ? `<a href="#" class="auth-btn" onclick="navigateImportExport();return false;">Import/Export</a>` : ""}
       <span class="auth-user" onclick="navigateAccount()" title="Mon compte">${label}</span>
       <button class="auth-btn" onclick="signOut()">Se déconnecter</button>
     `;
@@ -1475,7 +1548,7 @@ let allLoadedCards = [];
 let isSearching = false;
 let searchResults = [];
 let viewMode = "grid"; // "grid" | "list"
-let homeRegionFilter = "all"; // "all" | "intl" | "jp"
+let homeRegionFilter = "all"; // "all" | "intl" | "asia"
 const SEARCH_RESULTS_LIMIT = 200;
 
 function regionFilterClause(region){
@@ -1720,6 +1793,199 @@ async function performSearch(term){
 }
 
 /* ============================================================
+   IMPORT / EXPORT — panneau de création de listings multi-plateformes
+   Utilise les fonctions de javascript/export-voggt.js (resolveBlocks,
+   buildDescription, exportToVoggt, ValidationError).
+   ============================================================ */
+let ieExportItems = [];
+let ieItemSeq = 0;
+let ieCurrentPlatform = "voggt";
+
+function setImportExportMode(mode){
+  document.querySelectorAll("#ie-mode-tabs .tab-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
+  document.getElementById("ie-export-panel").style.display = mode === "export" ? "" : "none";
+  document.getElementById("ie-import-panel").style.display = mode === "import" ? "" : "none";
+}
+
+function setExportPlatform(platform, btn){
+  ieCurrentPlatform = platform;
+  document.querySelectorAll("#ie-platform-tabs .tab-btn").forEach(b => b.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+}
+
+function renderImportExportPage(){
+  document.getElementById("ie-search-results").innerHTML = "";
+  document.getElementById("ie-search-input").value = "";
+  renderIeItemsList();
+}
+
+async function ieSearch(){
+  const term = document.getElementById("ie-search-input").value.trim();
+  const resultsEl = document.getElementById("ie-search-results");
+  if (!term){ resultsEl.innerHTML = ""; return; }
+  resultsEl.innerHTML = `<div class="empty-state">Recherche...</div>`;
+  try {
+    const pattern = encodeURIComponent(`*${term.replace(/\*/g, "**")}*`);
+    const nameMatches = await supabaseSelect(`card_names?select=card_id&name=ilike.${pattern}&limit=50`);
+    const ids = [...new Set(nameMatches.map(m => m.card_id))].slice(0, 50);
+    if (ids.length === 0){ resultsEl.innerHTML = `<div class="empty-state">Aucun résultat pour "${term}".</div>`; return; }
+
+    const rows = await supabaseSelect(
+      `cards?id=in.(${ids.join(",")})&select=id,card_number,sets(id,name_en,total_cards,abbreviation,code),card_names(locale,name),card_images(image_url)`
+    );
+
+    resultsEl.innerHTML = rows.map(r => {
+      const name = (r.card_names.find(n => n.locale === "en") || r.card_names[0] || {}).name || "?";
+      const setName = r.sets ? r.sets.name_en : "";
+      const img = r.card_images && r.card_images[0] ? r.card_images[0].image_url : "";
+      const payload = encodeURIComponent(JSON.stringify({
+        card_id: r.id, card_name: name, card_number: r.card_number,
+        total_cards: r.sets ? r.sets.total_cards : null,
+        set_name: setName,
+        set_abbreviation: r.sets ? r.sets.abbreviation : "",
+        set_code: r.sets ? r.sets.code : "",
+        image_url: img || "",
+      }));
+      return `
+        <div class="ie-result-row">
+          ${img ? `<img src="${img}" class="ie-result-thumb">` : ""}
+          <span>${name} — ${setName} #${r.card_number || "?"}</span>
+          <button class="auth-btn" onclick="ieAddItem('${payload}')">Ajouter</button>
+        </div>`;
+    }).join("") || `<div class="empty-state">Aucun résultat pour "${term}".</div>`;
+  } catch (err) {
+    resultsEl.innerHTML = `<div class="empty-state">Erreur de recherche : ${err.message}</div>`;
+  }
+}
+
+function ieAddItem(payloadEncoded){
+  const data = JSON.parse(decodeURIComponent(payloadEncoded));
+  ieItemSeq += 1;
+  ieExportItems.push({
+    localId: ieItemSeq,
+    ...data,
+    language: "en",
+    conditionMode: "condition",
+    condition: "NM",
+    grading_company: "",
+    grade: "",
+    starting_price: "",
+    instant_buy_price: "",
+    quantity: 1,
+  });
+  renderIeItemsList();
+}
+
+function ieRemoveItem(localId){
+  ieExportItems = ieExportItems.filter(it => it.localId !== localId);
+  renderIeItemsList();
+}
+
+function ieUpdateItem(localId, field, value){
+  const item = ieExportItems.find(it => it.localId === localId);
+  if (item) item[field] = value;
+}
+
+function renderIeItemsList(){
+  document.getElementById("ie-item-count").textContent = ieExportItems.length;
+  const listEl = document.getElementById("ie-items-list");
+  if (ieExportItems.length === 0){
+    listEl.innerHTML = `<div class="empty-state">Aucune carte ajoutée pour l'instant.</div>`;
+    return;
+  }
+  const languageOptions = Object.keys(LANGUAGE_NAMES || {en:"Anglais",fr:"Français",de:"Allemand",nl:"Néerlandais",it:"Italien",es:"Espagnol",pt:"Portugais",ru:"Russe",pl:"Polonais",ja:"Japonais",zh:"Chinois",ko:"Coréen",id:"Indonésien",th:"Thaïlandais",cs:"Tchèque",hu:"Hongrois"})
+    .map(code => `<option value="${code}">${LANGUAGE_NAMES[code]}</option>`).join("");
+
+  listEl.innerHTML = ieExportItems.map(item => `
+    <div class="ie-item-row" data-local-id="${item.localId}">
+      <div class="ie-item-header">
+        <strong>${item.card_name} — ${item.set_name} #${item.card_number || "?"}</strong>
+        <button class="auth-btn" onclick="ieRemoveItem(${item.localId})">Retirer</button>
+      </div>
+      <div class="ie-item-fields">
+        <label>Langue
+          <select onchange="ieUpdateItem(${item.localId},'language',this.value)">${languageOptions}</select>
+        </label>
+        <label>État
+          <select onchange="ieToggleConditionMode(${item.localId},this.value)">
+            <option value="condition">Non gradée</option>
+            <option value="grading">Gradée</option>
+          </select>
+        </label>
+        <span class="ie-condition-fields">
+          <label>Condition
+            <select onchange="ieUpdateItem(${item.localId},'condition',this.value)">
+              ${["MT","NM","EX","GD","LP","PL","PO"].map(c => `<option value="${c}">${c}</option>`).join("")}
+            </select>
+          </label>
+        </span>
+        <span class="ie-grading-fields" style="display:none;">
+          <label>Société <input type="text" placeholder="PSA" onchange="ieUpdateItem(${item.localId},'grading_company',this.value)"></label>
+          <label>Note <input type="text" placeholder="10" onchange="ieUpdateItem(${item.localId},'grade',this.value)"></label>
+        </span>
+        <label>Prix départ <input type="number" step="0.01" onchange="ieUpdateItem(${item.localId},'starting_price',this.value)"></label>
+        <label>Prix achat immédiat <input type="number" step="0.01" onchange="ieUpdateItem(${item.localId},'instant_buy_price',this.value)"></label>
+        <label>Quantité <input type="number" min="1" value="1" onchange="ieUpdateItem(${item.localId},'quantity',this.value)"></label>
+      </div>
+    </div>
+  `).join("");
+}
+
+function ieToggleConditionMode(localId, mode){
+  ieUpdateItem(localId, "conditionMode", mode);
+  const row = document.querySelector(`.ie-item-row[data-local-id="${localId}"]`);
+  if (!row) return;
+  row.querySelector(".ie-condition-fields").style.display = mode === "condition" ? "" : "none";
+  row.querySelector(".ie-grading-fields").style.display = mode === "grading" ? "" : "none";
+}
+
+function generateExport(){
+  const statusEl = document.getElementById("ie-export-status");
+  if (ieExportItems.length === 0){
+    statusEl.textContent = "Ajoutez au moins une carte avant de générer l'export.";
+    return;
+  }
+
+  const nameTemplate = document.getElementById("ie-name-template").value;
+  const descriptionTemplate = document.getElementById("ie-description-template").value;
+  const includeLiveDisclaimer = document.getElementById("ie-live-disclaimer").checked;
+
+  const items = ieExportItems.map(item => {
+    const base = {
+      card_name: item.card_name,
+      card_number: item.card_number,
+      total_cards: item.total_cards,
+      set_name: item.set_name,
+      set_abbreviation: item.set_abbreviation,
+      set_code: item.set_code,
+      language: item.language,
+      starting_price: item.starting_price !== "" ? parseFloat(item.starting_price) : null,
+      instant_buy_price: item.instant_buy_price !== "" ? parseFloat(item.instant_buy_price) : null,
+      quantity: parseInt(item.quantity, 10) || null,
+      image_url: item.image_url,
+    };
+    if (item.conditionMode === "grading"){
+      base.grading_company = item.grading_company;
+      base.grade = item.grade;
+    } else {
+      base.condition = item.condition;
+    }
+    return base;
+  });
+
+  try {
+    if (ieCurrentPlatform === "voggt"){
+      const count = exportToVoggt(items, nameTemplate, descriptionTemplate, "export_voggt.csv", includeLiveDisclaimer);
+      statusEl.textContent = `${count} carte(s) exportée(s) — téléchargement lancé.`;
+    } else {
+      statusEl.textContent = "Cette plateforme n'est pas encore disponible.";
+    }
+  } catch (err) {
+    statusEl.textContent = `Erreur : ${err.message}`;
+  }
+}
+
+/* ============================================================
    ROUTAGE
    La recherche vit dans l'URL (#/search/terme) : un rechargement de page
    ou un lien partagé la retrouve telle quelle, au lieu de repartir à zéro.
@@ -1736,6 +2002,7 @@ function navigateAdmin(tab = "cards"){ location.hash = "#/admin/" + tab; }
 function navigateBinders(){ location.hash = "#/binders"; }
 function navigateBinder(id){ location.hash = "#/binder/" + id; }
 function navigateScanner(){ location.hash = "#/scanner"; }
+function navigateImportExport(){ location.hash = "#/import-export"; }
 
 window.addEventListener("hashchange", route);
 
@@ -1781,6 +2048,7 @@ function route(){
   const isBindersList = hash === "#/binders";
   const binderMatch = hash.match(/^#\/binder\/(\d+)$/);
   const isScanner = hash === "#/scanner";
+  const isImportExport = hash === "#/import-export";
 
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
@@ -1791,6 +2059,7 @@ function route(){
   document.getElementById("view-binders").classList.remove("active");
   document.getElementById("view-binder").classList.remove("active");
   document.getElementById("view-scanner").classList.remove("active");
+  document.getElementById("view-import-export").classList.remove("active");
 
   if (cardMatch){
     document.getElementById("view-card").classList.add("active");
@@ -1813,6 +2082,9 @@ function route(){
   } else if (binderMatch){
     document.getElementById("view-binder").classList.add("active");
     renderBinderPage(parseInt(binderMatch[1], 10));
+  } else if (isImportExport){
+    document.getElementById("view-import-export").classList.add("active");
+    renderImportExportPage();
   } else if (isScanner){
     // Section gardée dans le code (facile à réactiver), mais pas encore
     // fonctionnelle — on redirige plutôt que de laisser une page vide/cassée.
@@ -2512,7 +2784,7 @@ async function renderCollectionContent(){
         <div class="region-filter" id="collection-region-filter">
           <button class="tab-btn active" data-region="all" onclick="setCollectionRegionFilter('all', this)">Tout</button>
           <button class="tab-btn" data-region="intl" onclick="setCollectionRegionFilter('intl', this)">Inter</button>
-          <button class="tab-btn" data-region="jp" onclick="setCollectionRegionFilter('jp', this)">Japon</button>
+          <button class="tab-btn" data-region="asia" onclick="setCollectionRegionFilter('asia', this)">Asie</button>
         </div>
         <div class="view-toggle">
           <button id="sets-list-btn" class="view-toggle-btn active" onclick="setCollectionSetsViewMode('list')">Liste</button>
@@ -2709,7 +2981,7 @@ function refreshCollectionStats(){
 
 /* Recherche sur le NOM DU SET, pas sur les cartes individuelles (qui ne
    sont chargées qu'à la demande) — instantanée, sans requête réseau. */
-let collectionRegionFilter = "all"; // "all" | "intl" | "jp"
+let collectionRegionFilter = "all"; // "all" | "intl" | "asia"
 
 function setCollectionRegionFilter(region, btn){
   collectionRegionFilter = region;
@@ -2848,7 +3120,7 @@ async function renderAdminCards(){
       <div class="account-field"><label>Zone de publication</label>
         <select id="admin-new-set-region">
           <option value="intl">International (intl)</option>
-          <option value="jp">Japon (jp)</option>
+          <option value="asia">Asie (asia)</option>
         </select></div>
       <div class="account-field"><label>Abréviation (optionnel)</label>
         <input type="text" id="admin-new-set-abbr" placeholder="ex: PAF"></div>
@@ -3634,7 +3906,7 @@ async function loadSlotPickerSets(listId){
   }
 }
 
-let pickerRegionFilterByContainer = {}; // listId -> "all" | "intl" | "jp" — indépendant entre pop-up et panneau latéral
+let pickerRegionFilterByContainer = {}; // listId -> "all" | "intl" | "asia" — indépendant entre pop-up et panneau latéral
 
 function setPickerRegionFilter(region, btn, listId){
   pickerRegionFilterByContainer[listId] = region;
@@ -3888,5 +4160,6 @@ function renderScannerResults(results){
     </div>`;
 }
 </script>
+<script src="javascript/export-voggt.js"></script>
 </body>
 </html>
