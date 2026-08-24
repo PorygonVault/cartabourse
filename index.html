@@ -604,6 +604,10 @@
 .ie-section h3{margin-top:0;color:var(--text);}
 .ie-search-row{display:flex;gap:8px;margin-bottom:12px;}
 .ie-search-row input{flex:1;padding:8px;background:var(--ink);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);}
+@media (max-width:640px){
+  .ie-search-row{flex-direction:column;}
+  .ie-search-row input,.ie-search-row select{width:100%;box-sizing:border-box;}
+}
 .ie-result-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);color:var(--text);}
 .ie-result-thumb{width:56px;height:auto;border-radius:6px;flex-shrink:0;}
 .ie-item-row{padding:12px 0;border-bottom:1px solid var(--border);}
@@ -2076,10 +2080,14 @@ function ieFilterExtensions(){
     const set = ieCachedAllSets.find(s => s.id === setId);
     if (!set){ acc.style.display = "none"; return; }
     const matchesRegion = region === "all" || acc.dataset.region === region;
-    // Correspondance PARTIELLE (pas juste "commence par") sur nom, code
-    // ou abréviation — "anniversary" ou "llectio" doivent tous deux
-    // trouver "25th Anniversary Collection".
-    const haystack = `${set.name_en} ${set.code} ${set.official_abbreviation || ""}`.toLowerCase();
+    // Correspondance PARTIELLE (pas juste "commence par") sur le nom
+    // anglais, le code, l'abréviation, ET tous les noms traduits
+    // (set_names — toutes les langues renseignées, pas seulement celle
+    // du visiteur) — "anniversary" ou "llectio" doivent tous deux
+    // trouver "25th Anniversary Collection", peu importe la langue dans
+    // laquelle ce nom a été tapé.
+    const translatedNames = (set.set_names || []).map(n => n.name).join(" ");
+    const haystack = `${set.name_en} ${set.code} ${set.official_abbreviation || ""} ${translatedNames}`.toLowerCase();
     const matchesTerm = !term || haystack.includes(term);
     acc.style.display = (matchesRegion && matchesTerm) ? "" : "none";
   });
