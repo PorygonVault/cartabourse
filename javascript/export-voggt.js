@@ -34,7 +34,11 @@
     LP: "Light Played", PL: "Played", PO: "Poor",
   };
 
-  const LIVE_CONDITION_DISCLAIMER = "État montré en live / Condition showed during live";
+  const LIVE_CONDITION_DISCLAIMER_BY_LOCALE = {
+    fr: "État montré en live",
+    en: "Condition shown during the live",
+    de: "Zustand wird im Live gezeigt",
+  };
 
   /** '58' + 102 -> '058/102' — zéros de tête alignés sur le nombre de
    * chiffres du total. Affichage uniquement, ne touche jamais la valeur stockée. */
@@ -94,10 +98,11 @@
 
   /** Comme resolveBlocks, mais ajoute par défaut la mention indiquant que
    * l'état réel est montré en direct — désactivable via liveDisclaimerOnly=false — true remplace entièrement la description par la mention. */
-  function buildDescription(template, context, liveDisclaimerOnly = false) {
+  function buildDescription(template, context, liveDisclaimerOnly = false, locale = "en") {
     // Un seul des deux est utilisé, jamais les deux ensemble : soit la
-    // mention par défaut seule, soit le gabarit personnalisé seul.
-    if (liveDisclaimerOnly) return LIVE_CONDITION_DISCLAIMER;
+    // mention par défaut seule (traduite selon la locale du visiteur),
+    // soit le gabarit personnalisé seul.
+    if (liveDisclaimerOnly) return LIVE_CONDITION_DISCLAIMER_BY_LOCALE[locale] || LIVE_CONDITION_DISCLAIMER_BY_LOCALE.en;
     return resolveBlocks(template, context);
   }
 
@@ -124,10 +129,10 @@
     }
   }
 
-  function buildVoggtRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly = false) {
+  function buildVoggtRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly = false, locale = "en") {
     return {
       name: resolveBlocks(nameTemplate, item),
-      description: buildDescription(descriptionTemplate, item, liveDisclaimerOnly),
+      description: buildDescription(descriptionTemplate, item, liveDisclaimerOnly, locale),
       quantity: item.quantity,
       startingPrice: item.starting_price != null ? item.starting_price : "",
       instantBuyPrice: item.instant_buy_price != null ? item.instant_buy_price : "",
@@ -139,10 +144,10 @@
    * Valide TOUS les items avant d'écrire quoi que ce soit — un seul item
    * invalide bloque tout l'export plutôt que de produire un fichier à
    * moitié correct. */
-  function exportToVoggt(items, nameTemplate, descriptionTemplate, filename = "export_voggt.csv", liveDisclaimerOnly = false) {
+  function exportToVoggt(items, nameTemplate, descriptionTemplate, filename = "export_voggt.csv", liveDisclaimerOnly = false, locale = "en") {
     items.forEach((item, i) => validateItem(item, i + 1));
 
-    const rows = items.map((item) => buildVoggtRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly));
+    const rows = items.map((item) => buildVoggtRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale));
 
     const headers = ["name", "description", "quantity", "startingPrice", "instantBuyPrice", "imagesUrls"];
     const csvEscape = (val) => {
