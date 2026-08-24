@@ -607,6 +607,7 @@
 @media (max-width:640px){
   .ie-search-row{flex-direction:column;}
   .ie-search-row input,.ie-search-row select{width:100%;box-sizing:border-box;}
+  #ie-extension-region-filter{display:none;} /* sur mobile, la recherche seule suffit — pas de place pour un filtre en plus */
 }
 .ie-result-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border);color:var(--text);}
 .ie-result-thumb{width:56px;height:auto;border-radius:6px;flex-shrink:0;}
@@ -673,7 +674,7 @@
   .ie-right .listings-tabs{flex-shrink:0;}
   .ie-right .ie-search-row{flex-shrink:0;}
   .ie-right .region-filter{flex-shrink:0;}
-  .ie-right #ie-picker-search-mode,.ie-right #ie-picker-browse-mode{display:flex;flex-direction:column;flex:1;min-height:0;}
+  .ie-right #ie-picker-extensions-mode,.ie-right #ie-picker-collection-mode{display:flex;flex-direction:column;flex:1;min-height:0;}
   .ie-right-scroll{flex:1;margin-top:4px;min-height:0;}
 }
 </style>
