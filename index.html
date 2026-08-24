@@ -1171,7 +1171,11 @@ async function supabaseSelect(path){
   const resp = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     headers: { apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` }
   });
-  if (!resp.ok) throw new Error(`Erreur Supabase (${resp.status}) sur ${path}`);
+  if (!resp.ok){
+    let detail = "";
+    try { detail = (await resp.json()).message || ""; } catch (_) { /* corps non-JSON, on garde juste le code */ }
+    throw new Error(`Erreur Supabase (${resp.status}) sur ${path}${detail ? " — " + detail : ""}`);
+  }
   return resp.json();
 }
 
@@ -1831,7 +1835,7 @@ async function ieSearch(){
     if (ids.length === 0){ resultsEl.innerHTML = `<div class="empty-state">Aucun résultat pour "${term}".</div>`; return; }
 
     const rows = await supabaseSelect(
-      `cards?id=in.(${ids.join(",")})&select=id,card_number,sets(id,name_en,total_cards,abbreviation,code),card_names(locale,name),card_images(image_url)`
+      `cards?id=in.(${ids.join(",")})&select=id,card_number,sets(id,name_en,total_cards,official_abbreviation,code),card_names(locale,name),card_images(image_url)`
     );
 
     resultsEl.innerHTML = rows.map(r => {
@@ -1842,7 +1846,7 @@ async function ieSearch(){
         card_id: r.id, card_name: name, card_number: r.card_number,
         total_cards: r.sets ? r.sets.total_cards : null,
         set_name: setName,
-        set_abbreviation: r.sets ? r.sets.abbreviation : "",
+        set_abbreviation: r.sets ? r.sets.official_abbreviation : "",
         set_code: r.sets ? r.sets.code : "",
         image_url: img || "",
       }));
