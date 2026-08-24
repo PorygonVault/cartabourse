@@ -634,6 +634,12 @@
 .ie-picker-card-item:hover img{border-color:var(--gold);}
 .ie-picker-card-name{font-size:11px;color:var(--text-dim);display:block;margin-top:3px;}
 .ie-search-result-thumb{width:56px;height:78px;object-fit:cover;border-radius:5px;flex-shrink:0;}
+.ie-item-thumb{width:44px;height:61px;object-fit:cover;border-radius:4px;flex-shrink:0;}
+.ie-preview{margin-top:16px;padding-top:14px;border-top:1px dashed var(--border);}
+.ie-preview-empty{color:var(--text-faint);font-size:13px;}
+.ie-preview-field{margin-bottom:10px;}
+.ie-preview-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-faint);margin-bottom:3px;}
+.ie-preview-value{background:var(--ink);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--text);white-space:pre-wrap;}
 
 @media (min-width:960px){
   .ie-workspace{display:flex;gap:24px;align-items:flex-start;}
@@ -1059,17 +1065,21 @@
             <p class="ie-hint">Cliquez un bloc pour l'insérer dans le champ actif (survolez pour voir sa signification) :</p>
             <div class="ie-blocks" id="ie-blocks-name"></div>
             <label>Titre (name)</label>
-            <textarea id="ie-name-template" rows="3" onfocus="ieActiveTemplateField='ie-name-template'">[flag] [card_name] [number_complete] - [set_name] [set_abbreviation]</textarea>
+            <textarea id="ie-name-template" rows="3" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-name-template'">[flag] [card_name] [number_complete] - [set_name] [set_abbreviation]</textarea>
 
             <div class="ie-blocks" id="ie-blocks-description"></div>
             <label>Description</label>
-            <textarea id="ie-description-template" rows="4" onfocus="ieActiveTemplateField='ie-description-template'">[card_name] [number_complete] - [condition_full][grading_full]</textarea>
+            <textarea id="ie-description-template" rows="4" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-description-template'">[card_name] [number_complete] - [condition_full][grading_full]</textarea>
 
             <label class="ie-checkbox-label">
               <input type="checkbox" id="ie-live-disclaimer" checked onchange="ieToggleLiveDisclaimer(this.checked)">
-              Utiliser uniquement la mention "État montré en live / Condition showed during live" comme description
-              (désactive le champ description ci-dessus — un seul des deux est utilisé, jamais les deux ensemble)
+              <span id="ie-live-disclaimer-label"></span>
             </label>
+
+            <div class="ie-preview" id="ie-preview">
+              <p class="ie-hint" style="margin-bottom:6px;">Aperçu (basé sur la première carte de la liste) :</p>
+              <div class="ie-preview-empty">Ajoutez une carte pour voir l'aperçu.</div>
+            </div>
           </div>
 
           <div class="ie-section">
@@ -1907,8 +1917,60 @@ function ieInsertBlock(blockName){
   field.selectionStart = field.selectionEnd = start + insertText.length;
 }
 
+const IE_LIVE_DISCLAIMER_LABELS = {
+  fr: 'Utiliser uniquement la mention "État montré en live" comme description (remplace entièrement le champ ci-dessus)',
+  en: 'Use only the "Condition shown during the live" mention as description (fully replaces the field above)',
+  de: 'Nur den Hinweis "Zustand wird im Live gezeigt" als Beschreibung verwenden (ersetzt das Feld oben vollständig)',
+};
+
+function ieUpdateDisclaimerLabel(){
+  const label = IE_LIVE_DISCLAIMER_LABELS[LANG] || IE_LIVE_DISCLAIMER_LABELS.en;
+  document.getElementById("ie-live-disclaimer-label").textContent = label;
+}
+
 function ieToggleLiveDisclaimer(checked){
   document.getElementById("ie-description-template").disabled = checked;
+  ieRenderPreview();
+}
+
+function ieRenderPreview(){
+  const previewEl = document.getElementById("ie-preview");
+  const firstItem = ieExportItems[0];
+  if (!firstItem){
+    previewEl.querySelector(".ie-preview-empty")?.remove();
+    previewEl.insertAdjacentHTML("beforeend", `<div class="ie-preview-empty">Ajoutez une carte pour voir l'aperçu.</div>`);
+    const body = previewEl.querySelector(".ie-preview-body");
+    if (body) body.remove();
+    return;
+  }
+
+  const nameTemplate = document.getElementById("ie-name-template").value;
+  const descriptionTemplate = document.getElementById("ie-description-template").value;
+  const liveDisclaimerOnly = document.getElementById("ie-live-disclaimer").checked;
+
+  const context = {
+    card_name: firstItem.card_name, card_number: firstItem.card_number, total_cards: firstItem.total_cards,
+    set_name: firstItem.set_name, set_abbreviation: firstItem.set_abbreviation, set_code: firstItem.set_code,
+    language: firstItem.language,
+    starting_price: firstItem.starting_price !== "" ? parseFloat(firstItem.starting_price) : null,
+    instant_buy_price: firstItem.instant_buy_price !== "" ? parseFloat(firstItem.instant_buy_price) : null,
+  };
+  if (firstItem.conditionMode === "grading"){
+    context.grading_company = firstItem.grading_company;
+    context.grade = firstItem.grade;
+  } else {
+    context.condition = firstItem.condition;
+  }
+
+  const previewName = window.VoggtExportInternals.resolveBlocks(nameTemplate, context);
+  const previewDescription = window.VoggtExportInternals.buildDescription(descriptionTemplate, context, liveDisclaimerOnly, LANG);
+
+  previewEl.innerHTML = `
+    <p class="ie-hint" style="margin-bottom:6px;">Aperçu (basé sur la première carte de la liste) :</p>
+    <div class="ie-preview-body">
+      <div class="ie-preview-field"><span class="ie-preview-label">Titre (name)</span><div class="ie-preview-value">${previewName || "<em>(vide)</em>"}</div></div>
+      <div class="ie-preview-field"><span class="ie-preview-label">Description</span><div class="ie-preview-value">${(previewDescription || "<em>(vide)</em>").replace(/\n/g, "<br>")}</div></div>
+    </div>`;
 }
 
 function setImportExportMode(mode){
@@ -1927,6 +1989,7 @@ function renderImportExportPage(){
   document.getElementById("ie-search-results").innerHTML = "";
   document.getElementById("ie-search-input").value = "";
   renderIeBlockChips();
+  ieUpdateDisclaimerLabel();
   ieToggleLiveDisclaimer(document.getElementById("ie-live-disclaimer").checked);
   renderIeItemsList();
 }
@@ -2144,6 +2207,7 @@ function ieRemoveItem(localId){
 function ieUpdateItem(localId, field, value){
   const item = ieExportItems.find(it => it.localId === localId);
   if (item) item[field] = value;
+  if (ieExportItems[0] && ieExportItems[0].localId === localId) ieRenderPreview();
 }
 
 let ieCollectionImportedOnce = false;
@@ -2219,6 +2283,7 @@ function ieRemoveAllItems(){
 function renderIeItemsList(){
   document.getElementById("ie-item-count").textContent = ieExportItems.length;
   renderIeBulkBars();
+  ieRenderPreview();
   const listEl = document.getElementById("ie-items-list");
   if (ieExportItems.length === 0){
     listEl.innerHTML = `<div class="empty-state">Aucune carte ajoutée pour l'instant — utilisez le panneau de droite.</div>`;
@@ -2230,8 +2295,9 @@ function renderIeItemsList(){
   listEl.innerHTML = ieExportItems.map(item => `
     <div class="ie-item-row" data-local-id="${item.localId}">
       <div class="ie-item-header">
-        <label style="display:flex;align-items:center;gap:8px;">
+        <label style="display:flex;align-items:center;gap:10px;">
           <input type="checkbox" ${item.selected ? "checked" : ""} onchange="ieToggleSelectItem(${item.localId},this.checked)">
+          ${item.image_url ? `<img src="${item.image_url}" class="ie-item-thumb">` : ""}
           <strong>${item.card_name} — ${item.set_name} #${item.card_number || "?"}</strong>
         </label>
         <button class="auth-btn" onclick="ieRemoveItem(${item.localId})">Retirer</button>
@@ -2313,7 +2379,7 @@ function generateExport(){
 
   try {
     if (ieCurrentPlatform === "voggt"){
-      const count = exportToVoggt(items, nameTemplate, descriptionTemplate, "export_voggt.csv", liveDisclaimerOnly);
+      const count = exportToVoggt(items, nameTemplate, descriptionTemplate, "export_voggt.csv", liveDisclaimerOnly, LANG);
       statusEl.textContent = `${count} carte(s) exportée(s) — téléchargement lancé.`;
     } else {
       statusEl.textContent = "Cette plateforme n'est pas encore disponible.";
