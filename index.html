@@ -626,6 +626,11 @@
 .ie-block-chip:hover{background:var(--border);}
 .ie-workspace{display:block;}
 .ie-right-scroll{overflow-y:auto;}
+/* Ces deux zones reçoivent display:flex en JavaScript sur TOUS les
+   écrans (pour basculer leur visibilité) — la direction colonne doit
+   donc être garantie partout aussi, pas seulement en desktop, sinon le
+   navigateur retombe sur "row" par défaut sur mobile. */
+#ie-picker-extensions-mode,#ie-picker-collection-mode{display:flex;flex-direction:column;min-height:0;}
 .ie-bulk-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px;margin-bottom:10px;background:var(--panel-light);border:1px solid var(--border);border-radius:8px;color:var(--text-dim);font-size:13px;}
 .ie-bulk-bar input,.ie-bulk-bar select{padding:5px;background:var(--ink);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);}
 .ie-bulk-bar .danger-btn{background:var(--red);border-color:var(--red);color:#fff;}
@@ -674,7 +679,7 @@
   .ie-right .listings-tabs{flex-shrink:0;}
   .ie-right .ie-search-row{flex-shrink:0;}
   .ie-right .region-filter{flex-shrink:0;}
-  .ie-right #ie-picker-extensions-mode,.ie-right #ie-picker-collection-mode{display:flex;flex-direction:column;flex:1;min-height:0;}
+  .ie-right #ie-picker-extensions-mode,.ie-right #ie-picker-collection-mode{flex:1;}
   .ie-right-scroll{flex:1;margin-top:4px;min-height:0;}
 }
 </style>
@@ -2042,14 +2047,13 @@ function setExportPlatform(platform, btn){
 }
 
 function renderImportExportPage(){
-  document.getElementById("ie-search-results").innerHTML = "";
-  document.getElementById("ie-search-input").value = "";
   document.getElementById("ie-btn-generate-resume").textContent = `Générer un CSV d'import ${IE_SITE_NAME}`;
   document.getElementById("ie-btn-import-resume").textContent = `Importer un CSV ${IE_SITE_NAME}`;
   renderIeBlockChips();
   ieUpdateDisclaimerLabel();
   ieToggleLiveDisclaimer(document.getElementById("ie-live-disclaimer").checked);
   renderIeItemsList();
+  ieLoadPickerSets(); // charge la liste des extensions dès l'arrivée sur la page, pas seulement au clic sur l'onglet
 }
 
 // (l'ancienne recherche de carte par nom a été remplacée par la
