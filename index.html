@@ -147,7 +147,7 @@
      le thème choisi (noir/blanc/gris), la case elle-même reste neutre. */
   #binder-page-view{perspective:1400px;}
   .binder-page{
-    display:grid;gap:10px;padding:20px;border-radius:8px;max-width:900px;
+    display:grid;gap:10px;padding:20px;border-radius:8px;max-width:900px;width:100%;
     transform-origin:left center;backface-visibility:hidden;
   }
   .binder-page.color-black{background:#0a0a0d;border:1px solid #2a2a30;}
@@ -1097,6 +1097,7 @@
       <div class="listings-tabs" id="ie-platform-tabs">
         <button class="tab-btn active" data-platform="voggt" onclick="setExportPlatform('voggt', this)">Voggt</button>
         <button class="tab-btn" data-platform="whatnot" onclick="setExportPlatform('whatnot', this)">Whatnot</button>
+        <button class="tab-btn" data-platform="ebay" onclick="setExportPlatform('ebay', this)">eBay</button>
       </div>
 
       <div id="ie-whatnot-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
@@ -1111,6 +1112,10 @@
         <label>Profil de livraison (laissez vide pour utiliser la valeur par défaut du marché choisi, ou indiquez le nom de votre propre profil personnalisé)
           <input type="text" id="ie-whatnot-shipping-profile" placeholder="Par défaut selon le marché">
         </label>
+      </div>
+
+      <div id="ie-ebay-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
+        <div id="ie-ebay-status">Vérification de la connexion...</div>
       </div>
 
       <div class="ie-workspace">
@@ -2061,8 +2066,43 @@ function setExportPlatform(platform, btn){
   document.querySelectorAll("#ie-platform-tabs .tab-btn").forEach(b => b.classList.remove("active"));
   if (btn) btn.classList.add("active");
   document.getElementById("ie-whatnot-options").style.display = platform === "whatnot" ? "block" : "none";
-  const label = platform === "whatnot" ? "Générer un CSV Whatnot" : "Générer un CSV Voggt";
+  document.getElementById("ie-ebay-options").style.display = platform === "ebay" ? "block" : "none";
+  const label = platform === "whatnot" ? "Générer un CSV Whatnot" : platform === "ebay" ? "Créer les annonces sur eBay" : "Générer un CSV Voggt";
   document.getElementById("ie-btn-generate-platform").textContent = label;
+  if (platform === "ebay") ieCheckEbayConnection();
+}
+
+const EBAY_CLIENT_ID_SANDBOX = "Aymerick-Cartabou-SBX-6a49b4867-8a98aa09";
+const EBAY_RUNAME = "Aymerick_Mont-Aymerick-Cartab-ypmkzhjt";
+const EBAY_ENV = "sandbox"; // à repasser sur "production" plus tard, avec le bon Client ID production
+
+async function ieCheckEbayConnection(){
+  const statusEl = document.getElementById("ie-ebay-status");
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  if (!sessionData.session){
+    statusEl.innerHTML = `Connectez-vous à votre compte pour lier eBay.`;
+    return;
+  }
+  try {
+    const rows = await supabaseAuthedFetch(`ebay_tokens?environment=eq.${EBAY_ENV}&select=access_token_expires_at,ebay_username`);
+    if (rows.length > 0){
+      statusEl.innerHTML = `<strong>✓ Compte eBay connecté</strong> (environnement ${EBAY_ENV}) — <a href="#" onclick="ieConnectEbay();return false;">reconnecter</a>`;
+    } else {
+      statusEl.innerHTML = `<button class="auth-btn" onclick="ieConnectEbay()">Connecter mon compte eBay</button>`;
+    }
+  } catch (err) {
+    statusEl.innerHTML = `<button class="auth-btn" onclick="ieConnectEbay()">Connecter mon compte eBay</button><p class="ie-hint">(statut non vérifiable : ${err.message})</p>`;
+  }
+}
+
+function ieConnectEbay(){
+  const authBase = EBAY_ENV === "production" ? "https://auth.ebay.com/oauth2/authorize" : "https://auth.sandbox.ebay.com/oauth2/authorize";
+  const scopes = [
+    "https://api.ebay.com/oauth/api_scope/sell.inventory",
+    "https://api.ebay.com/oauth/api_scope/sell.account",
+  ].join(" ");
+  const url = `${authBase}?client_id=${encodeURIComponent(EBAY_CLIENT_ID_SANDBOX)}&redirect_uri=${encodeURIComponent(EBAY_RUNAME)}&response_type=code&scope=${encodeURIComponent(scopes)}`;
+  window.location.href = url;
 }
 
 function renderImportExportPage(){
