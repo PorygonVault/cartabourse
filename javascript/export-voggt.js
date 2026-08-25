@@ -159,7 +159,10 @@
       ...rows.map((row) => headers.map((h) => csvEscape(row[h])).join(",")),
     ].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    // Le BOM UTF-8 (\uFEFF) en tête est indispensable : sans lui, certains
+    // tableurs (Excel, WPS selon la langue du système...) devinent le
+    // mauvais encodage et déforment les accents/emoji (ex. "é" -> "茅").
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;

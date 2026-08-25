@@ -18,36 +18,65 @@
 // ============================================================
 (function () {
 
+  // En-têtes EXACTS relevés dans chaque fichier PDF fourni — l'ordre
+  // doit rester identique aux 22 colonnes (Category...Image URL 8),
+  // seul le texte affiché change. US/NL partagent le même fichier
+  // (confirmé), donc les mêmes en-têtes anglais.
+  const WHATNOT_HEADERS = {
+    en: ["Category", "Sub Category", "Title", "Description", "Quantity", "Type", "Price",
+         "Shipping Profile", "Offerable", "Hazmat", "Condition", "Cost Per Item", "SKU",
+         "Image URL 1", "Image URL 2", "Image URL 3", "Image URL 4", "Image URL 5",
+         "Image URL 6", "Image URL 7", "Image URL 8"],
+    // UK utilise "Subcategory" (pas d'espace) et "Sku" (casse différente) — relevé tel quel dans son fichier
+    en_uk: ["Category", "Subcategory", "Title", "Description", "Quantity", "Type", "Price",
+         "Shipping Profile", "Offerable", "Hazmat", "Condition", "Cost Per Item", "Sku",
+         "Image URL 1", "Image URL 2", "Image URL 3", "Image URL 4", "Image URL 5",
+         "Image URL 6", "Image URL 7", "Image URL 8"],
+    de: ["Kategorie", "Unterkategorie", "Titel", "Beschreibung", "Menge", "Verkaufsformat", "Preis",
+         "Versandprofil", "Angebote annehmen", "Gefahrgut", "Zustand", "Stückpreis", "Artikelnummer",
+         "Bild-URL 1", "Bild-URL 2", "Bild-URL 3", "Bild-URL 4", "Bild-URL 5",
+         "Bild-URL 6", "Bild-URL 7", "Bild-URL 8"],
+    fr: ["Catégorie", "Sous-catégorie", "Titre", "Description", "Quantité", "Type", "Prix",
+         "Profil de livraison", "Offres Acceptées", "Matières dangereuses", "État", "Coût par article", "SKU",
+         "Image URL 1", "Image URL 2", "Image URL 3", "Image URL 4", "Image URL 5",
+         "Image URL 6", "Image URL 7", "Image URL 8"],
+  };
+
   const WHATNOT_COUNTRIES = {
     nl: {
       label: "Pays-Bas (NL)",
       category: "Trading Card Games",
       subcategory: "Pokémon Cards",
       defaultShippingProfile: "0 to <20 grams",
+      headers: "en",
     },
     us: {
       label: "États-Unis (US)",
       category: "Trading Card Games",
       subcategory: "Pokémon Cards",
       defaultShippingProfile: "0 to <20 grams", // fichier commun avec NL, mêmes valeurs
+      headers: "en",
     },
     de: {
       label: "Allemagne (DE)",
       category: "Trading Card Games",
       subcategory: "Pokémon-Karten",
       defaultShippingProfile: "Single (15 g)",
+      headers: "de",
     },
     fr: {
       label: "France + Belgique (FR/BE)",
       category: "Trading Card Games",
       subcategory: "Cartes Pokémon",
       defaultShippingProfile: "De 0 à <20 grammes",
+      headers: "fr",
     },
     uk: {
       label: "Royaume-Uni (UK)",
       category: "Trading Card Games",
       subcategory: "Pokémon Cards",
       defaultShippingProfile: "Single (15g)",
+      headers: "en_uk",
     },
   };
 
@@ -81,24 +110,19 @@
     // mise de départ n'a été renseignée pour cette carte.
     const price = item.starting_price != null ? item.starting_price : item.instant_buy_price;
 
-    return {
-      "Category": countryConfig.category,
-      "Subcategory": countryConfig.subcategory,
-      "Title": resolveBlocks(nameTemplate, item),
-      "Description": buildDescription(descriptionTemplate, item, liveDisclaimerOnly, locale),
-      "Quantity": item.quantity,
-      "Type": SALE_TYPE,
-      "Price": price,
-      "Shipping Profile": shippingProfileOverride || countryConfig.defaultShippingProfile,
-      "Offerable": "",
-      "Hazmat": "",
-      "Condition": "",
-      "Cost Per Item": "",
-      "SKU": "",
-      "Image URL 1": item.image_url || "",
-      "Image URL 2": "", "Image URL 3": "", "Image URL 4": "", "Image URL 5": "",
-      "Image URL 6": "", "Image URL 7": "", "Image URL 8": "",
-    };
+    return [
+      countryConfig.category,
+      countryConfig.subcategory,
+      resolveBlocks(nameTemplate, item),
+      buildDescription(descriptionTemplate, item, liveDisclaimerOnly, locale),
+      item.quantity,
+      SALE_TYPE,
+      price,
+      shippingProfileOverride || countryConfig.defaultShippingProfile,
+      "", "", "", "", "", // Offerable, Hazmat, Condition, Cost Per Item, SKU
+      item.image_url || "",
+      "", "", "", "", "", "", "", // Image URL 2 à 8
+    ];
   }
 
   /** Génère le CSV Whatnot pour le pays choisi et déclenche le
@@ -114,17 +138,19 @@
       buildWhatnotRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale, countryConfig, shippingProfileOverride)
     );
 
-    const headers = Object.keys(rows[0]);
+    const headers = WHATNOT_HEADERS[countryConfig.headers];
     const csvEscape = (val) => {
       const s = String(val ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const csvContent = [
       headers.join(","),
-      ...rows.map((row) => headers.map((h) => csvEscape(row[h])).join(",")),
+      ...rows.map((row) => row.map(csvEscape).join(",")),
     ].join("\n");
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    // Même correctif que Voggt : le BOM UTF-8 évite que certains tableurs
+    // déforment les accents/emoji en devinant le mauvais encodage.
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
