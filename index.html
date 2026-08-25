@@ -663,6 +663,8 @@
 .ie-collection-modal-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border);}
 .ie-collection-modal-info{display:flex;flex-direction:column;gap:2px;font-size:13px;color:var(--text);}
 .ie-collection-modal-info span{font-size:11.5px;color:var(--text-dim);}
+#ie-whatnot-options label{display:block;font-size:12.5px;color:var(--text-dim);margin-bottom:10px;}
+#ie-whatnot-options select,#ie-whatnot-options input{width:100%;box-sizing:border-box;margin-top:4px;padding:7px;background:var(--ink);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);}
 
 @media (min-width:960px){
   .ie-workspace{display:flex;gap:24px;align-items:flex-start;}
@@ -1094,7 +1096,22 @@
     <div id="ie-export-panel">
       <div class="listings-tabs" id="ie-platform-tabs">
         <button class="tab-btn active" data-platform="voggt" onclick="setExportPlatform('voggt', this)">Voggt</button>
-        <button class="tab-btn" data-platform="whatnot" disabled title="Bientôt disponible">Whatnot (bientôt)</button>
+        <button class="tab-btn" data-platform="whatnot" onclick="setExportPlatform('whatnot', this)">Whatnot</button>
+      </div>
+
+      <div id="ie-whatnot-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
+        <label>Marché Whatnot
+          <select id="ie-whatnot-country">
+            <option value="nl">Pays-Bas (NL)</option>
+            <option value="us">États-Unis (US)</option>
+            <option value="de">Allemagne (DE)</option>
+            <option value="fr">France + Belgique (FR/BE)</option>
+            <option value="uk">Royaume-Uni (UK)</option>
+          </select>
+        </label>
+        <label>Profil de livraison (laissez vide pour utiliser la valeur par défaut du marché choisi, ou indiquez le nom de votre propre profil personnalisé)
+          <input type="text" id="ie-whatnot-shipping-profile" placeholder="Par défaut selon le marché">
+        </label>
       </div>
 
       <div class="ie-workspace">
@@ -1130,7 +1147,7 @@
 
           <div class="ie-section">
             <div class="ie-generate-buttons">
-              <button class="auth-btn" onclick="generateExport()">Générer un CSV Voggt</button>
+              <button class="auth-btn" onclick="generateExport()" id="ie-btn-generate-platform">Générer un CSV Voggt</button>
               <button class="auth-btn" onclick="ieGenerateResumeCSV()" id="ie-btn-generate-resume">Générer un CSV d'import</button>
               <button class="auth-btn" onclick="ieGeneratePackCSV()">Générer un pack CSV (import + export)</button>
             </div>
@@ -2044,6 +2061,9 @@ function setExportPlatform(platform, btn){
   ieCurrentPlatform = platform;
   document.querySelectorAll("#ie-platform-tabs .tab-btn").forEach(b => b.classList.remove("active"));
   if (btn) btn.classList.add("active");
+  document.getElementById("ie-whatnot-options").style.display = platform === "whatnot" ? "block" : "none";
+  const label = platform === "whatnot" ? "Générer un CSV Whatnot" : "Générer un CSV Voggt";
+  document.getElementById("ie-btn-generate-platform").textContent = label;
 }
 
 function renderImportExportPage(){
@@ -2600,6 +2620,11 @@ function generateExport(){
     if (ieCurrentPlatform === "voggt"){
       const count = exportToVoggt(items, nameTemplate, descriptionTemplate, "export_voggt.csv", liveDisclaimerOnly, LANG);
       statusEl.textContent = `${count} carte(s) exportée(s) — téléchargement lancé.`;
+    } else if (ieCurrentPlatform === "whatnot"){
+      const country = document.getElementById("ie-whatnot-country").value;
+      const shippingOverride = document.getElementById("ie-whatnot-shipping-profile").value.trim();
+      const count = exportToWhatnot(items, nameTemplate, descriptionTemplate, country, shippingOverride, `export_whatnot_${country}.csv`, liveDisclaimerOnly, LANG);
+      statusEl.textContent = `${count} carte(s) exportée(s) (Whatnot ${WHATNOT_COUNTRIES[country].label}) — téléchargement lancé.`;
     } else {
       statusEl.textContent = "Cette plateforme n'est pas encore disponible.";
     }
@@ -2665,7 +2690,8 @@ function ieGeneratePackCSV(){
   }
   generateExport();
   ieDownloadCsv(ieBuildResumeCsv(), `${IE_SITE_NAME.toLowerCase()}_import.csv`);
-  statusEl.textContent = `Pack généré — CSV Voggt et CSV d'import ${IE_SITE_NAME} téléchargés.`;
+  const platformLabel = ieCurrentPlatform === "whatnot" ? "Whatnot" : "Voggt";
+  statusEl.textContent = `Pack généré — CSV ${platformLabel} et CSV d'import ${IE_SITE_NAME} téléchargés.`;
 }
 
 /** Analyseur CSV minimal (RFC4180) — suffisant pour relire un fichier
@@ -4926,5 +4952,6 @@ function renderScannerResults(results){
 }
 </script>
 <script src="javascript/export-voggt.js"></script>
+<script src="javascript/export-whatnot.js"></script>
 </body>
 </html>
