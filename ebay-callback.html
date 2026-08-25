@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexion eBay — Orbis TCG</title>
+<style>
+  body{font-family:system-ui,-apple-system,sans-serif;max-width:520px;margin:60px auto;padding:0 20px;text-align:center;color:#222;}
+  .box{border:1px solid #ddd;border-radius:10px;padding:24px;}
+  code{background:#f2f2f2;padding:3px 6px;border-radius:4px;word-break:break-all;display:block;margin-top:10px;font-size:12px;text-align:left;}
+</style>
+</head>
+<body>
+<div class="box" id="result">Vérification en cours...</div>
+
+<script>
+  // Étape actuelle : récupérer uniquement le code et le montrer, pour
+  // confirmer que le flux OAuth fonctionne bien de bout en bout.
+  // L'échange réel du code contre un jeton (via la fonction serveur
+  // dédiée, qui gardera le secret caché) viendra dans un second temps.
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  const error = params.get("error");
+  const resultEl = document.getElementById("result");
+
+  if (error) {
+    resultEl.innerHTML = `<strong>eBay a renvoyé une erreur :</strong><code>${error}</code>`;
+  } else if (code) {
+    resultEl.innerHTML = `
+      <strong>Code d'autorisation reçu avec succès !</strong>
+      <p>Le flux de connexion eBay fonctionne. Prochaine étape : échanger
+      ce code contre un vrai jeton d'accès.</p>
+      <code>${code}</code>`;
+  } else {
+    resultEl.innerHTML = `<strong>Aucun code reçu</strong> — cette page doit être atteinte uniquement via le lien de connexion eBay.`;
+  }
+</script>
+</body>
+</html>
