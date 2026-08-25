@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexion eBay — Orbis TCG</title>
+<style>
+  body{font-family:system-ui,-apple-system,sans-serif;max-width:520px;margin:60px auto;padding:0 20px;text-align:center;color:#222;}
+  .box{border:1px solid #ddd;border-radius:10px;padding:24px;}
+  code{background:#f2f2f2;padding:3px 6px;border-radius:4px;word-break:break-all;display:block;margin-top:10px;font-size:12px;text-align:left;}
+</style>
+</head>
+<body>
+<div class="box" id="result">Vérification en cours...</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+  // À adapter avec vos vraies valeurs (les mêmes que dans index.html)
+  const SUPABASE_URL = "https://yxtkigoxixxuvudjumfw.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl4dGtpZ294aXh4dXZ1ZGp1bWZ3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU0MzkzMDksImV4cCI6MjEwMTAxNTMwOX0.ZLWmbFUw34kLghouphKDGUvn9YA8Vz7kziX7zFZ4Ric";
+  const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  const error = params.get("error");
+  const resultEl = document.getElementById("result");
+
+  async function exchangeCode(code) {
+    const { data: sessionData } = await supabaseClient.auth.getSession();
+    if (!sessionData.session) {
+      resultEl.innerHTML = `<strong>Vous devez être connecté au site</strong> pour lier votre compte eBay. Reconnectez-vous puis relancez la connexion eBay depuis la page Import/Export.`;
+      return;
+    }
+
+    resultEl.innerHTML = "Échange du code en cours...";
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/ebay-oauth-exchange`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({ code }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        resultEl.innerHTML = `<strong>Erreur lors de la connexion à eBay :</strong><code>${JSON.stringify(data)}</code>`;
+        return;
+      }
+      resultEl.innerHTML = `<strong>Compte eBay connecté avec succès !</strong><p>Vous pouvez fermer cette page et retourner sur Orbis TCG.</p>`;
+    } catch (e) {
+      resultEl.innerHTML = `<strong>Erreur réseau :</strong><code>${e.message}</code>`;
+    }
+  }
+
+  if (error) {
+    resultEl.innerHTML = `<strong>eBay a renvoyé une erreur :</strong><code>${error}</code>`;
+  } else if (code) {
+    exchangeCode(code);
+  } else {
+    resultEl.innerHTML = `<strong>Aucun code reçu</strong> — cette page doit être atteinte uniquement via le lien de connexion eBay.`;
+  }
+</script>
+</body>
+</html>
