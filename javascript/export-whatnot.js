@@ -1,16 +1,17 @@
 // ============================================================
 // Export Whatnot — CartaBourse
-// 4 marchés : NL, DE, FR (+BE), UK — colonnes structurellement
-// identiques partout (22 colonnes), seuls la sous-catégorie et le
-// profil de livraison par défaut changent réellement pour notre usage.
+// 4 marchés pour l'instant : NL, DE, FR (+BE), UK — US mis de côté,
+// non supporté. Colonnes structurellement identiques partout (22
+// colonnes), sous-catégorie/en-têtes/profil de livraison changent par
+// pays.
 //
 // Colonnes volontairement laissées VIDES (confirmé) : Offerable,
 // Hazmat, Condition, Cost Per Item, SKU, Image URL 2 à 8.
 //
-// Deux hypothèses à confirmer avec le support Whatnot (voir le
-// message qui accompagne ce fichier) :
-//   - Le champ "Type" (format de vente) est réglé sur "Buy it Now"
-//   - Les 4 marchés couverts sont NL/DE/FR+BE/UK (pas US)
+// Le format de vente (Type) est déterminé automatiquement selon le prix
+// rempli sur chaque carte : uniquement départ -> "Auction", uniquement
+// achat immédiat -> "Buy it Now", les deux ou aucun -> erreur bloquante
+// avant tout export (voir determineSaleType/validateItem).
 //
 // Isolé dans une IIFE, même principe que export-voggt.js — aucun
 // risque de collision avec des variables déjà utilisées ailleurs sur
@@ -50,13 +51,6 @@
       defaultShippingProfile: "0 to <20 grams",
       headers: "en",
     },
-    us: {
-      label: "États-Unis (US)",
-      category: "Trading Card Games",
-      subcategory: "Pokémon Cards",
-      defaultShippingProfile: "0 to <20 grams", // fichier commun avec NL, mêmes valeurs
-      headers: "en",
-    },
     de: {
       label: "Allemagne (DE)",
       category: "Trading Card Games",
@@ -80,18 +74,36 @@
     },
   };
 
-  // Format de vente par défaut : Enchère. Confirmé par l'utilisateur que
-  // "Auction" est la valeur attendue dans la colonne Type pour ce format
-  // — reste à confirmer avec le support Whatnot que c'est bien exact.
-  const SALE_TYPE = "Auction";
+  // Le format de vente (colonne Type) dépend du prix réellement rempli :
+  //   - Seulement instant_buy_price rempli -> "Buy it Now"
+  //   - Seulement starting_price rempli    -> "Auction"
+  //   - Les deux ou aucun des deux         -> erreur (voir validateItem)
+  // Reste à confirmer avec le support Whatnot que "Buy it Now"/"Auction"
+  // sont exactement les valeurs attendues dans cette colonne.
 
   class ValidationError extends Error {}
+
+  function determineSaleType(item) {
+    const hasStarting = item.starting_price != null && item.starting_price !== "";
+    const hasInstant = item.instant_buy_price != null && item.instant_buy_price !== "";
+    if (hasStarting && hasInstant) return null; // ambigu, erreur gérée par validateItem
+    if (hasStarting) return { type: "Auction", price: item.starting_price };
+    if (hasInstant) return { type: "Buy it Now", price: item.instant_buy_price };
+    return null; // aucun prix, erreur gérée par validateItem
+  }
 
   function validateItem(item, index) {
     const errors = [];
     if (item.quantity == null || item.quantity < 1) errors.push("quantity manquant ou invalide (doit être >= 1)");
-    const price = item.instant_buy_price != null ? item.instant_buy_price : item.starting_price;
-    if (price == null) errors.push("aucun prix renseigné (starting_price et/ou instant_buy_price)");
+
+    const hasStarting = item.starting_price != null && item.starting_price !== "";
+    const hasInstant = item.instant_buy_price != null && item.instant_buy_price !== "";
+    if (hasStarting && hasInstant) {
+      errors.push("les deux prix (départ ET achat immédiat) sont renseignés — un seul est autorisé pour Whatnot, pour déterminer s'il s'agit d'une enchère ou d'un achat immédiat");
+    } else if (!hasStarting && !hasInstant) {
+      errors.push("aucun prix renseigné — exactement un des deux (départ OU achat immédiat) est requis pour Whatnot");
+    }
+
     if (errors.length) {
       throw new ValidationError(`Item #${index} (${item.card_name || "?"}) : ` + errors.join(" ; "));
     }
@@ -103,12 +115,7 @@
     const resolveBlocks = window.VoggtExportInternals.resolveBlocks;
     const buildDescription = window.VoggtExportInternals.buildDescription;
 
-    // Un seul champ Price chez Whatnot (contrairement à Voggt qui a
-    // startingPrice + instantBuyPrice séparés). Le format par défaut
-    // étant Enchère, ce champ représente la mise de DÉPART — priorité à
-    // starting_price, repli sur instant_buy_price seulement si aucune
-    // mise de départ n'a été renseignée pour cette carte.
-    const price = item.starting_price != null ? item.starting_price : item.instant_buy_price;
+    const { type: saleType, price } = determineSaleType(item);
 
     return [
       countryConfig.category,
@@ -116,7 +123,7 @@
       resolveBlocks(nameTemplate, item),
       buildDescription(descriptionTemplate, item, liveDisclaimerOnly, locale),
       item.quantity,
-      SALE_TYPE,
+      saleType,
       price,
       shippingProfileOverride || countryConfig.defaultShippingProfile,
       "", "", "", "", "", // Offerable, Hazmat, Condition, Cost Per Item, SKU
