@@ -830,6 +830,14 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="ie-ebay-results-modal-overlay" onclick="if(event.target===this)document.getElementById('ie-ebay-results-modal-overlay').classList.remove('active')">
+  <div class="modal" style="max-width:520px;">
+    <button class="modal-close" onclick="document.getElementById('ie-ebay-results-modal-overlay').classList.remove('active')">×</button>
+    <h3>Annonces créées</h3>
+    <div id="ie-ebay-results-list" class="ie-right-scroll" style="max-height:400px;"></div>
+  </div>
+</div>
+
 <main>
   <section id="view-home" class="view active">
     <div class="hero">
@@ -2073,6 +2081,7 @@ function setExportPlatform(platform, btn){
   const label = platform === "whatnot" ? "Générer un CSV Whatnot" : platform === "ebay" ? "Créer les annonces sur eBay" : "Générer un CSV Voggt";
   document.getElementById("ie-btn-generate-platform").textContent = label;
   if (platform === "ebay") ieCheckEbayConnection();
+  renderIeItemsList();
 }
 
 const EBAY_CLIENT_ID_SANDBOX = "Aymerick-Cartabou-SBX-6a49b4867-8a98aa09";
@@ -2604,8 +2613,16 @@ function renderIeItemsList(){
           <label>Société <input type="text" placeholder="PSA" value="${item.grading_company || ""}" onchange="ieUpdateItem(${item.localId},'grading_company',this.value)"></label>
           <label>Note <input type="text" placeholder="10" value="${item.grade || ""}" onchange="ieUpdateItem(${item.localId},'grade',this.value)"></label>
         </span>
-        <label>Prix départ <input type="number" step="0.01" value="${item.starting_price}" onchange="ieUpdateItem(${item.localId},'starting_price',this.value)"></label>
-        <label>Prix achat immédiat <input type="number" step="0.01" value="${item.instant_buy_price}" onchange="ieUpdateItem(${item.localId},'instant_buy_price',this.value)"></label>
+        ${ieCurrentPlatform === "ebay" ? `
+        <label>Format eBay
+          <select onchange="ieSetEbayFormat(${item.localId},this.value)">
+            <option value="fixed_price" ${(!item.ebay_format || item.ebay_format === "fixed_price") ? "selected" : ""}>Achat immédiat</option>
+            <option value="auction" ${item.ebay_format === "auction" ? "selected" : ""}>Enchère</option>
+            <option value="auction_bin" ${item.ebay_format === "auction_bin" ? "selected" : ""}>Enchère + achat immédiat</option>
+          </select>
+        </label>` : ""}
+        <label>Prix départ <input type="number" step="0.01" value="${item.starting_price}" ${ieCurrentPlatform === "ebay" && (!item.ebay_format || item.ebay_format === "fixed_price") ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'starting_price',this.value)"></label>
+        <label>Prix achat immédiat <input type="number" step="0.01" value="${item.instant_buy_price}" ${ieCurrentPlatform === "ebay" && item.ebay_format === "auction" ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'instant_buy_price',this.value)"></label>
         <label>Quantité <input type="number" min="1" value="${item.quantity}" onchange="ieUpdateItem(${item.localId},'quantity',this.value)"></label>
       </div>
     </div>
@@ -2615,6 +2632,19 @@ function renderIeItemsList(){
 // Liste de langues propre à ce formulaire (indépendante de celle du site,
 // pour ne pas dépendre de son contenu ni risquer une collision de nom).
 const LANGUAGE_NAMES_IE = {en:"Anglais",fr:"Français",de:"Allemand",nl:"Néerlandais",it:"Italien",es:"Espagnol",pt:"Portugais",ru:"Russe",pl:"Polonais",ja:"Japonais",zh:"Chinois",ko:"Coréen",id:"Indonésien",th:"Thaïlandais",cs:"Tchèque",hu:"Hongrois"};
+
+function ieSetEbayFormat(localId, format){
+  const item = ieExportItems.find(it => it.localId === localId);
+  if (!item) return;
+  item.ebay_format = format;
+  // Vide le(s) champ(s) de prix devenu(s) non pertinent(s), pour éviter
+  // qu'une ancienne valeur oubliée soit envoyée par erreur avec le
+  // mauvais format (ex. une mise de départ encore remplie alors qu'on
+  // vient de repasser en "Achat immédiat" seul).
+  if (format === "fixed_price") item.starting_price = "";
+  if (format === "auction") item.instant_buy_price = "";
+  renderIeItemsList();
+}
 
 function ieToggleConditionMode(localId, mode){
   ieUpdateItem(localId, "conditionMode", mode);
@@ -2650,6 +2680,7 @@ async function ieExportToEbay(rawItems, nameTemplate, descriptionTemplate, liveD
 
   let created = 0, failed = 0;
   const errorMessages = [];
+  const createdLinks = []; // { name, url } — pour la pop-up de fin
 
   for (let i = 0; i < toProcess.length; i++){
     const item = toProcess[i];
@@ -2662,9 +2693,6 @@ async function ieExportToEbay(rawItems, nameTemplate, descriptionTemplate, liveD
     };
     const title = resolveBlocks(nameTemplate, context);
     const description = buildDescription(descriptionTemplate, context, liveDisclaimerOnly, LANG);
-    const price = item.instant_buy_price !== "" && item.instant_buy_price != null
-      ? parseFloat(item.instant_buy_price)
-      : parseFloat(item.starting_price);
 
     try {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/ebay-create-listing`, {
@@ -2677,7 +2705,8 @@ async function ieExportToEbay(rawItems, nameTemplate, descriptionTemplate, liveD
           environment: EBAY_ENV,
           title,
           description,
-          price,
+          starting_price: item.starting_price !== "" ? item.starting_price : null,
+          instant_buy_price: item.instant_buy_price !== "" ? item.instant_buy_price : null,
           currency: "EUR",
           quantity: parseInt(item.quantity, 10) || 1,
           marketplaceId: "EBAY_FR",
@@ -2687,6 +2716,8 @@ async function ieExportToEbay(rawItems, nameTemplate, descriptionTemplate, liveD
       const result = await resp.json();
       if (result.success){
         created += 1;
+        const domain = EBAY_ENV === "production" ? "www.ebay.fr" : "sandbox.ebay.fr";
+        createdLinks.push({ name: item.card_name, url: `https://${domain}/itm/${result.listingId}` });
       } else {
         failed += 1;
         errorMessages.push(`${item.card_name} (${result.step || "?"}) : ${result.error || "erreur inconnue"}`);
@@ -2702,6 +2733,18 @@ async function ieExportToEbay(rawItems, nameTemplate, descriptionTemplate, liveD
   if (skippedGraded) summary += `, ${skippedGraded} carte(s) gradée(s) ignorée(s) (pas encore géré)`;
   if (errorMessages.length) summary += ` — ${errorMessages.slice(0, 3).join(" ; ")}`;
   statusEl.textContent = summary;
+
+  if (createdLinks.length > 0){
+    const shown = createdLinks.slice(0, 15);
+    const hiddenCount = createdLinks.length - shown.length;
+    const listEl = document.getElementById("ie-ebay-results-list");
+    listEl.innerHTML = shown.map(link =>
+      `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <a href="${link.url}" target="_blank" rel="noopener" style="color:var(--gold-bright);">${link.name}</a>
+      </div>`
+    ).join("") + (hiddenCount > 0 ? `<p class="ie-hint" style="margin-top:10px;">+ ${hiddenCount} autre(s), non affichée(s) ici (limite de 15).</p>` : "");
+    document.getElementById("ie-ebay-results-modal-overlay").classList.add("active");
+  }
 }
 
 async function generateExport(){
