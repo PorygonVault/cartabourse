@@ -2165,8 +2165,10 @@ function setExportPlatform(platform, btn){
 }
 
 const EBAY_CLIENT_ID_SANDBOX = "Aymerick-Cartabou-SBX-6a49b4867-8a98aa09";
-const EBAY_RUNAME = "Aymerick_Mont-Aymerick-Cartab-ypmkzhjt";
-const EBAY_ENV = "sandbox"; // à repasser sur "production" plus tard, avec le bon Client ID production
+const EBAY_CLIENT_ID_PRODUCTION = "Aymerick-Cartabou-PRD-1a49b4867-4cfa72f2";
+const EBAY_RUNAME_SANDBOX = "Aymerick_Mont-Aymerick-Cartab-ypmkzhjt";
+const EBAY_RUNAME_PRODUCTION = "Aymerick_Mont-Aymerick-Carteb-bsebzlvo";
+const EBAY_ENV = "production"; // basculé depuis "sandbox" — Sandbox reste disponible en repassant cette valeur
 
 async function ieCheckEbayConnection(){
   const statusEl = document.getElementById("ie-ebay-status");
@@ -2189,11 +2191,17 @@ async function ieCheckEbayConnection(){
 
 function ieConnectEbay(){
   const authBase = EBAY_ENV === "production" ? "https://auth.ebay.com/oauth2/authorize" : "https://auth.sandbox.ebay.com/oauth2/authorize";
+  const clientId = EBAY_ENV === "production" ? EBAY_CLIENT_ID_PRODUCTION : EBAY_CLIENT_ID_SANDBOX;
+  const runame = EBAY_ENV === "production" ? EBAY_RUNAME_PRODUCTION : EBAY_RUNAME_SANDBOX;
+  if (!runame){
+    alert("La RuName Production n'est pas encore configurée dans le code.");
+    return;
+  }
   const scopes = [
     "https://api.ebay.com/oauth/api_scope/sell.inventory",
     "https://api.ebay.com/oauth/api_scope/sell.account",
   ].join(" ");
-  const url = `${authBase}?client_id=${encodeURIComponent(EBAY_CLIENT_ID_SANDBOX)}&redirect_uri=${encodeURIComponent(EBAY_RUNAME)}&response_type=code&scope=${encodeURIComponent(scopes)}`;
+  const url = `${authBase}?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(runame)}&response_type=code&scope=${encodeURIComponent(scopes)}`;
   window.location.href = url;
 }
 
