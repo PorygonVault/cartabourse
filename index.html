@@ -1109,6 +1109,7 @@
         <button class="tab-btn active" data-platform="voggt" onclick="setExportPlatform('voggt', this)">Voggt</button>
         <button class="tab-btn" data-platform="whatnot" onclick="setExportPlatform('whatnot', this)">Whatnot</button>
         <button class="tab-btn" data-platform="ebay" onclick="setExportPlatform('ebay', this)">eBay</button>
+        <button class="tab-btn" data-platform="shopify" onclick="setExportPlatform('shopify', this)">Shopify</button>
       </div>
 
       <div id="ie-whatnot-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
@@ -2078,7 +2079,7 @@ function setExportPlatform(platform, btn){
   if (btn) btn.classList.add("active");
   document.getElementById("ie-whatnot-options").style.display = platform === "whatnot" ? "block" : "none";
   document.getElementById("ie-ebay-options").style.display = platform === "ebay" ? "block" : "none";
-  const label = platform === "whatnot" ? "Générer un CSV Whatnot" : platform === "ebay" ? "Créer les annonces sur eBay" : "Générer un CSV Voggt";
+  const label = platform === "whatnot" ? "Générer un CSV Whatnot" : platform === "ebay" ? "Créer les annonces sur eBay" : platform === "shopify" ? "Générer un CSV Shopify" : "Générer un CSV Voggt";
   document.getElementById("ie-btn-generate-platform").textContent = label;
   if (platform === "ebay") ieCheckEbayConnection();
   renderIeItemsList();
@@ -2792,6 +2793,9 @@ async function generateExport(){
       statusEl.textContent = `${count} carte(s) exportée(s) (Whatnot ${WHATNOT_COUNTRIES[country].label}) — téléchargement lancé.`;
     } else if (ieCurrentPlatform === "ebay"){
       await ieExportToEbay(ieExportItems, nameTemplate, descriptionTemplate, liveDisclaimerOnly, statusEl);
+    } else if (ieCurrentPlatform === "shopify"){
+      const count = exportToShopify(items, nameTemplate, descriptionTemplate, "export_shopify.csv", liveDisclaimerOnly, LANG);
+      statusEl.textContent = `${count} carte(s) exportée(s) (Shopify) — téléchargement lancé.`;
     } else {
       statusEl.textContent = "Cette plateforme n'est pas encore disponible.";
     }
@@ -5130,5 +5134,6 @@ function renderScannerResults(results){
 </script>
 <script src="javascript/export-voggt.js"></script>
 <script src="javascript/export-whatnot.js"></script>
+<script src="javascript/export-shopify.js"></script>
 </body>
 </html>
