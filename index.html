@@ -2624,7 +2624,87 @@ function ieToggleConditionMode(localId, mode){
   row.querySelector(".ie-grading-fields").style.display = mode === "grading" ? "" : "none";
 }
 
-function generateExport(){
+/* ------------------------------------------------------------
+   Export eBay — carte par carte, séquentiel (pas en parallèle, pour
+   des messages d'erreur clairs et ne pas déclencher de limite de débit
+   côté eBay). Les cartes gradées sont pour l'instant ignorées (pas
+   encore géré — voir feuille de route), pas silencieusement mal
+   envoyées.
+   ------------------------------------------------------------ */
+async function ieExportToEbay(rawItems, nameTemplate, descriptionTemplate, liveDisclaimerOnly, statusEl){
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  if (!sessionData.session){
+    statusEl.textContent = "Connectez-vous pour créer des annonces eBay.";
+    return;
+  }
+  if (rawItems.length === 0){
+    statusEl.textContent = "Ajoutez au moins une carte avant de créer des annonces.";
+    return;
+  }
+
+  const resolveBlocks = window.VoggtExportInternals.resolveBlocks;
+  const buildDescription = window.VoggtExportInternals.buildDescription;
+
+  const toProcess = rawItems.filter(it => it.conditionMode !== "grading");
+  const skippedGraded = rawItems.length - toProcess.length;
+
+  let created = 0, failed = 0;
+  const errorMessages = [];
+
+  for (let i = 0; i < toProcess.length; i++){
+    const item = toProcess[i];
+    statusEl.textContent = `Création en cours... (${i + 1}/${toProcess.length})`;
+
+    const context = {
+      card_name: item.card_name, card_number: item.card_number, total_cards: item.total_cards,
+      set_name: item.set_name, set_abbreviation: item.set_abbreviation, set_code: item.set_code,
+      language: item.language, condition: item.condition,
+    };
+    const title = resolveBlocks(nameTemplate, context);
+    const description = buildDescription(descriptionTemplate, context, liveDisclaimerOnly, LANG);
+    const price = item.instant_buy_price !== "" && item.instant_buy_price != null
+      ? parseFloat(item.instant_buy_price)
+      : parseFloat(item.starting_price);
+
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/ebay-create-listing`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({
+          environment: EBAY_ENV,
+          title,
+          description,
+          price,
+          currency: "EUR",
+          quantity: parseInt(item.quantity, 10) || 1,
+          marketplaceId: "EBAY_FR",
+          imageUrl: item.image_url,
+        }),
+      });
+      const result = await resp.json();
+      if (result.success){
+        created += 1;
+      } else {
+        failed += 1;
+        errorMessages.push(`${item.card_name} (${result.step || "?"}) : ${result.error || "erreur inconnue"}`);
+      }
+    } catch (err) {
+      failed += 1;
+      errorMessages.push(`${item.card_name} : ${err.message}`);
+    }
+  }
+
+  let summary = `${created} annonce(s) créée(s)`;
+  if (failed) summary += `, ${failed} échec(s)`;
+  if (skippedGraded) summary += `, ${skippedGraded} carte(s) gradée(s) ignorée(s) (pas encore géré)`;
+  if (errorMessages.length) summary += ` — ${errorMessages.slice(0, 3).join(" ; ")}`;
+  statusEl.textContent = summary;
+}
+
+async function generateExport(){
   const statusEl = document.getElementById("ie-export-status");
   if (ieExportItems.length === 0){
     statusEl.textContent = "Ajoutez au moins une carte avant de générer l'export.";
@@ -2667,6 +2747,8 @@ function generateExport(){
       const shippingOverride = document.getElementById("ie-whatnot-shipping-profile").value.trim();
       const count = exportToWhatnot(items, nameTemplate, descriptionTemplate, country, shippingOverride, `export_whatnot_${country}.csv`, liveDisclaimerOnly, LANG);
       statusEl.textContent = `${count} carte(s) exportée(s) (Whatnot ${WHATNOT_COUNTRIES[country].label}) — téléchargement lancé.`;
+    } else if (ieCurrentPlatform === "ebay"){
+      await ieExportToEbay(ieExportItems, nameTemplate, descriptionTemplate, liveDisclaimerOnly, statusEl);
     } else {
       statusEl.textContent = "Cette plateforme n'est pas encore disponible.";
     }
