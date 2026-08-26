@@ -654,6 +654,9 @@
 .ie-preview-label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-faint);margin-bottom:3px;}
 .ie-preview-value{background:var(--ink);border:1px solid var(--border);border-radius:6px;padding:8px 10px;font-size:14px;color:var(--text);white-space:pre-wrap;}
 .ie-generate-buttons{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+.ie-html-toolbar{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0;}
+.ie-html-toolbar button{background:var(--panel-light);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:5px 10px;font-size:12.5px;cursor:pointer;}
+.ie-html-toolbar button:hover{border-color:var(--gold);color:var(--gold-bright);}
 .ie-drag-handle{cursor:grab;color:var(--text-faint);font-size:16px;touch-action:none;padding:2px 4px;}
 .ie-drag-handle:active{cursor:grabbing;}
 .ie-order-arrows{display:flex;flex-direction:column;gap:1px;}
@@ -1146,14 +1149,36 @@
             <label>Titre (name)</label>
             <textarea id="ie-name-template" rows="3" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-name-template'">[flag] [card_name] [number_complete] - [set_name] [set_abbreviation]</textarea>
 
-            <div class="ie-blocks" id="ie-blocks-description"></div>
-            <label>Description</label>
-            <textarea id="ie-description-template" rows="4" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-description-template'">[card_name] [number_complete] - [condition_full][grading_full]</textarea>
+            <div id="ie-description-plain-wrapper">
+              <div class="ie-blocks" id="ie-blocks-description"></div>
+              <label>Description</label>
+              <textarea id="ie-description-template" rows="4" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-description-template'">[card_name] [number_complete] - [condition_full][grading_full]</textarea>
+            </div>
 
-            <label class="ie-checkbox-label">
-              <input type="checkbox" id="ie-live-disclaimer" checked onchange="ieToggleLiveDisclaimer(this.checked)">
-              <span id="ie-live-disclaimer-label"></span>
-            </label>
+            <div id="ie-description-html-wrapper" style="display:none;">
+              <div class="ie-blocks" id="ie-blocks-description-html"></div>
+              <label>Description (HTML — pour un vrai référencement, pas juste une ligne de texte)</label>
+              <div class="ie-html-toolbar">
+                <button type="button" onclick="ieWrapHtmlSelection('ie-description-template-html','<h3>','</h3>')">Titre</button>
+                <button type="button" onclick="ieWrapHtmlSelection('ie-description-template-html','<b>','</b>')"><b>Gras</b></button>
+                <button type="button" onclick="ieWrapHtmlSelection('ie-description-template-html','<i>','</i>')"><i>Italique</i></button>
+                <button type="button" onclick="ieWrapHtmlList('ie-description-template-html')">Liste à puces</button>
+                <button type="button" onclick="ieWrapHtmlSelection('ie-description-template-html','<p>','</p>')">Paragraphe</button>
+              </div>
+              <textarea id="ie-description-template-html" rows="8" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-description-template-html'"><p>[card_name] [number_complete] - [set_name]</p>
+<ul>
+  <li>État : [condition_full][grading_full]</li>
+  <li>Langue : [language_name]</li>
+</ul></textarea>
+              <p class="ie-hint" style="margin-top:6px;">Sélectionnez du texte puis cliquez un bouton pour l'entourer des bonnes balises — le résultat est envoyé tel quel (avec le vrai HTML) à eBay/Shopify, qui l'affichent mis en forme.</p>
+            </div>
+
+            <div id="ie-live-disclaimer-wrapper">
+              <label class="ie-checkbox-label">
+                <input type="checkbox" id="ie-live-disclaimer" checked onchange="ieToggleLiveDisclaimer(this.checked)">
+                <span id="ie-live-disclaimer-label"></span>
+              </label>
+            </div>
 
             <div class="ie-preview" id="ie-preview">
               <p class="ie-hint" style="margin-bottom:6px;">Aperçu (basé sur la première carte de la liste) :</p>
@@ -1998,6 +2023,7 @@ function renderIeBlockChips(){
   ).join("");
   document.getElementById("ie-blocks-name").innerHTML = html;
   document.getElementById("ie-blocks-description").innerHTML = html;
+  document.getElementById("ie-blocks-description-html").innerHTML = html;
 }
 
 function ieInsertBlock(blockName){
@@ -2009,6 +2035,41 @@ function ieInsertBlock(blockName){
   field.value = field.value.slice(0, start) + insertText + field.value.slice(end);
   field.focus();
   field.selectionStart = field.selectionEnd = start + insertText.length;
+  ieRenderPreview();
+}
+
+/* ------------------------------------------------------------
+   Mise en forme HTML de la description eBay/Shopify — entoure la
+   sélection de vraies balises, sans avoir à les taper à la main. Le
+   résultat (avec les balises) part tel quel dans l'export, ces deux
+   plateformes affichant le HTML mis en forme, contrairement à
+   Voggt/Whatnot qui restent en texte brut.
+   ------------------------------------------------------------ */
+function ieWrapHtmlSelection(fieldId, openTag, closeTag){
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  const start = field.selectionStart ?? field.value.length;
+  const end = field.selectionEnd ?? field.value.length;
+  const selected = field.value.slice(start, end) || "texte";
+  const wrapped = openTag + selected + closeTag;
+  field.value = field.value.slice(0, start) + wrapped + field.value.slice(end);
+  field.focus();
+  field.selectionStart = start + openTag.length;
+  field.selectionEnd = start + openTag.length + selected.length;
+  ieRenderPreview();
+}
+
+function ieWrapHtmlList(fieldId){
+  const field = document.getElementById(fieldId);
+  if (!field) return;
+  const start = field.selectionStart ?? field.value.length;
+  const end = field.selectionEnd ?? field.value.length;
+  const selected = field.value.slice(start, end) || "Élément 1\nÉlément 2";
+  const items = selected.split("\n").filter(l => l.trim()).map(l => `  <li>${l.trim()}</li>`).join("\n");
+  const wrapped = `<ul>\n${items}\n</ul>`;
+  field.value = field.value.slice(0, start) + wrapped + field.value.slice(end);
+  field.focus();
+  ieRenderPreview();
 }
 
 const IE_LIVE_DISCLAIMER_LABELS = {
@@ -2038,9 +2099,10 @@ function ieRenderPreview(){
     return;
   }
 
+  const isHtmlPlatform = ieCurrentPlatform === "ebay" || ieCurrentPlatform === "shopify";
   const nameTemplate = document.getElementById("ie-name-template").value;
-  const descriptionTemplate = document.getElementById("ie-description-template").value;
-  const liveDisclaimerOnly = document.getElementById("ie-live-disclaimer").checked;
+  const descriptionTemplate = document.getElementById(isHtmlPlatform ? "ie-description-template-html" : "ie-description-template").value;
+  const liveDisclaimerOnly = isHtmlPlatform ? false : document.getElementById("ie-live-disclaimer").checked;
 
   const context = {
     card_name: firstItem.card_name, card_number: firstItem.card_number, total_cards: firstItem.total_cards,
@@ -2058,12 +2120,18 @@ function ieRenderPreview(){
 
   const previewName = window.VoggtExportInternals.resolveBlocks(nameTemplate, context);
   const previewDescription = window.VoggtExportInternals.buildDescription(descriptionTemplate, context, liveDisclaimerOnly, LANG);
+  // Pour eBay/Shopify, la description contient du vrai HTML — on
+  // l'affiche tel quel (rendu), pas comme du texte brut avec les
+  // balises visibles. Pour Voggt/Whatnot, on garde le texte simple.
+  const descriptionPreviewHtml = isHtmlPlatform
+    ? (previewDescription || "<em>(vide)</em>")
+    : (previewDescription || "<em>(vide)</em>").replace(/\n/g, "<br>");
 
   previewEl.innerHTML = `
     <p class="ie-hint" style="margin-bottom:6px;">Aperçu (basé sur la première carte de la liste) :</p>
     <div class="ie-preview-body">
       <div class="ie-preview-field"><span class="ie-preview-label">Titre (name)</span><div class="ie-preview-value">${previewName || "<em>(vide)</em>"}</div></div>
-      <div class="ie-preview-field"><span class="ie-preview-label">Description</span><div class="ie-preview-value">${(previewDescription || "<em>(vide)</em>").replace(/\n/g, "<br>")}</div></div>
+      <div class="ie-preview-field"><span class="ie-preview-label">Description</span><div class="ie-preview-value">${descriptionPreviewHtml}</div></div>
     </div>`;
 }
 
@@ -2082,7 +2150,18 @@ function setExportPlatform(platform, btn){
   const label = platform === "whatnot" ? "Générer un CSV Whatnot" : platform === "ebay" ? "Créer les annonces sur eBay" : platform === "shopify" ? "Générer un CSV Shopify" : "Générer un CSV Voggt";
   document.getElementById("ie-btn-generate-platform").textContent = label;
   if (platform === "ebay") ieCheckEbayConnection();
+
+  // eBay/Shopify : description HTML avec mise en forme, mention "live"
+  // masquée (sans objet pour ces deux-là, risque d'erreur de listing
+  // pour rien). Voggt/Whatnot : description simple en texte brut, comme
+  // avant.
+  const isHtmlPlatform = platform === "ebay" || platform === "shopify";
+  document.getElementById("ie-description-plain-wrapper").style.display = isHtmlPlatform ? "none" : "block";
+  document.getElementById("ie-description-html-wrapper").style.display = isHtmlPlatform ? "block" : "none";
+  document.getElementById("ie-live-disclaimer-wrapper").style.display = isHtmlPlatform ? "none" : "block";
+
   renderIeItemsList();
+  ieRenderPreview();
 }
 
 const EBAY_CLIENT_ID_SANDBOX = "Aymerick-Cartabou-SBX-6a49b4867-8a98aa09";
@@ -2622,8 +2701,9 @@ function renderIeItemsList(){
             <option value="auction_bin" ${item.ebay_format === "auction_bin" ? "selected" : ""}>Enchère + achat immédiat</option>
           </select>
         </label>` : ""}
-        <label>Prix départ <input type="number" step="0.01" value="${item.starting_price}" ${ieCurrentPlatform === "ebay" && (!item.ebay_format || item.ebay_format === "fixed_price") ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'starting_price',this.value)"></label>
-        <label>Prix achat immédiat <input type="number" step="0.01" value="${item.instant_buy_price}" ${ieCurrentPlatform === "ebay" && item.ebay_format === "auction" ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'instant_buy_price',this.value)"></label>
+        ${ieCurrentPlatform !== "shopify" ? `<label>Prix départ <input type="number" step="0.01" value="${item.starting_price}" ${ieCurrentPlatform === "ebay" && (!item.ebay_format || item.ebay_format === "fixed_price") ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'starting_price',this.value)"></label>` : ""}
+        <label>Prix${ieCurrentPlatform === "shopify" ? "" : " achat immédiat"} <input type="number" step="0.01" value="${item.instant_buy_price}" ${ieCurrentPlatform === "ebay" && item.ebay_format === "auction" ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'instant_buy_price',this.value)"></label>
+        ${ieCurrentPlatform === "shopify" ? `<label>SKU (laissez vide pour générer automatiquement) <input type="text" placeholder="orbis-..." value="${item.shopify_sku || ""}" onchange="ieUpdateItem(${item.localId},'shopify_sku',this.value)"></label>` : ""}
         <label>Quantité <input type="number" min="1" value="${item.quantity}" onchange="ieUpdateItem(${item.localId},'quantity',this.value)"></label>
       </div>
     </div>
@@ -2755,12 +2835,14 @@ async function generateExport(){
     return;
   }
 
+  const isHtmlPlatform = ieCurrentPlatform === "ebay" || ieCurrentPlatform === "shopify";
   const nameTemplate = document.getElementById("ie-name-template").value;
-  const descriptionTemplate = document.getElementById("ie-description-template").value;
-  const liveDisclaimerOnly = document.getElementById("ie-live-disclaimer").checked;
+  const descriptionTemplate = document.getElementById(isHtmlPlatform ? "ie-description-template-html" : "ie-description-template").value;
+  const liveDisclaimerOnly = isHtmlPlatform ? false : document.getElementById("ie-live-disclaimer").checked;
 
   const items = ieExportItems.map(item => {
     const base = {
+      card_id: item.card_id,
       card_name: item.card_name,
       card_number: item.card_number,
       total_cards: item.total_cards,
@@ -2772,6 +2854,7 @@ async function generateExport(){
       instant_buy_price: item.instant_buy_price !== "" ? parseFloat(item.instant_buy_price) : null,
       quantity: parseInt(item.quantity, 10) || null,
       image_url: item.image_url,
+      shopify_sku: item.shopify_sku || "",
     };
     if (item.conditionMode === "grading"){
       base.grading_company = item.grading_company;
