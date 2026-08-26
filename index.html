@@ -155,7 +155,7 @@
   .binder-page.color-gray{background:#4a4c56;border:1px solid #63656f;}
 
   .binder-slot{
-    aspect-ratio:2.5/3.5;border-radius:4px;border:2px solid rgba(255,255,255,0.12);
+    aspect-ratio:2.5/3.5;border-radius:10px;border:2px solid rgba(255,255,255,0.12);
     display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;position:relative;
     background:rgba(255,255,255,0.04);transition:border-color .15s;
   }
@@ -588,8 +588,11 @@
       min-height:420px;
     }
     #binder-page-view{flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;min-width:0;}
-    .binder-page{height:100%;width:100%;}
-    .binder-slot{aspect-ratio:auto;} /* la hauteur vient de la grille (calée sur l'écran), pas d'un ratio fixe */
+    .binder-page{height:100%;width:auto;}
+    /* .binder-slot garde son ratio de base (2.5/3.5) — la case n'a plus
+       besoin d'un traitement spécial puisque le conteneur entier a
+       maintenant lui-même le bon ratio (calculé en JS), garantissant des
+       cases correctement proportionnées par simple division égale. */
 
     .binder-sidebar{
       display:flex;flex-direction:column;width:300px;flex-shrink:0;
@@ -4457,7 +4460,17 @@ async function fetchBinderPageSlots(pageNumber){
 function buildBinderPageHtml(slotsMap){
   const [rows, cols] = currentBinder.format.split("x").map(Number);
   const totalSlots = rows * cols;
-  let html = `<div class="binder-page color-${currentBinder.color}" style="grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},1fr);">`;
+  // Ratio carte (2.5:3.5) appliqué à l'ENSEMBLE du conteneur, pas
+  // seulement à chaque case individuellement — ça garantit une forme de
+  // carte correcte peu importe si les cases sont vides ou remplies,
+  // contrairement à un ratio posé sur chaque case qui dépend du contenu
+  // pour que la grille calcule sa propre taille.
+  const gap = 10; // doit rester cohérent avec le "gap" du CSS .binder-page
+  const cardRatio = 2.5 / 3.5;
+  const pageWidthRatio = cols * cardRatio + (cols - 1) * (gap / 100);
+  const pageHeightRatio = rows + (rows - 1) * (gap / 100);
+  const containerAspectRatio = pageWidthRatio / pageHeightRatio;
+  let html = `<div class="binder-page color-${currentBinder.color}" style="grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},1fr);aspect-ratio:${containerAspectRatio};">`;
   for (let i = 0; i < totalSlots; i++){
     const filled = slotsMap[i];
     if (filled){
