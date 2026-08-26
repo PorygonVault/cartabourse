@@ -2202,7 +2202,16 @@ function ieConnectEbay(){
     "https://api.ebay.com/oauth/api_scope/sell.account",
   ].join(" ");
   const url = `${authBase}?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(runame)}&response_type=code&scope=${encodeURIComponent(scopes)}`;
-  window.location.href = url;
+  const ebayWindow = window.open(url, "_blank");
+  // Rafraîchit automatiquement le statut de connexion dès que la
+  // personne ferme cet onglet — pas besoin de revenir recharger la page
+  // à la main pour voir "✓ Compte eBay connecté".
+  const checkClosed = setInterval(() => {
+    if (!ebayWindow || ebayWindow.closed){
+      clearInterval(checkClosed);
+      ieCheckEbayConnection();
+    }
+  }, 1000);
 }
 
 function renderImportExportPage(){
