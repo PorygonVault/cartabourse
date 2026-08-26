@@ -640,10 +640,10 @@
 .ie-picker-set-accordion{border-bottom:1px solid var(--border);}
 .ie-picker-set-header{padding:8px 4px;cursor:pointer;display:flex;align-items:center;gap:6px;color:var(--text);}
 .ie-picker-set-header:hover{color:var(--gold-bright);}
-.ie-picker-card-slider{display:none;flex-wrap:wrap;gap:8px;padding:8px 4px 14px;}
-.ie-picker-set-accordion.open .ie-picker-card-slider{display:flex;}
-.ie-picker-card-item{width:88px;cursor:pointer;text-align:center;}
-.ie-picker-card-item img{width:88px;height:123px;object-fit:cover;border-radius:4px;border:1px solid var(--border);display:block;}
+.ie-picker-card-slider{display:none;grid-template-columns:repeat(3,1fr);gap:8px;padding:8px 4px 14px;}
+.ie-picker-set-accordion.open .ie-picker-card-slider{display:grid;}
+.ie-picker-card-item{width:100%;cursor:pointer;text-align:center;}
+.ie-picker-card-item img{width:100%;height:auto;aspect-ratio:2.5/3.5;object-fit:cover;border-radius:4px;border:1px solid var(--border);display:block;}
 .ie-picker-card-item:hover img{border-color:var(--gold);}
 .ie-picker-card-name{font-size:11px;color:var(--text-dim);display:block;margin-top:3px;}
 .ie-search-result-thumb{width:56px;height:78px;object-fit:cover;border-radius:5px;flex-shrink:0;}
@@ -1159,11 +1159,11 @@
               <div class="ie-blocks" id="ie-blocks-description-html"></div>
               <label>Description (HTML — pour un vrai référencement, pas juste une ligne de texte)</label>
               <div class="ie-html-toolbar">
-                <button type="button" onclick="ieWrapHtmlSelection('ie-description-template-html','<h3>','</h3>')">Titre</button>
-                <button type="button" onclick="ieWrapHtmlSelection('ie-description-template-html','<b>','</b>')"><b>Gras</b></button>
-                <button type="button" onclick="ieWrapHtmlSelection('ie-description-template-html','<i>','</i>')"><i>Italique</i></button>
-                <button type="button" onclick="ieWrapHtmlList('ie-description-template-html')">Liste à puces</button>
-                <button type="button" onclick="ieWrapHtmlSelection('ie-description-template-html','<p>','</p>')">Paragraphe</button>
+                <button type="button" onmousedown="event.preventDefault();ieWrapHtmlSelection('ie-description-template-html','<h3>','</h3>')">Titre</button>
+                <button type="button" onmousedown="event.preventDefault();ieWrapHtmlSelection('ie-description-template-html','<b>','</b>')"><b>Gras</b></button>
+                <button type="button" onmousedown="event.preventDefault();ieWrapHtmlSelection('ie-description-template-html','<i>','</i>')"><i>Italique</i></button>
+                <button type="button" onmousedown="event.preventDefault();ieWrapHtmlList('ie-description-template-html')">Liste à puces</button>
+                <button type="button" onmousedown="event.preventDefault();ieWrapHtmlSelection('ie-description-template-html','<p>','</p>')">Paragraphe</button>
               </div>
               <textarea id="ie-description-template-html" rows="8" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-description-template-html'"><p>[card_name] [number_complete] - [set_name]</p>
 <ul>
