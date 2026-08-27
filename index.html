@@ -264,6 +264,10 @@
   .tile-body{padding:12px 14px 14px;}
   .tile-body .tcg-label{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;}
   .card-price-trend{display:inline-block;margin-top:4px;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);}
+  .trend-icon{height:14px;width:auto;vertical-align:middle;margin-left:2px;}
+  .manage-owned-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);}
+  .manage-owned-row:last-child{border-bottom:none;}
+  .manage-owned-row select, .manage-owned-row input[type="text"]{padding:5px 8px;}
   .tile-body h3{font-family:var(--font-display);font-size:16px;margin:4px 0 0;font-weight:600;line-height:1.25;}
 
   .load-more{width:100%;padding:12px;margin-bottom:48px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;}
@@ -839,6 +843,48 @@
     <button class="modal-close" onclick="document.getElementById('ie-ebay-results-modal-overlay').classList.remove('active')">×</button>
     <h3>Annonces créées</h3>
     <div id="ie-ebay-results-list" class="ie-right-scroll" style="max-height:400px;"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="collection-add-modal-overlay" onclick="if(event.target===this)closeCollectionAddModal()">
+  <div class="modal" style="max-width:420px;">
+    <button class="modal-close" onclick="closeCollectionAddModal()">×</button>
+    <h3>Ajouter à ma collection</h3>
+    <label class="ie-checkbox-label" style="margin-bottom:14px;display:flex;align-items:center;gap:8px;">
+      <input type="checkbox" id="collection-add-is-graded" onchange="toggleCollectionAddGraded(this.checked)">
+      Carte gradée
+    </label>
+    <div id="collection-add-condition-field">
+      <label>État
+        <select id="collection-add-condition">
+          <option value="MT">Mint</option>
+          <option value="NM" selected>Near Mint</option>
+          <option value="EX">Excellent</option>
+          <option value="GD">Good</option>
+          <option value="LP">Light Played</option>
+          <option value="PL">Played</option>
+          <option value="PO">Poor</option>
+        </select>
+      </label>
+    </div>
+    <div id="collection-add-grading-fields" style="display:none;">
+      <label>Société de gradation
+        <select id="collection-add-grading-company"></select>
+      </label>
+      <label>Note
+        <input type="text" id="collection-add-grade" placeholder="ex. 10, 9.5, Gem Mint...">
+      </label>
+    </div>
+    <button class="auth-btn" style="margin-top:16px;width:100%;" onclick="confirmCollectionAdd()">Ajouter</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="manage-owned-modal-overlay" onclick="if(event.target===this)closeManageOwnedModal()">
+  <div class="modal" style="max-width:540px;">
+    <button class="modal-close" onclick="closeManageOwnedModal()">×</button>
+    <h3>Gérer mes exemplaires</h3>
+    <div id="manage-owned-list" class="ie-right-scroll" style="max-height:400px;"></div>
+    <button class="auth-btn" style="margin-top:14px;width:100%;" onclick="addAnotherExemplar()">+ Ajouter un autre exemplaire</button>
   </div>
 </div>
 
@@ -1951,9 +1997,9 @@ function computeCardPriceTrends(history){
 
 function priceTrendIcon(pct){
   if (pct == null) return "";
-  if (pct > 10) return "📈";
-  if (pct < -10) return "📉";
-  return "➡️";
+  if (pct > 10) return `<img src="icons/trend-up.png" alt="Hausse" class="trend-icon">`;
+  if (pct < -10) return `<img src="icons/trend-down.png" alt="Baisse" class="trend-icon">`;
+  return `<img src="icons/trend-stable.png" alt="Stable" class="trend-icon">`;
 }
 
 function priceTrendHtml(trend){
@@ -4045,6 +4091,7 @@ function buildSetCardsHtml(setId){
     return `
       <div class="card-tile collection-tile ${isOwned ? "owned" : "not-owned"}">
         ${isOwned ? `<button class="tile-remove-btn" title="Retirer un exemplaire" onclick="event.stopPropagation();collectionRemoveOne(${c.id}, ${setId}, ${lastRowId})">×</button>` : ""}
+        ${isOwned ? `<button class="tile-edit-btn" title="Gérer mes exemplaires" onclick="event.stopPropagation();openManageOwnedModal(${c.id}, ${setId})" style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;z-index:2;">✎</button>` : ""}
         <div onclick="navigateCard(${c.id})">
           <div class="art">
             ${qty > 1 ? `<span class="set-tag">×${qty}</span>` : ""}
@@ -4055,7 +4102,7 @@ function buildSetCardsHtml(setId){
             ${isOwned && badge ? `<div class="tcg-label">${badge}</div>` : ""}
           </div>
         </div>
-        ${!isOwned ? `<button class="tile-quick-add-btn" title="Ajouter à la collection" onclick="event.stopPropagation();collectionAddOne(${c.id}, ${setId})">+</button>` : ""}
+        ${!isOwned ? `<button class="tile-quick-add-btn" title="Ajouter à la collection" onclick="event.stopPropagation();openCollectionAddModal(${c.id}, ${setId})">+</button>` : ""}
       </div>`;
   }).join("");
 }
@@ -4163,17 +4210,78 @@ async function collectionRemoveOne(cardId, setId, rowId){
   }
 }
 
-async function collectionAddOne(cardId, setId){
+/* ------------------------------------------------------------
+   Sociétés de gradation — chargées une seule fois depuis la vraie base
+   (pas une liste codée en dur), réutilisées partout où un menu
+   déroulant de gradation est nécessaire.
+   ------------------------------------------------------------ */
+let cachedGradingCompanies = null;
+async function fetchGradingCompanies(){
+  if (cachedGradingCompanies) return cachedGradingCompanies;
+  cachedGradingCompanies = await supabaseSelect(`grading_companies?select=id,name&order=name.asc`);
+  return cachedGradingCompanies;
+}
+
+const COLLECTION_CONDITIONS = ["MT", "NM", "EX", "GD", "LP", "PL", "PO"];
+
+/* ------------------------------------------------------------
+   Modale "Ajouter à ma collection" — demande l'état (ou la gradation)
+   avant l'ajout, plutôt que de forcer NM/non gradée par défaut.
+   ------------------------------------------------------------ */
+let collectionAddContext = null;
+
+async function openCollectionAddModal(cardId, setId){
   const { data } = await supabaseClient.auth.getSession();
   if (!data.session){ openAuthModal(); return; }
+
+  collectionAddContext = { cardId, setId };
+  document.getElementById("collection-add-is-graded").checked = false;
+  document.getElementById("collection-add-condition").value = "NM";
+  document.getElementById("collection-add-grade").value = "";
+  toggleCollectionAddGraded(false);
+
   try {
-    const created = await supabaseAuthedFetch("collection_items", {
-      method: "POST",
-      body: JSON.stringify({
-        card_id: cardId, user_id: data.session.user.id,
-        quantity: 1, condition: "NM", is_graded: false,
-      }),
-    });
+    const companies = await fetchGradingCompanies();
+    document.getElementById("collection-add-grading-company").innerHTML =
+      companies.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+  } catch (e) {
+    console.warn("Sociétés de gradation non chargées :", e.message);
+  }
+
+  document.getElementById("collection-add-modal-overlay").classList.add("active");
+}
+
+function closeCollectionAddModal(){
+  document.getElementById("collection-add-modal-overlay").classList.remove("active");
+}
+
+function toggleCollectionAddGraded(isGraded){
+  document.getElementById("collection-add-condition-field").style.display = isGraded ? "none" : "block";
+  document.getElementById("collection-add-grading-fields").style.display = isGraded ? "block" : "none";
+}
+
+async function confirmCollectionAdd(){
+  const { cardId, setId } = collectionAddContext;
+  const { data } = await supabaseClient.auth.getSession();
+  if (!data.session){ openAuthModal(); return; }
+
+  const isGraded = document.getElementById("collection-add-is-graded").checked;
+  const body = { card_id: cardId, user_id: data.session.user.id, quantity: 1, is_graded: isGraded };
+  let badge;
+  if (isGraded){
+    body.grading_company_id = parseInt(document.getElementById("collection-add-grading-company").value, 10) || null;
+    body.grade = document.getElementById("collection-add-grade").value.trim();
+    body.condition = null;
+    badge = `${body.grade || ""} gradée`.trim();
+  } else {
+    body.condition = document.getElementById("collection-add-condition").value;
+    body.grading_company_id = null;
+    body.grade = null;
+    badge = body.condition;
+  }
+
+  try {
+    const created = await supabaseAuthedFetch("collection_items", { method: "POST", body: JSON.stringify(body) });
 
     if (!collectionCatalogState.ownedBySet[setId]){
       collectionCatalogState.ownedBySet[setId] = { cardIds: new Set(), qtyByCard: {}, badgeByCard: {}, rowIdsByCard: {} };
@@ -4181,9 +4289,10 @@ async function collectionAddOne(cardId, setId){
     const bucket = collectionCatalogState.ownedBySet[setId];
     bucket.cardIds.add(cardId);
     bucket.qtyByCard[cardId] = (bucket.qtyByCard[cardId] || 0) + 1;
-    if (!bucket.badgeByCard[cardId]) bucket.badgeByCard[cardId] = "NM";
+    bucket.badgeByCard[cardId] = badge;
     (bucket.rowIdsByCard[cardId] = bucket.rowIdsByCard[cardId] || []).push(created[0].id);
 
+    closeCollectionAddModal();
     refreshSetView(setId);
     refreshCollectionStats();
   } catch (e) {
@@ -4191,6 +4300,133 @@ async function collectionAddOne(cardId, setId){
   }
 }
 
+/* ------------------------------------------------------------
+   Modale "Gérer mes exemplaires" — liste chaque exemplaire possédé
+   INDIVIDUELLEMENT (pas un état unique pour toute la carte), puisqu'on
+   peut posséder plusieurs copies dans des états différents. Chaque
+   ligne s'édite et s'enregistre séparément.
+   ------------------------------------------------------------ */
+let manageOwnedContext = null;
+let manageOwnedPendingEdits = {};
+
+async function openManageOwnedModal(cardId, setId){
+  manageOwnedContext = { cardId, setId };
+  manageOwnedPendingEdits = {};
+  const listEl = document.getElementById("manage-owned-list");
+  listEl.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  document.getElementById("manage-owned-modal-overlay").classList.add("active");
+
+  try {
+    const [rows, companies] = await Promise.all([
+      supabaseAuthedFetch(`collection_items?card_id=eq.${cardId}&select=id,condition,is_graded,grade,grading_company_id`),
+      fetchGradingCompanies(),
+    ]);
+    listEl.innerHTML = rows.length
+      ? rows.map(r => renderManageOwnedRow(r, companies)).join("")
+      : `<div class="empty-state">Plus aucun exemplaire de cette carte.</div>`;
+  } catch (e) {
+    listEl.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+function closeManageOwnedModal(){
+  document.getElementById("manage-owned-modal-overlay").classList.remove("active");
+}
+
+function renderManageOwnedRow(r, companies){
+  return `
+    <div class="manage-owned-row" data-row-id="${r.id}">
+      <label style="display:flex;align-items:center;gap:6px;">
+        <input type="checkbox" ${r.is_graded ? "checked" : ""} onchange="toggleManageRowGraded(${r.id}, this.checked)">
+        Gradée
+      </label>
+      <select class="manage-owned-condition" style="display:${r.is_graded ? "none" : "inline-block"};" onchange="updateManageRow(${r.id}, 'condition', this.value)">
+        ${COLLECTION_CONDITIONS.map(c => `<option value="${c}" ${r.condition === c ? "selected" : ""}>${c}</option>`).join("")}
+      </select>
+      <select class="manage-owned-grading-company" style="display:${r.is_graded ? "inline-block" : "none"};" onchange="updateManageRow(${r.id}, 'grading_company_id', this.value)">
+        ${companies.map(c => `<option value="${c.id}" ${r.grading_company_id === c.id ? "selected" : ""}>${c.name}</option>`).join("")}
+      </select>
+      <input type="text" class="manage-owned-grade" style="display:${r.is_graded ? "inline-block" : "none"};width:80px;" value="${r.grade || ""}" placeholder="Note" onchange="updateManageRow(${r.id}, 'grade', this.value)">
+      <button class="auth-btn" style="padding:6px 12px;font-size:13px;" onclick="saveManageRow(${r.id})">Enregistrer</button>
+      <button class="tile-remove-btn" style="position:static;" onclick="deleteManageRow(${r.id})">×</button>
+    </div>`;
+}
+
+function toggleManageRowGraded(rowId, isGraded){
+  updateManageRow(rowId, "is_graded", isGraded);
+  const rowEl = document.querySelector(`.manage-owned-row[data-row-id="${rowId}"]`);
+  rowEl.querySelector(".manage-owned-condition").style.display = isGraded ? "none" : "inline-block";
+  rowEl.querySelector(".manage-owned-grading-company").style.display = isGraded ? "inline-block" : "none";
+  rowEl.querySelector(".manage-owned-grade").style.display = isGraded ? "inline-block" : "none";
+}
+
+function updateManageRow(rowId, field, value){
+  if (!manageOwnedPendingEdits[rowId]) manageOwnedPendingEdits[rowId] = {};
+  manageOwnedPendingEdits[rowId][field] = field === "grading_company_id" ? (parseInt(value, 10) || null) : value;
+}
+
+async function saveManageRow(rowId){
+  const edits = manageOwnedPendingEdits[rowId] || {};
+  if (edits.is_graded === true){
+    edits.condition = null;
+  } else if (edits.is_graded === false){
+    edits.grading_company_id = null;
+    edits.grade = null;
+  }
+  if (Object.keys(edits).length === 0){
+    closeManageOwnedModal();
+    return;
+  }
+  try {
+    await supabaseAuthedFetch(`collection_items?id=eq.${rowId}`, { method: "PATCH", body: JSON.stringify(edits) });
+    delete manageOwnedPendingEdits[rowId];
+    await refreshAfterManageEdit();
+  } catch (e) {
+    alert(`Erreur lors de l'enregistrement : ${e.message}`);
+  }
+}
+
+async function deleteManageRow(rowId){
+  if (!confirm("Supprimer cet exemplaire de la collection ?")) return;
+  try {
+    await supabaseAuthedFetch(`collection_items?id=eq.${rowId}`, { method: "DELETE" });
+    await refreshAfterManageEdit();
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
+}
+
+async function refreshAfterManageEdit(){
+  const { cardId, setId } = manageOwnedContext;
+  // Recharge la modale à jour, plus la vue du set et les stats — même
+  // principe que collectionRemoveOne/confirmCollectionAdd : la donnée
+  // en base fait foi, on ne recalcule jamais soi-même le nouveau badge.
+  const rows = await supabaseAuthedFetch(`collection_items?card_id=eq.${cardId}&select=id,quantity,condition,is_graded,grade`);
+  const bucket = collectionCatalogState.ownedBySet[setId] || { cardIds: new Set(), qtyByCard: {}, badgeByCard: {}, rowIdsByCard: {} };
+  if (rows.length){
+    bucket.cardIds.add(cardId);
+    bucket.qtyByCard[cardId] = rows.reduce((sum, r) => sum + (r.quantity || 1), 0);
+    bucket.rowIdsByCard[cardId] = rows.map(r => r.id);
+    const last = rows[rows.length - 1];
+    bucket.badgeByCard[cardId] = last.is_graded ? `${last.grade || ""} gradée`.trim() : last.condition;
+  } else {
+    bucket.cardIds.delete(cardId);
+    delete bucket.qtyByCard[cardId];
+    delete bucket.badgeByCard[cardId];
+    delete bucket.rowIdsByCard[cardId];
+  }
+  collectionCatalogState.ownedBySet[setId] = bucket;
+
+  await openManageOwnedModal(cardId, setId);
+  refreshSetView(setId);
+  refreshCollectionStats();
+}
+
+function addAnotherExemplar(){
+  const { cardId, setId } = manageOwnedContext;
+  closeManageOwnedModal();
+  openCollectionAddModal(cardId, setId);
+}
 
 function renderCollectionGrid(cards, emptyMessage){
   const content = document.getElementById("collection-content");
