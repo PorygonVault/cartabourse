@@ -268,6 +268,11 @@
   .manage-owned-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);}
   .manage-owned-row:last-child{border-bottom:none;}
   .manage-owned-row select, .manage-owned-row input[type="text"]{padding:5px 8px;}
+  .collection-zone-title{font-family:var(--font-display);font-size:16px;margin:18px 0 10px;color:var(--text-dim);}
+  .collection-zone-title:first-child{margin-top:0;}
+  .quick-add-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;font-size:13px;}
+  .quick-add-bar #quick-add-form{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .quick-add-bar select, .quick-add-bar input[type="text"]{padding:5px 8px;}
   .tile-body h3{font-family:var(--font-display);font-size:16px;margin:4px 0 0;font-weight:600;line-height:1.25;}
 
   .load-more{width:100%;padding:12px;margin-bottom:48px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;}
@@ -3979,6 +3984,27 @@ async function renderCollectionContent(){
           <button id="sets-grid-btn" class="view-toggle-btn" onclick="setCollectionSetsViewMode('grid')">Grille</button>
         </div>
       </div>
+      <div class="region-filter" id="collection-sets-tab" style="margin-bottom:14px;">
+        <button class="tab-btn" data-tab="en_cours" onclick="setCollectionSetsTab('en_cours', this)">Sets en cours</button>
+        <button class="tab-btn active" data-tab="tous" onclick="setCollectionSetsTab('tous', this)">Tous les sets</button>
+      </div>
+      <div class="quick-add-bar">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+          <input type="checkbox" id="quick-add-toggle" onchange="toggleQuickAddMode(this.checked)">
+          Ajout rapide
+        </label>
+        <div id="quick-add-form" style="display:none;">
+          <label style="display:flex;align-items:center;gap:6px;">
+            <input type="checkbox" id="quick-add-is-graded" onchange="toggleQuickAddGraded(this.checked)">
+            Gradée
+          </label>
+          <select id="quick-add-condition">
+            ${COLLECTION_CONDITIONS.map(c => `<option value="${c}" ${c === "NM" ? "selected" : ""}>${c}</option>`).join("")}
+          </select>
+          <select id="quick-add-grading-company" style="display:none;"></select>
+          <input type="text" id="quick-add-grade" placeholder="Note" style="display:none;width:80px;">
+        </div>
+      </div>
       <div id="collection-catalog" class="collection-sets-container"><div class="empty-state">Chargement des extensions...</div></div>`;
     content.innerHTML = statsHtml;
     collectionRegionFilter = "all"; // les boutons repartent sur "Tout" à chaque rendu de la page
@@ -4012,6 +4038,14 @@ async function fetchAllPaginated(basePath){
 let collectionCatalogState = null;
 
 let collectionSetsViewMode = "list";
+let collectionSetsTab = "tous"; // "en_cours" | "tous" — "tous" par défaut
+
+function setCollectionSetsTab(tab, btn){
+  collectionSetsTab = tab;
+  document.querySelectorAll("#collection-sets-tab .tab-btn").forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  renderCollectionCatalog();
+}
 
 function setCollectionSetsViewMode(mode){
   collectionSetsViewMode = mode;
@@ -4025,7 +4059,7 @@ function renderCollectionCatalog(){
   const { allSets, ownedBySet } = collectionCatalogState;
   const container = document.getElementById("collection-catalog");
 
-  container.innerHTML = allSets.map(set => {
+  const buildSetHtml = (set) => {
     const setName = pickLocalized(set.set_names, LANG) || set.name_en;
     const owned = ownedBySet[set.id];
     const ownedCount = owned ? owned.cardIds.size : 0;
@@ -4041,8 +4075,23 @@ function renderCollectionCatalog(){
         ${set.total_cards ? `<div class="progress-bar"><div class="progress-bar-fill" style="width:${pct}%"></div></div>` : ""}
         <div class="collection-set-body"><div class="grid"><div class="empty-state">Cliquez pour charger les cartes de cette extension...</div></div></div>
       </div>`;
-  }).join("");
+  };
+
+  const inProgress = allSets.filter(s => ownedBySet[s.id] && ownedBySet[s.id].cardIds.size > 0);
+  const notStarted = allSets.filter(s => !(ownedBySet[s.id] && ownedBySet[s.id].cardIds.size > 0));
+
+  if (collectionSetsTab === "en_cours"){
+    container.innerHTML = inProgress.length
+      ? inProgress.map(buildSetHtml).join("")
+      : `<div class="empty-state">Aucun set en cours pour l'instant — ajoutez une carte pour qu'un set apparaisse ici.</div>`;
+  } else {
+    container.innerHTML =
+      (inProgress.length ? `<h4 class="collection-zone-title">En cours</h4>${inProgress.map(buildSetHtml).join("")}` : "") +
+      `<h4 class="collection-zone-title">Toutes les extensions</h4>${notStarted.map(buildSetHtml).join("")}`;
+  }
   container.classList.toggle("grid-mode", collectionSetsViewMode === "grid");
+  // Réapplique le filtre région/texte déjà actif sur ce nouveau contenu
+  filterCollectionCatalog(document.getElementById("collection-search").value);
 }
 
 /* Récupère les cartes d'UN set à la demande, seulement au premier
@@ -4089,10 +4138,10 @@ function buildSetCardsHtml(setId){
     const badge = owned.badgeByCard[c.id];
     const lastRowId = isOwned ? owned.rowIdsByCard[c.id][owned.rowIdsByCard[c.id].length - 1] : null;
     return `
-      <div class="card-tile collection-tile ${isOwned ? "owned" : "not-owned"}">
+      <div class="card-tile collection-tile ${isOwned ? "owned" : "not-owned"}" ${!isOwned ? `onclick="handleCollectionTileClick(${c.id}, ${setId})"` : ""}>
         ${isOwned ? `<button class="tile-remove-btn" title="Retirer un exemplaire" onclick="event.stopPropagation();collectionRemoveOne(${c.id}, ${setId}, ${lastRowId})">×</button>` : ""}
         ${isOwned ? `<button class="tile-edit-btn" title="Gérer mes exemplaires" onclick="event.stopPropagation();openManageOwnedModal(${c.id}, ${setId})" style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;z-index:2;">✎</button>` : ""}
-        <div onclick="navigateCard(${c.id})">
+        <div ${isOwned ? `onclick="navigateCard(${c.id})"` : ""}>
           <div class="art">
             ${qty > 1 ? `<span class="set-tag">×${qty}</span>` : ""}
             ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
@@ -4102,7 +4151,6 @@ function buildSetCardsHtml(setId){
             ${isOwned && badge ? `<div class="tcg-label">${badge}</div>` : ""}
           </div>
         </div>
-        ${!isOwned ? `<button class="tile-quick-add-btn" title="Ajouter à la collection" onclick="event.stopPropagation();openCollectionAddModal(${c.id}, ${setId})">+</button>` : ""}
       </div>`;
   }).join("");
 }
@@ -4260,24 +4308,25 @@ function toggleCollectionAddGraded(isGraded){
   document.getElementById("collection-add-grading-fields").style.display = isGraded ? "block" : "none";
 }
 
-async function confirmCollectionAdd(){
-  const { cardId, setId } = collectionAddContext;
+/** Logique d'ajout partagée — utilisée à la fois par la modale
+ * (confirmCollectionAdd) et le mode ajout rapide (quickAddCard), pour ne
+ * jamais dupliquer l'appel réseau ni la mise à jour de l'état local. */
+async function performCollectionAdd(cardId, setId, { isGraded, condition, gradingCompanyId, grade }){
   const { data } = await supabaseClient.auth.getSession();
-  if (!data.session){ openAuthModal(); return; }
+  if (!data.session){ openAuthModal(); return false; }
 
-  const isGraded = document.getElementById("collection-add-is-graded").checked;
   const body = { card_id: cardId, user_id: data.session.user.id, quantity: 1, is_graded: isGraded };
   let badge;
   if (isGraded){
-    body.grading_company_id = parseInt(document.getElementById("collection-add-grading-company").value, 10) || null;
-    body.grade = document.getElementById("collection-add-grade").value.trim();
+    body.grading_company_id = gradingCompanyId;
+    body.grade = grade;
     body.condition = null;
-    badge = `${body.grade || ""} gradée`.trim();
+    badge = `${grade || ""} gradée`.trim();
   } else {
-    body.condition = document.getElementById("collection-add-condition").value;
+    body.condition = condition;
     body.grading_company_id = null;
     body.grade = null;
-    badge = body.condition;
+    badge = condition;
   }
 
   try {
@@ -4292,12 +4341,74 @@ async function confirmCollectionAdd(){
     bucket.badgeByCard[cardId] = badge;
     (bucket.rowIdsByCard[cardId] = bucket.rowIdsByCard[cardId] || []).push(created[0].id);
 
-    closeCollectionAddModal();
     refreshSetView(setId);
     refreshCollectionStats();
+    return true;
   } catch (e) {
     alert(`Impossible d'ajouter à la collection : ${e.message}`);
+    return false;
   }
+}
+
+async function confirmCollectionAdd(){
+  const { cardId, setId } = collectionAddContext;
+  const isGraded = document.getElementById("collection-add-is-graded").checked;
+  const ok = await performCollectionAdd(cardId, setId, {
+    isGraded,
+    condition: isGraded ? null : document.getElementById("collection-add-condition").value,
+    gradingCompanyId: isGraded ? (parseInt(document.getElementById("collection-add-grading-company").value, 10) || null) : null,
+    grade: isGraded ? document.getElementById("collection-add-grade").value.trim() : null,
+  });
+  if (ok) closeCollectionAddModal();
+}
+
+/* ------------------------------------------------------------
+   Mode "Ajout rapide" — une fois activé, un formulaire persistant reste
+   affiché à côté du bouton, et cliquer une carte non possédée l'ajoute
+   directement avec l'état actuellement configuré, sans rouvrir la
+   fenêtre à chaque fois.
+   ------------------------------------------------------------ */
+let quickAddEnabled = false;
+
+async function toggleQuickAddMode(enabled){
+  quickAddEnabled = enabled;
+  document.getElementById("quick-add-form").style.display = enabled ? "flex" : "none";
+  if (enabled){
+    try {
+      const companies = await fetchGradingCompanies();
+      document.getElementById("quick-add-grading-company").innerHTML =
+        companies.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+    } catch (e) {
+      console.warn("Sociétés de gradation non chargées :", e.message);
+    }
+  }
+}
+
+function toggleQuickAddGraded(isGraded){
+  document.getElementById("quick-add-condition").style.display = isGraded ? "none" : "inline-block";
+  document.getElementById("quick-add-grading-company").style.display = isGraded ? "inline-block" : "none";
+  document.getElementById("quick-add-grade").style.display = isGraded ? "inline-block" : "none";
+}
+
+/** Point d'entrée unique au clic sur une carte non possédée — bascule
+ * entre la fenêtre de choix classique et l'ajout rapide silencieux
+ * selon que le mode soit activé ou non. */
+function handleCollectionTileClick(cardId, setId){
+  if (quickAddEnabled){
+    quickAddCard(cardId, setId);
+  } else {
+    openCollectionAddModal(cardId, setId);
+  }
+}
+
+function quickAddCard(cardId, setId){
+  const isGraded = document.getElementById("quick-add-is-graded").checked;
+  performCollectionAdd(cardId, setId, {
+    isGraded,
+    condition: isGraded ? null : document.getElementById("quick-add-condition").value,
+    gradingCompanyId: isGraded ? (parseInt(document.getElementById("quick-add-grading-company").value, 10) || null) : null,
+    grade: isGraded ? document.getElementById("quick-add-grade").value.trim() : null,
+  });
 }
 
 /* ------------------------------------------------------------
