@@ -263,6 +263,7 @@
   .art .set-tag{position:absolute;top:8px;left:8px;font-family:var(--font-mono);font-size:9px;text-transform:uppercase;background:rgba(13,14,21,0.7);padding:3px 7px;border-radius:12px;color:var(--text-dim);z-index:2;}
   .tile-body{padding:12px 14px 14px;}
   .tile-body .tcg-label{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;}
+  .card-price-trend{display:inline-block;margin-top:4px;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);}
   .tile-body h3{font-family:var(--font-display);font-size:16px;margin:4px 0 0;font-weight:600;line-height:1.25;}
 
   .load-more{width:100%;padding:12px;margin-bottom:48px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;}
@@ -1915,6 +1916,73 @@ async function quickRemoveFromCollection(cardId, btn){
   }
 }
 
+/* ------------------------------------------------------------
+   Tendance de prix par carte — même formule que renderSetMovers (fenêtre
+   de 14 jours, premier point vs dernier point de la période), extraite
+   ici en fonction partagée pour être réutilisable sur Accueil/Recherche/
+   Set, sans dupliquer le calcul ni toucher au code de renderSetMovers
+   qui fonctionne déjà.
+   ------------------------------------------------------------ */
+function computeCardPriceTrends(history){
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+  const byCard = {};
+  for (const row of history){
+    if (row.price == null || row.period_date < cutoffStr) continue;
+    (byCard[row.card_id] = byCard[row.card_id] || []).push(row);
+  }
+
+  const trends = {};
+  for (const cardId in byCard){
+    const points = byCard[cardId].sort((a, b) => a.period_date.localeCompare(b.period_date));
+    const last = Number(points[points.length - 1].price);
+    const currency = points[points.length - 1].currency;
+    let pct = null;
+    if (points.length >= 2){
+      const first = Number(points[0].price);
+      if (first) pct = ((last - first) / first) * 100;
+    }
+    trends[cardId] = { lastPrice: last, currency, pct };
+  }
+  return trends;
+}
+
+function priceTrendIcon(pct){
+  if (pct == null) return "";
+  if (pct > 10) return "📈";
+  if (pct < -10) return "📉";
+  return "➡️";
+}
+
+function priceTrendHtml(trend){
+  if (!trend) return "";
+  return `<span class="card-price-trend">${displayPrice(trend.lastPrice, trend.currency)} ${priceTrendIcon(trend.pct)}</span>`;
+}
+
+/** Récupère l'historique de prix pour un lot de cartes affichées, puis
+ * injecte prix + icône dans chaque emplacement réservé — en différé
+ * après le rendu initial (même principe déjà utilisé pour la valeur de
+ * collection), pour ne jamais bloquer l'affichage des cartes elles-mêmes
+ * en attendant cette donnée secondaire. */
+async function attachPriceTrends(cardIds, containerSelector){
+  if (!cardIds.length) return;
+  try {
+    const history = await supabaseSelect(
+      `price_history?card_id=in.(${cardIds.join(",")})&select=card_id,period_date,price,currency&order=period_date.asc`
+    );
+    const trends = computeCardPriceTrends(history);
+    document.querySelectorAll(`${containerSelector} [data-price-trend-slot]`).forEach(slot => {
+      const cardId = slot.dataset.priceTrendSlot;
+      const trend = trends[cardId];
+      if (trend) slot.innerHTML = priceTrendHtml(trend);
+    });
+  } catch (e) {
+    console.warn("Tendances de prix non chargées :", e.message);
+  }
+}
+
 function cardTileHtml(c){
   return `
     <div class="card-tile" onclick="navigateCard(${c.id})">
@@ -1927,6 +1995,7 @@ function cardTileHtml(c){
       <div class="tile-body">
         <div class="tcg-label">${c.setName}</div>
         <h3>${c.name}</h3>
+        <div data-price-trend-slot="${c.id}"></div>
       </div>
     </div>`;
 }
@@ -1942,6 +2011,7 @@ function cardRowHtml(c){
       <div class="row-info">
         <span class="row-name">${c.name}</span>
         <span class="row-set">${c.setName}</span>
+        <div data-price-trend-slot="${c.id}"></div>
       </div>
       ${quickActionsHtml(c.id)}
     </div>`;
@@ -1964,6 +2034,7 @@ function renderGrid(){
   }
 
   grid.innerHTML = visible.map(viewMode === "list" ? cardRowHtml : cardTileHtml).join("");
+  attachPriceTrends(visible.map(c => c.id), "#card-grid");
 }
 
 function onSearchKeydown(e){
@@ -3639,6 +3710,7 @@ async function renderSetPage(setId){
         </div>
         <div class="tile-body">
           <h3>${c.name}</h3>
+          <div data-price-trend-slot="${c.id}"></div>
         </div>
       </div>`).join("");
 
@@ -3651,6 +3723,14 @@ async function renderSetPage(setId){
       );
       renderSetTotalChart(history);
       renderSetMovers(history, shaped);
+
+      // Réutilise ce même historique (déjà en mémoire) pour le prix +
+      // tendance affiché sur chaque tuile — pas de requête supplémentaire.
+      const trends = computeCardPriceTrends(history);
+      document.querySelectorAll("#set-cards-grid [data-price-trend-slot]").forEach(slot => {
+        const trend = trends[slot.dataset.priceTrendSlot];
+        if (trend) slot.innerHTML = priceTrendHtml(trend);
+      });
     } else {
       document.getElementById("set-total-chart").innerHTML = `<div class="empty-state">Pas encore de données.</div>`;
       document.getElementById("set-risers").innerHTML = `<div class="empty-state">Pas encore de données.</div>`;
