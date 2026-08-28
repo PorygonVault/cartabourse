@@ -273,6 +273,12 @@
   .quick-add-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;font-size:13px;}
   .quick-add-bar #quick-add-form{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .quick-add-bar select, .quick-add-bar input[type="text"]{padding:5px 8px;}
+  .ie-policy-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+  .ie-policy-row label{min-width:150px;font-size:13px;color:var(--text-dim);}
+  .ie-policy-row select{flex:1;}
+  .ie-policy-missing{position:relative;padding:16px;border:1px dashed var(--border);border-radius:8px;margin-bottom:10px;}
+  .ie-policy-missing-blur{filter:blur(3px);pointer-events:none;opacity:0.5;}
+  .ie-policy-missing-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:16px;background:rgba(0,0,0,0.3);border-radius:8px;}
   .tile-body h3{font-family:var(--font-display);font-size:16px;margin:4px 0 0;font-weight:600;line-height:1.25;}
 
   .load-more{width:100%;padding:12px;margin-bottom:48px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;}
@@ -1183,6 +1189,7 @@
 
       <div id="ie-ebay-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
         <div id="ie-ebay-status">Vérification de la connexion...</div>
+        <div id="ie-ebay-policies" style="margin-top:14px;"></div>
       </div>
 
       <div class="ie-workspace">
@@ -2293,20 +2300,102 @@ const EBAY_ENV = "production"; // basculé depuis "sandbox" — Sandbox reste di
 
 async function ieCheckEbayConnection(){
   const statusEl = document.getElementById("ie-ebay-status");
+  const policiesEl = document.getElementById("ie-ebay-policies");
   const { data: sessionData } = await supabaseClient.auth.getSession();
   if (!sessionData.session){
     statusEl.innerHTML = `Connectez-vous à votre compte pour lier eBay.`;
+    policiesEl.innerHTML = "";
     return;
   }
   try {
     const rows = await supabaseAuthedFetch(`ebay_tokens?environment=eq.${EBAY_ENV}&select=access_token_expires_at,ebay_username`);
     if (rows.length > 0){
       statusEl.innerHTML = `<strong>✓ Compte eBay connecté</strong> (environnement ${EBAY_ENV}) — <a href="#" onclick="ieConnectEbay();return false;">reconnecter</a>`;
+      loadSellerPolicies();
     } else {
       statusEl.innerHTML = `<button class="auth-btn" onclick="ieConnectEbay()">Connecter mon compte eBay</button>`;
+      policiesEl.innerHTML = "";
     }
   } catch (err) {
     statusEl.innerHTML = `<button class="auth-btn" onclick="ieConnectEbay()">Connecter mon compte eBay</button><p class="ie-hint">(statut non vérifiable : ${err.message})</p>`;
+  }
+}
+
+/* ------------------------------------------------------------
+   Choix des politiques par vendeur — chaque vendeur connecté choisit
+   ses propres politiques réelles (livraison, paiement ×2 selon le
+   format, retour, emplacement), mises en cache automatiquement à la
+   connexion (voir ebay-oauth-exchange). Le choix retenu est stocké à
+   part (ebay_seller_policy_defaults), jamais redemandé tant qu'il n'est
+   pas changé volontairement.
+   ------------------------------------------------------------ */
+const EBAY_POLICY_CONTEXTS = [
+  { context: "location", type: "location", label: "Emplacement d'expédition" },
+  { context: "fulfillment", type: "fulfillment", label: "Livraison" },
+  { context: "payment_fixed_price", type: "payment", label: "Paiement (achat immédiat)" },
+  { context: "payment_auction", type: "payment", label: "Paiement (enchère)" },
+  { context: "return", type: "return", label: "Retour" },
+];
+const EBAY_SELLER_HUB_URL = "https://www.ebay.fr/sh/ovw";
+
+async function loadSellerPolicies(){
+  const container = document.getElementById("ie-ebay-policies");
+  container.innerHTML = `<p class="ie-hint">Chargement de vos politiques...</p>`;
+
+  try {
+    const [policies, defaults] = await Promise.all([
+      supabaseAuthedFetch(`ebay_seller_policies?environment=eq.${EBAY_ENV}&select=policy_type,ebay_policy_id,name`),
+      supabaseAuthedFetch(`ebay_seller_policy_defaults?environment=eq.${EBAY_ENV}&select=context,ebay_policy_id`),
+    ]);
+
+    const defaultByContext = {};
+    defaults.forEach(d => { defaultByContext[d.context] = d.ebay_policy_id; });
+
+    container.innerHTML = `<h4 style="margin:0 0 10px;font-size:14px;">Vos politiques eBay</h4>` +
+      EBAY_POLICY_CONTEXTS.map(({ context, type, label }) => {
+        const options = policies.filter(p => p.policy_type === type);
+        if (options.length === 0){
+          return `
+            <div class="ie-policy-missing">
+              <div class="ie-policy-missing-blur">
+                <div class="ie-policy-row"><label>${label}</label><select disabled><option>Aucune politique</option></select></div>
+              </div>
+              <div class="ie-policy-missing-overlay">
+                <span>Aucune politique "${label}" trouvée sur votre compte eBay.</span>
+                <a class="auth-btn" href="${EBAY_SELLER_HUB_URL}" target="_blank" rel="noopener">Créer une politique sur eBay (Seller Hub → Account Settings → Business Policies)</a>
+              </div>
+            </div>`;
+        }
+        const currentDefault = defaultByContext[context] || options[0].ebay_policy_id;
+        return `
+          <div class="ie-policy-row">
+            <label>${label}</label>
+            <select onchange="setPolicyDefault('${context}', this.value)">
+              ${options.map(o => `<option value="${o.ebay_policy_id}" ${o.ebay_policy_id === currentDefault ? "selected" : ""}>${o.name}</option>`).join("")}
+            </select>
+          </div>`;
+      }).join("");
+  } catch (e) {
+    container.innerHTML = `<p class="ie-hint">Politiques non chargées : ${e.message}</p>`;
+  }
+}
+
+async function setPolicyDefault(context, ebayPolicyId){
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  if (!sessionData.session) return;
+  try {
+    await supabaseAuthedFetch("ebay_seller_policy_defaults", {
+      method: "POST",
+      headers: { "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify({
+        user_id: sessionData.session.user.id,
+        environment: EBAY_ENV,
+        context,
+        ebay_policy_id: ebayPolicyId,
+      }),
+    });
+  } catch (e) {
+    alert(`Impossible d'enregistrer ce choix : ${e.message}`);
   }
 }
 
