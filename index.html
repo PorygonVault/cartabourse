@@ -1199,12 +1199,12 @@
             <p class="ie-hint">Cliquez un bloc pour l'insérer dans le champ actif (survolez pour voir sa signification) :</p>
             <div class="ie-blocks" id="ie-blocks-name"></div>
             <label>Titre (name)</label>
-            <textarea id="ie-name-template" rows="3" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-name-template'">[flag] [card_name] [number_complete] - [set_name] [set_abbreviation]</textarea>
+            <textarea id="ie-name-template" rows="3" oninput="ieRenderPreview()">[flag] [card_name] [number_complete] - [set_name] [set_abbreviation]</textarea>
 
             <div id="ie-description-plain-wrapper">
               <div class="ie-blocks" id="ie-blocks-description"></div>
               <label>Description</label>
-              <textarea id="ie-description-template" rows="4" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-description-template'">[card_name] [number_complete] - [condition_full][grading_full]</textarea>
+              <textarea id="ie-description-template" rows="4" oninput="ieRenderPreview()">[card_name] [number_complete] - [condition_full][grading_full]</textarea>
             </div>
 
             <div id="ie-description-html-wrapper" style="display:none;">
@@ -1217,7 +1217,7 @@
                 <button type="button" onmousedown="event.preventDefault();ieWrapHtmlList('ie-description-template-html')">Liste à puces</button>
                 <button type="button" onmousedown="event.preventDefault();ieWrapHtmlSelection('ie-description-template-html','<p>','</p>')">Paragraphe</button>
               </div>
-              <textarea id="ie-description-template-html" rows="8" oninput="ieRenderPreview()" onfocus="ieActiveTemplateField='ie-description-template-html'"><p>[card_name] [number_complete] - [set_name]</p>
+              <textarea id="ie-description-template-html" rows="8" oninput="ieRenderPreview()"><p>[card_name] [number_complete] - [set_name]</p>
 <ul>
   <li>État : [condition_full][grading_full]</li>
   <li>Langue : [language_name]</li>
@@ -2120,7 +2120,6 @@ const IE_SITE_NAME = "Cartabourse";
 let ieExportItems = [];
 let ieItemSeq = 0;
 let ieCurrentPlatform = "voggt";
-let ieActiveTemplateField = "ie-name-template"; // dernier champ de gabarit ayant eu le focus, pour savoir où insérer un bloc cliqué
 
 const IE_BLOCKS = [
   ["card_name", "Nom de la carte"],
@@ -2140,16 +2139,16 @@ const IE_BLOCKS = [
 ];
 
 function renderIeBlockChips(){
-  const html = IE_BLOCKS.map(([name, desc]) =>
-    `<span class="ie-block-chip" title="${desc}" onclick="ieInsertBlock('${name}')">[${name}]</span>`
+  const makeChips = (fieldId) => IE_BLOCKS.map(([name, desc]) =>
+    `<span class="ie-block-chip" title="${desc}" onclick="ieInsertBlock('${name}', '${fieldId}')">[${name}]</span>`
   ).join("");
-  document.getElementById("ie-blocks-name").innerHTML = html;
-  document.getElementById("ie-blocks-description").innerHTML = html;
-  document.getElementById("ie-blocks-description-html").innerHTML = html;
+  document.getElementById("ie-blocks-name").innerHTML = makeChips("ie-name-template");
+  document.getElementById("ie-blocks-description").innerHTML = makeChips("ie-description-template");
+  document.getElementById("ie-blocks-description-html").innerHTML = makeChips("ie-description-template-html");
 }
 
-function ieInsertBlock(blockName){
-  const field = document.getElementById(ieActiveTemplateField);
+function ieInsertBlock(blockName, fieldId){
+  const field = document.getElementById(fieldId);
   if (!field) return;
   const insertText = `[${blockName}]`;
   const start = field.selectionStart ?? field.value.length;
