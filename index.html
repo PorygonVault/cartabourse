@@ -1168,6 +1168,7 @@
         <button class="tab-btn" data-platform="whatnot" onclick="setExportPlatform('whatnot', this)">Whatnot</button>
         <button class="tab-btn" data-platform="ebay" onclick="setExportPlatform('ebay', this)">eBay</button>
         <button class="tab-btn" data-platform="shopify" onclick="setExportPlatform('shopify', this)">Shopify</button>
+        <button class="tab-btn" data-platform="woocommerce" onclick="setExportPlatform('woocommerce', this)">WooCommerce</button>
       </div>
 
       <div id="ie-whatnot-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
@@ -1187,6 +1188,10 @@
       <div id="ie-ebay-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
         <div id="ie-ebay-status">Vérification de la connexion...</div>
         <div id="ie-ebay-policies" style="margin-top:14px;"></div>
+      </div>
+
+      <div id="ie-woocommerce-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
+        <div id="ie-woocommerce-status"></div>
       </div>
 
       <div id="ie-workspace-wrapper" style="position:relative;">
@@ -2229,7 +2234,7 @@ function ieRenderPreview(){
     return;
   }
 
-  const isHtmlPlatform = ieCurrentPlatform === "ebay" || ieCurrentPlatform === "shopify";
+  const isHtmlPlatform = ieCurrentPlatform === "ebay" || ieCurrentPlatform === "shopify" || ieCurrentPlatform === "woocommerce";
   const nameTemplate = document.getElementById("ie-name-template").value;
   const descriptionTemplate = document.getElementById(isHtmlPlatform ? "ie-description-template-html" : "ie-description-template").value;
   const liveDisclaimerOnly = isHtmlPlatform ? false : document.getElementById("ie-live-disclaimer").checked;
@@ -2278,6 +2283,82 @@ function setImportExportMode(mode){
   }
 }
 
+/* ------------------------------------------------------------
+   WooCommerce — pas de jeton OAuth, chaque vendeur fournit directement
+   sa propre clé/secret (générés dans SON panneau WooCommerce), stockés
+   tels quels dans woocommerce_credentials.
+   ------------------------------------------------------------ */
+async function checkWoocommerceConnection(){
+  const statusEl = document.getElementById("ie-woocommerce-status");
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  if (!sessionData.session){
+    statusEl.innerHTML = `Connectez-vous à votre compte pour lier WooCommerce.`;
+    ieWoocommerceConnected = false;
+    updateEbayWorkspaceBlur();
+    return;
+  }
+  try {
+    const rows = await supabaseAuthedFetch(`woocommerce_credentials?select=store_url`);
+    if (rows.length > 0){
+      ieWoocommerceConnected = true;
+      statusEl.innerHTML = `<strong>✓ Boutique connectée</strong> (${rows[0].store_url}) — <a href="#" onclick="showWoocommerceForm();return false;">modifier</a>`;
+    } else {
+      ieWoocommerceConnected = false;
+      renderWoocommerceForm(statusEl);
+    }
+  } catch (err) {
+    ieWoocommerceConnected = false;
+    statusEl.innerHTML = `<p class="ie-hint">Statut non vérifiable : ${err.message}</p>`;
+  }
+  updateEbayWorkspaceBlur();
+}
+
+function renderWoocommerceForm(container){
+  container.innerHTML = `
+    <p class="ie-hint" style="margin-bottom:10px;">
+      Générez une clé dans votre panneau WooCommerce : Réglages → Avancé → API REST → Ajouter une clé
+      (permissions Lecture/Écriture), puis collez les valeurs ci-dessous.
+    </p>
+    <label>URL de la boutique <input type="text" id="wc-store-url" placeholder="https://maboutique.com"></label>
+    <label>Consumer Key <input type="text" id="wc-consumer-key" placeholder="ck_..."></label>
+    <label>Consumer Secret <input type="password" id="wc-consumer-secret" placeholder="cs_..."></label>
+    <button class="auth-btn" style="margin-top:8px;" onclick="saveWoocommerceCredentials()">Enregistrer</button>`;
+}
+
+function showWoocommerceForm(){
+  renderWoocommerceForm(document.getElementById("ie-woocommerce-status"));
+}
+
+async function saveWoocommerceCredentials(){
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  if (!sessionData.session){ openAuthModal(); return; }
+
+  const storeUrl = document.getElementById("wc-store-url").value.trim().replace(/\/$/, "");
+  const consumerKey = document.getElementById("wc-consumer-key").value.trim();
+  const consumerSecret = document.getElementById("wc-consumer-secret").value.trim();
+
+  if (!storeUrl || !consumerKey || !consumerSecret){
+    alert("Les trois champs sont obligatoires.");
+    return;
+  }
+
+  try {
+    await supabaseAuthedFetch("woocommerce_credentials", {
+      method: "POST",
+      headers: { "Prefer": "resolution=merge-duplicates" },
+      body: JSON.stringify({
+        user_id: sessionData.session.user.id,
+        store_url: storeUrl,
+        consumer_key: consumerKey,
+        consumer_secret: consumerSecret,
+      }),
+    });
+    checkWoocommerceConnection();
+  } catch (e) {
+    alert(`Impossible d'enregistrer : ${e.message}`);
+  }
+}
+
 function setExportPlatform(platform, btn){
   ieCurrentPlatform = platform;
   document.querySelectorAll("#ie-platform-tabs .tab-btn").forEach(b => b.classList.remove("active"));
@@ -2291,16 +2372,18 @@ function setExportPlatform(platform, btn){
   }
   document.getElementById("ie-whatnot-options").style.display = platform === "whatnot" ? "block" : "none";
   document.getElementById("ie-ebay-options").style.display = platform === "ebay" ? "block" : "none";
-  const label = platform === "whatnot" ? "Générer un CSV Whatnot" : platform === "ebay" ? "Créer les annonces sur eBay" : platform === "shopify" ? "Générer un CSV Shopify" : "Générer un CSV Voggt";
+  document.getElementById("ie-woocommerce-options").style.display = platform === "woocommerce" ? "block" : "none";
+  const label = platform === "whatnot" ? "Générer un CSV Whatnot" : platform === "ebay" ? "Créer les annonces sur eBay" : platform === "shopify" ? "Générer un CSV Shopify" : platform === "woocommerce" ? "Créer les annonces sur WooCommerce" : "Générer un CSV Voggt";
   document.getElementById("ie-btn-generate-platform").textContent = label;
   if (platform === "ebay") ieCheckEbayConnection();
+  if (platform === "woocommerce") checkWoocommerceConnection();
   updateEbayWorkspaceBlur();
 
   // eBay/Shopify : description HTML avec mise en forme, mention "live"
   // masquée (sans objet pour ces deux-là, risque d'erreur de listing
   // pour rien). Voggt/Whatnot : description simple en texte brut, comme
   // avant.
-  const isHtmlPlatform = platform === "ebay" || platform === "shopify";
+  const isHtmlPlatform = platform === "ebay" || platform === "shopify" || platform === "woocommerce";
   document.getElementById("ie-description-plain-wrapper").style.display = isHtmlPlatform ? "none" : "block";
   document.getElementById("ie-description-html-wrapper").style.display = isHtmlPlatform ? "block" : "none";
   document.getElementById("ie-live-disclaimer-wrapper").style.display = isHtmlPlatform ? "none" : "block";
@@ -2408,11 +2491,22 @@ async function loadSellerPolicies(){
 /** Floute/bloque toute la zone de création (pas juste la ligne de
  * politique manquante), uniquement quand l'onglet eBay est actif ET
  * qu'il manque au moins une politique nécessaire. */
+let ieWoocommerceConnected = false; // mis à jour par checkWoocommerceConnection
+
 function updateEbayWorkspaceBlur(){
   const overlay = document.getElementById("ie-ebay-workspace-overlay");
   const workspace = document.querySelector("#ie-workspace-wrapper .ie-workspace");
-  const shouldBlock = ieCurrentPlatform === "ebay" && !ieEbayPoliciesComplete;
+  let shouldBlock = false;
+  let message = "";
+  if (ieCurrentPlatform === "ebay" && !ieEbayPoliciesComplete){
+    shouldBlock = true;
+    message = "Complétez d'abord vos politiques eBay ci-dessus (ou créez celle qui manque sur eBay) avant de pouvoir créer des annonces.";
+  } else if (ieCurrentPlatform === "woocommerce" && !ieWoocommerceConnected){
+    shouldBlock = true;
+    message = "Renseignez d'abord vos identifiants WooCommerce ci-dessus avant de pouvoir créer des annonces.";
+  }
   overlay.style.display = shouldBlock ? "flex" : "none";
+  if (shouldBlock) overlay.querySelector("span").textContent = message;
   if (workspace){
     workspace.style.filter = shouldBlock ? "blur(3px)" : "";
     workspace.style.pointerEvents = shouldBlock ? "none" : "";
@@ -2976,8 +3070,8 @@ function renderIeItemsList(){
             <option value="auction_bin" ${item.ebay_format === "auction_bin" ? "selected" : ""}>Enchère + achat immédiat</option>
           </select>
         </label>` : ""}
-        ${ieCurrentPlatform !== "shopify" ? `<label>Prix départ <input type="number" step="0.01" value="${item.starting_price}" ${ieCurrentPlatform === "ebay" && (!item.ebay_format || item.ebay_format === "fixed_price") ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'starting_price',this.value)"></label>` : ""}
-        <label>Prix${ieCurrentPlatform === "shopify" ? "" : " achat immédiat"} <input type="number" step="0.01" value="${item.instant_buy_price}" ${ieCurrentPlatform === "ebay" && item.ebay_format === "auction" ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'instant_buy_price',this.value)"></label>
+        ${(ieCurrentPlatform !== "shopify" && ieCurrentPlatform !== "woocommerce") ? `<label>Prix départ <input type="number" step="0.01" value="${item.starting_price}" ${ieCurrentPlatform === "ebay" && (!item.ebay_format || item.ebay_format === "fixed_price") ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'starting_price',this.value)"></label>` : ""}
+        <label>Prix${(ieCurrentPlatform === "shopify" || ieCurrentPlatform === "woocommerce") ? "" : " achat immédiat"} <input type="number" step="0.01" value="${item.instant_buy_price}" ${ieCurrentPlatform === "ebay" && item.ebay_format === "auction" ? "disabled" : ""} onchange="ieUpdateItem(${item.localId},'instant_buy_price',this.value)"></label>
         ${ieCurrentPlatform === "shopify" ? `<label>SKU (laissez vide pour générer automatiquement) <input type="text" placeholder="orbis-..." value="${item.shopify_sku || ""}" onchange="ieUpdateItem(${item.localId},'shopify_sku',this.value)"></label>` : ""}
         <label>Quantité <input type="number" min="1" value="${item.quantity}" onchange="ieUpdateItem(${item.localId},'quantity',this.value)"></label>
       </div>
@@ -3017,6 +3111,89 @@ function ieToggleConditionMode(localId, mode){
    encore géré — voir feuille de route), pas silencieusement mal
    envoyées.
    ------------------------------------------------------------ */
+/* ------------------------------------------------------------
+   Export WooCommerce — carte par carte, séquentiel (même principe que
+   eBay). Plus simple : un seul appel API par carte, pas de notion
+   d'enchère/format à gérer, pas de cartes gradées à mettre de côté
+   (WooCommerce n'a aucune contrainte de catégorie particulière).
+   ------------------------------------------------------------ */
+async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate, liveDisclaimerOnly, statusEl){
+  const { data: sessionData } = await supabaseClient.auth.getSession();
+  if (!sessionData.session){
+    statusEl.textContent = "Connectez-vous pour créer des annonces WooCommerce.";
+    return;
+  }
+  if (rawItems.length === 0){
+    statusEl.textContent = "Ajoutez au moins une carte avant de créer des annonces.";
+    return;
+  }
+
+  const resolveBlocks = window.VoggtExportInternals.resolveBlocks;
+  const buildDescription = window.VoggtExportInternals.buildDescription;
+
+  let created = 0, failed = 0;
+  const errorMessages = [];
+  const createdLinks = [];
+
+  for (let i = 0; i < rawItems.length; i++){
+    const item = rawItems[i];
+    statusEl.textContent = `Création en cours... (${i + 1}/${rawItems.length})`;
+
+    const context = {
+      card_name: item.card_name, card_number: item.card_number, total_cards: item.total_cards,
+      set_name: item.set_name, set_abbreviation: item.set_abbreviation, set_code: item.set_code,
+      language: item.language, condition: item.condition,
+    };
+    const title = resolveBlocks(nameTemplate, context);
+    const description = buildDescription(descriptionTemplate, context, liveDisclaimerOnly, LANG);
+
+    try {
+      const resp = await fetch(`${SUPABASE_URL}/functions/v1/woocommerce-create-listing`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${sessionData.session.access_token}`,
+        },
+        body: JSON.stringify({
+          title,
+          description,
+          price: item.instant_buy_price,
+          quantity: parseInt(item.quantity, 10) || 1,
+          imageUrl: item.image_url,
+        }),
+      });
+      const result = await resp.json();
+      if (result.success){
+        created += 1;
+        if (result.permalink) createdLinks.push({ name: item.card_name, url: result.permalink });
+      } else {
+        failed += 1;
+        errorMessages.push(`${item.card_name} : ${result.error || "erreur inconnue"}`);
+      }
+    } catch (err) {
+      failed += 1;
+      errorMessages.push(`${item.card_name} : ${err.message}`);
+    }
+  }
+
+  let summary = `${created} annonce(s) créée(s)`;
+  if (failed) summary += `, ${failed} échec(s)`;
+  if (errorMessages.length) summary += ` — ${errorMessages.slice(0, 3).join(" ; ")}`;
+  statusEl.textContent = summary;
+
+  if (createdLinks.length > 0){
+    const shown = createdLinks.slice(0, 15);
+    const hiddenCount = createdLinks.length - shown.length;
+    const listEl = document.getElementById("ie-ebay-results-list");
+    listEl.innerHTML = shown.map(link =>
+      `<div style="padding:8px 0;border-bottom:1px solid var(--border);">
+        <a href="${link.url}" target="_blank" rel="noopener" style="color:var(--gold-bright);">${link.name}</a>
+      </div>`
+    ).join("") + (hiddenCount > 0 ? `<p class="ie-hint" style="margin-top:10px;">+ ${hiddenCount} autre(s), non affichée(s) ici (limite de 15).</p>` : "");
+    document.getElementById("ie-ebay-results-modal-overlay").classList.add("active");
+  }
+}
+
 async function ieExportToEbay(rawItems, nameTemplate, descriptionTemplate, liveDisclaimerOnly, statusEl){
   const { data: sessionData } = await supabaseClient.auth.getSession();
   if (!sessionData.session){
@@ -3110,7 +3287,7 @@ async function generateExport(){
     return;
   }
 
-  const isHtmlPlatform = ieCurrentPlatform === "ebay" || ieCurrentPlatform === "shopify";
+  const isHtmlPlatform = ieCurrentPlatform === "ebay" || ieCurrentPlatform === "shopify" || ieCurrentPlatform === "woocommerce";
   const nameTemplate = document.getElementById("ie-name-template").value;
   const descriptionTemplate = document.getElementById(isHtmlPlatform ? "ie-description-template-html" : "ie-description-template").value;
   const liveDisclaimerOnly = isHtmlPlatform ? false : document.getElementById("ie-live-disclaimer").checked;
@@ -3154,6 +3331,8 @@ async function generateExport(){
     } else if (ieCurrentPlatform === "shopify"){
       const count = exportToShopify(items, nameTemplate, descriptionTemplate, "export_shopify.csv", liveDisclaimerOnly, LANG);
       statusEl.textContent = `${count} carte(s) exportée(s) (Shopify) — téléchargement lancé.`;
+    } else if (ieCurrentPlatform === "woocommerce"){
+      await ieExportToWoocommerce(ieExportItems, nameTemplate, descriptionTemplate, liveDisclaimerOnly, statusEl);
     } else {
       statusEl.textContent = "Cette plateforme n'est pas encore disponible.";
     }
@@ -3369,7 +3548,7 @@ function route(){
   const binderMatch = hash.match(/^#\/binder\/(\d+)$/);
   const isScanner = hash === "#/scanner";
   const isImportExport = hash === "#/import-export"; // ancienne route, gardée en alias
-  const exportMatch = hash.match(/^#\/export(?:\/(voggt|whatnot|ebay|shopify))?$/);
+  const exportMatch = hash.match(/^#\/export(?:\/(voggt|whatnot|ebay|shopify|woocommerce))?$/);
   const isImport = hash === "#/import";
 
   document.getElementById("view-home").classList.remove("active");
