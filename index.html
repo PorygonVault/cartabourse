@@ -276,9 +276,6 @@
   .ie-policy-row{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
   .ie-policy-row label{min-width:150px;font-size:13px;color:var(--text-dim);}
   .ie-policy-row select{flex:1;}
-  .ie-policy-missing{position:relative;padding:16px;border:1px dashed var(--border);border-radius:8px;margin-bottom:10px;}
-  .ie-policy-missing-blur{filter:blur(3px);pointer-events:none;opacity:0.5;}
-  .ie-policy-missing-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;text-align:center;padding:16px;background:rgba(0,0,0,0.3);border-radius:8px;}
   .tile-body h3{font-family:var(--font-display);font-size:16px;margin:4px 0 0;font-weight:600;line-height:1.25;}
 
   .load-more{width:100%;padding:12px;margin-bottom:48px;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);color:var(--text-dim);font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.05em;cursor:pointer;}
@@ -1192,6 +1189,7 @@
         <div id="ie-ebay-policies" style="margin-top:14px;"></div>
       </div>
 
+      <div id="ie-workspace-wrapper" style="position:relative;">
       <div class="ie-workspace">
         <div class="ie-left">
           <div class="ie-section">
@@ -1287,6 +1285,10 @@
             <div id="ie-collection-tab-list" class="ie-right-scroll"></div>
           </div>
         </div>
+      </div>
+      <div id="ie-ebay-workspace-overlay" style="display:none;position:absolute;inset:0;flex-direction:column;align-items:center;justify-content:center;gap:10px;text-align:center;padding:20px;background:rgba(10,10,13,0.75);border-radius:8px;z-index:5;">
+        <span style="max-width:420px;">Complétez d'abord vos politiques eBay ci-dessus (ou créez celle qui manque sur eBay) avant de pouvoir créer des annonces.</span>
+      </div>
       </div>
     </div>
 
@@ -2267,17 +2269,32 @@ function setImportExportMode(mode){
   document.querySelectorAll("#ie-mode-tabs .tab-btn").forEach(b => b.classList.toggle("active", b.dataset.mode === mode));
   document.getElementById("ie-export-panel").style.display = mode === "export" ? "" : "none";
   document.getElementById("ie-import-panel").style.display = mode === "import" ? "" : "none";
+  // history.replaceState (pas location.hash=) : met à jour l'adresse
+  // affichée sans redéclencher tout le routeur ni recharger la page.
+  if (mode === "import"){
+    history.replaceState(null, "", "#/import");
+  } else {
+    history.replaceState(null, "", `#/export/${ieCurrentPlatform || "voggt"}`);
+  }
 }
 
 function setExportPlatform(platform, btn){
   ieCurrentPlatform = platform;
   document.querySelectorAll("#ie-platform-tabs .tab-btn").forEach(b => b.classList.remove("active"));
   if (btn) btn.classList.add("active");
+  // Reflète la plateforme dans l'URL — seulement si on est bien en mode
+  // export (sinon ça écraserait #/import au passage, ce qui n'a jamais
+  // lieu en pratique puisque les onglets plateforme n'existent que là,
+  // mais gardé explicite pour éviter toute mauvaise surprise future).
+  if (document.getElementById("ie-export-panel").style.display !== "none"){
+    history.replaceState(null, "", `#/export/${platform}`);
+  }
   document.getElementById("ie-whatnot-options").style.display = platform === "whatnot" ? "block" : "none";
   document.getElementById("ie-ebay-options").style.display = platform === "ebay" ? "block" : "none";
   const label = platform === "whatnot" ? "Générer un CSV Whatnot" : platform === "ebay" ? "Créer les annonces sur eBay" : platform === "shopify" ? "Générer un CSV Shopify" : "Générer un CSV Voggt";
   document.getElementById("ie-btn-generate-platform").textContent = label;
   if (platform === "ebay") ieCheckEbayConnection();
+  updateEbayWorkspaceBlur();
 
   // eBay/Shopify : description HTML avec mise en forme, mention "live"
   // masquée (sans objet pour ces deux-là, risque d'erreur de listing
@@ -2338,6 +2355,8 @@ const EBAY_POLICY_CONTEXTS = [
 ];
 const EBAY_SELLER_HUB_URL = "https://www.ebay.fr/sh/ovw";
 
+let ieEbayPoliciesComplete = true; // optimiste par défaut tant qu'on n'a pas encore vérifié
+
 async function loadSellerPolicies(){
   const container = document.getElementById("ie-ebay-policies");
   container.innerHTML = `<p class="ie-hint">Chargement de vos politiques...</p>`;
@@ -2351,19 +2370,17 @@ async function loadSellerPolicies(){
     const defaultByContext = {};
     defaults.forEach(d => { defaultByContext[d.context] = d.ebay_policy_id; });
 
+    let anyMissing = false;
+
     container.innerHTML = `<h4 style="margin:0 0 10px;font-size:14px;">Vos politiques eBay</h4>` +
       EBAY_POLICY_CONTEXTS.map(({ context, type, label }) => {
         const options = policies.filter(p => p.policy_type === type);
         if (options.length === 0){
+          anyMissing = true;
           return `
-            <div class="ie-policy-missing">
-              <div class="ie-policy-missing-blur">
-                <div class="ie-policy-row"><label>${label}</label><select disabled><option>Aucune politique</option></select></div>
-              </div>
-              <div class="ie-policy-missing-overlay">
-                <span>Aucune politique "${label}" trouvée sur votre compte eBay.</span>
-                <a class="auth-btn" href="${EBAY_SELLER_HUB_URL}" target="_blank" rel="noopener">Créer une politique sur eBay (Seller Hub → Account Settings → Business Policies)</a>
-              </div>
+            <div class="ie-policy-row">
+              <label>${label}</label>
+              <span class="ie-hint">Aucune politique trouvée — <a href="${EBAY_SELLER_HUB_URL}" target="_blank" rel="noopener">en créer une sur eBay</a></span>
             </div>`;
         }
         const currentDefault = defaultByContext[context] || options[0].ebay_policy_id;
@@ -2375,8 +2392,30 @@ async function loadSellerPolicies(){
             </select>
           </div>`;
       }).join("");
+
+    // Bloque TOUT le processus de création (liste de cartes, génération),
+    // pas juste la ligne concernée — sans le jeu complet de politiques,
+    // aucune annonce ne peut de toute façon être créée avec succès.
+    ieEbayPoliciesComplete = !anyMissing;
+    updateEbayWorkspaceBlur();
   } catch (e) {
     container.innerHTML = `<p class="ie-hint">Politiques non chargées : ${e.message}</p>`;
+    ieEbayPoliciesComplete = false;
+    updateEbayWorkspaceBlur();
+  }
+}
+
+/** Floute/bloque toute la zone de création (pas juste la ligne de
+ * politique manquante), uniquement quand l'onglet eBay est actif ET
+ * qu'il manque au moins une politique nécessaire. */
+function updateEbayWorkspaceBlur(){
+  const overlay = document.getElementById("ie-ebay-workspace-overlay");
+  const workspace = document.querySelector("#ie-workspace-wrapper .ie-workspace");
+  const shouldBlock = ieCurrentPlatform === "ebay" && !ieEbayPoliciesComplete;
+  overlay.style.display = shouldBlock ? "flex" : "none";
+  if (workspace){
+    workspace.style.filter = shouldBlock ? "blur(3px)" : "";
+    workspace.style.pointerEvents = shouldBlock ? "none" : "";
   }
 }
 
@@ -2424,7 +2463,7 @@ function ieConnectEbay(){
   }, 1000);
 }
 
-function renderImportExportPage(){
+function renderImportExportPage(mode = "export", platform = "voggt"){
   document.getElementById("ie-btn-generate-resume").textContent = `Générer un CSV d'import ${IE_SITE_NAME}`;
   document.getElementById("ie-btn-import-resume").textContent = `Importer un CSV ${IE_SITE_NAME}`;
   renderIeBlockChips();
@@ -2432,6 +2471,15 @@ function renderImportExportPage(){
   ieToggleLiveDisclaimer(document.getElementById("ie-live-disclaimer").checked);
   renderIeItemsList();
   ieLoadPickerSets(); // charge la liste des extensions dès l'arrivée sur la page, pas seulement au clic sur l'onglet
+
+  // Reflète l'URL dans l'état de la page (onglet mode + plateforme),
+  // pour qu'un lien direct vers #/export/ebay atterrisse déjà au bon
+  // endroit, sans avoir à recliquer les onglets à la main.
+  setImportExportMode(mode);
+  if (mode === "export"){
+    const btn = document.querySelector(`#ie-platform-tabs .tab-btn[data-platform="${platform}"]`);
+    setExportPlatform(platform, btn);
+  }
 }
 
 // (l'ancienne recherche de carte par nom a été remplacée par la
@@ -3274,7 +3322,7 @@ function navigateAdmin(tab = "cards"){ location.hash = "#/admin/" + tab; }
 function navigateBinders(){ location.hash = "#/binders"; }
 function navigateBinder(id){ location.hash = "#/binder/" + id; }
 function navigateScanner(){ location.hash = "#/scanner"; }
-function navigateImportExport(){ location.hash = "#/import-export"; }
+function navigateImportExport(){ location.hash = "#/export/voggt"; }
 
 window.addEventListener("hashchange", route);
 
@@ -3320,7 +3368,9 @@ function route(){
   const isBindersList = hash === "#/binders";
   const binderMatch = hash.match(/^#\/binder\/(\d+)$/);
   const isScanner = hash === "#/scanner";
-  const isImportExport = hash === "#/import-export";
+  const isImportExport = hash === "#/import-export"; // ancienne route, gardée en alias
+  const exportMatch = hash.match(/^#\/export(?:\/(voggt|whatnot|ebay|shopify))?$/);
+  const isImport = hash === "#/import";
 
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
@@ -3356,7 +3406,13 @@ function route(){
     renderBinderPage(parseInt(binderMatch[1], 10));
   } else if (isImportExport){
     document.getElementById("view-import-export").classList.add("active");
-    renderImportExportPage();
+    renderImportExportPage("export", "voggt");
+  } else if (exportMatch){
+    document.getElementById("view-import-export").classList.add("active");
+    renderImportExportPage("export", exportMatch[1] || "voggt");
+  } else if (isImport){
+    document.getElementById("view-import-export").classList.add("active");
+    renderImportExportPage("import", null);
   } else if (isScanner){
     // Section gardée dans le code (facile à réactiver), mais pas encore
     // fonctionnelle — on redirige plutôt que de laisser une page vide/cassée.
