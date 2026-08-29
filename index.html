@@ -1242,6 +1242,19 @@
               <p class="ie-hint" style="margin-top:6px;">Sélectionnez du texte puis cliquez un bouton pour l'entourer des bonnes balises — le résultat est envoyé tel quel (avec le vrai HTML) à eBay/Shopify, qui l'affichent mis en forme.</p>
             </div>
 
+            <div id="ie-url-choice-wrapper" style="display:none;">
+              <label style="display:flex;align-items:center;gap:16px;margin-bottom:8px;">
+                <span style="display:flex;align-items:center;gap:6px;"><input type="radio" name="ie-url-mode" value="title" checked onchange="ieSetUrlMode('title')"> URL générée à partir du titre</span>
+                <span style="display:flex;align-items:center;gap:6px;"><input type="radio" name="ie-url-mode" value="custom" onchange="ieSetUrlMode('custom')"> URL personnalisée</span>
+              </label>
+              <div id="ie-url-custom-fields" style="display:none;">
+                <div class="ie-blocks" id="ie-blocks-url"></div>
+                <label>Modèle d'adresse (sans le drapeau — inadapté à une URL)</label>
+                <textarea id="ie-url-template" rows="2" oninput="ieRenderPreview()">[card_name] [number_complete] [set_name]</textarea>
+                <p class="ie-hint" style="margin-top:6px;">Le résultat est nettoyé automatiquement (minuscules, accents retirés, espaces remplacés par des tirets) avant d'être envoyé.</p>
+              </div>
+            </div>
+
             <div id="ie-live-disclaimer-wrapper">
               <label class="ie-checkbox-label">
                 <input type="checkbox" id="ie-live-disclaimer" checked onchange="ieToggleLiveDisclaimer(this.checked)">
@@ -2166,6 +2179,19 @@ function renderIeBlockChips(){
   document.getElementById("ie-blocks-name").innerHTML = makeChips("ie-name-template");
   document.getElementById("ie-blocks-description").innerHTML = makeChips("ie-description-template");
   document.getElementById("ie-blocks-description-html").innerHTML = makeChips("ie-description-template-html");
+  // Blocs pour l'URL — sans [flag], un emoji n'a pas sa place dans une
+  // adresse web (mauvais pour le référencement, souvent mal encodé).
+  const urlChips = IE_BLOCKS.filter(([name]) => name !== "flag").map(([name, desc]) =>
+    `<span class="ie-block-chip" title="${desc}" onclick="ieInsertBlock('${name}', 'ie-url-template')">[${name}]</span>`
+  ).join("");
+  document.getElementById("ie-blocks-url").innerHTML = urlChips;
+}
+
+let ieUrlMode = "title"; // "title" | "custom"
+
+function ieSetUrlMode(mode){
+  ieUrlMode = mode;
+  document.getElementById("ie-url-custom-fields").style.display = mode === "custom" ? "block" : "none";
 }
 
 function ieInsertBlock(blockName, fieldId){
@@ -2383,6 +2409,7 @@ function setExportPlatform(platform, btn){
   document.getElementById("ie-whatnot-options").style.display = platform === "whatnot" ? "block" : "none";
   document.getElementById("ie-ebay-options").style.display = platform === "ebay" ? "block" : "none";
   document.getElementById("ie-woocommerce-options").style.display = platform === "woocommerce" ? "block" : "none";
+  document.getElementById("ie-url-choice-wrapper").style.display = (platform === "shopify" || platform === "woocommerce") ? "block" : "none";
   const label = platform === "whatnot" ? "Générer un CSV Whatnot" : platform === "ebay" ? "Créer les annonces sur eBay" : platform === "shopify" ? "Générer un CSV Shopify" : platform === "woocommerce" ? "Créer les annonces sur WooCommerce" : "Générer un CSV Voggt";
   document.getElementById("ie-btn-generate-platform").textContent = label;
   if (platform === "ebay") ieCheckEbayConnection();
@@ -3161,6 +3188,13 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
     const title = resolveBlocks(nameTemplate, context);
     const description = buildDescription(descriptionTemplate, context, liveDisclaimerOnly, LANG);
 
+    // Même logique de choix d'URL que Shopify — soit dérivée du titre,
+    // soit d'un modèle personnalisé (jamais le drapeau).
+    const urlSourceText = (ieUrlMode === "custom")
+      ? resolveBlocks(document.getElementById("ie-url-template").value, context)
+      : title;
+    const slug = window.ShopifyExportInternals.slugify(urlSourceText, i + 1);
+
     try {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/woocommerce-create-listing`, {
         method: "POST",
@@ -3171,6 +3205,7 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
         body: JSON.stringify({
           title,
           description,
+          slug,
           price: item.instant_buy_price,
           quantity: parseInt(item.quantity, 10) || 1,
           imageUrl: item.image_url,
@@ -3347,7 +3382,7 @@ async function generateExport(){
     } else if (ieCurrentPlatform === "ebay"){
       await ieExportToEbay(ieExportItems, nameTemplate, descriptionTemplate, liveDisclaimerOnly, statusEl);
     } else if (ieCurrentPlatform === "shopify"){
-      const count = exportToShopify(items, nameTemplate, descriptionTemplate, "export_shopify.csv", liveDisclaimerOnly, LANG);
+      const count = exportToShopify(items, nameTemplate, descriptionTemplate, "export_shopify.csv", liveDisclaimerOnly, LANG, ieUrlMode, document.getElementById("ie-url-template").value);
       statusEl.textContent = `${count} carte(s) exportée(s) (Shopify) — téléchargement lancé.`;
     } else if (ieCurrentPlatform === "woocommerce"){
       await ieExportToWoocommerce(ieExportItems, nameTemplate, descriptionTemplate, liveDisclaimerOnly, statusEl);
