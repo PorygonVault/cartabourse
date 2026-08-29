@@ -36,38 +36,45 @@
   }
 
   // URL handle : lettres, chiffres, tirets uniquement, pas d'espace —
-  // dérivé du titre, avec un suffixe pour éviter deux handles identiques
-  // si deux cartes ont exactement le même titre généré.
-  function slugify(text, suffix) {
-    const base = String(text)
+  // dérivé du titre (ou du modèle personnalisé). Pas de suffixe par
+  // défaut : seulement ajouté si un vrai doublon apparaît dans le même
+  // lot (voir exportToShopify, qui garde le compte des slugs déjà vus).
+  function slugify(text) {
+    return String(text)
       .toLowerCase()
       .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // retire les accents
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "");
-    return `${base}-${suffix}`;
   }
 
-  function buildShopifyRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale, rowIndex, urlMode, urlTemplate) {
+  function buildShopifyRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale, urlMode, urlTemplate, usedSlugs) {
     const resolveBlocks = window.VoggtExportInternals.resolveBlocks;
     const buildDescription = window.VoggtExportInternals.buildDescription;
 
-    const title = resolveBlocks(nameTemplate, item);
+    const title = resolveBlocks(nameTemplate, item, locale);
     const description = buildDescription(descriptionTemplate, item, liveDisclaimerOnly, locale);
     const price = item.instant_buy_price != null && item.instant_buy_price !== "" ? item.instant_buy_price : item.starting_price;
-    // SKU personnalisé si renseigné par la personne, sinon système
-    // automatique basé sur l'identifiant interne de la carte.
+    // Priorité : SKU manuel de la personne > SKU structuré (game-set-
+    // carte-état) > repli aléatoire si les identifiants manquent
+    // (carte ajoutée à la main, sans lien réel vers la base).
     const sku = (item.shopify_sku && item.shopify_sku.trim())
       ? item.shopify_sku.trim()
-      : (item.card_id ? `orbis-${item.card_id}` : `orbis-${Date.now()}-${rowIndex}`);
+      : (window.ieGenerateOrbisSku(item) || `orbis-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
 
     // URL : soit dérivée du titre (par défaut), soit d'un modèle propre
     // choisi par la personne (jamais le drapeau, exclu de ce champ
-    // ailleurs dans l'interface — inadapté à une adresse web).
-    const urlSourceText = (urlMode === "custom" && urlTemplate) ? resolveBlocks(urlTemplate, item) : title;
+    // ailleurs dans l'interface — inadapté à une adresse web). Un
+    // suffixe n'est ajouté QUE si ce même slug a déjà été utilisé plus
+    // tôt dans le même lot (voir usedSlugs, partagé entre les lignes).
+    const urlSourceText = (urlMode === "custom" && urlTemplate) ? resolveBlocks(urlTemplate, item, locale) : title;
+    const baseSlug = slugify(urlSourceText);
+    const seenCount = (usedSlugs.get(baseSlug) || 0) + 1;
+    usedSlugs.set(baseSlug, seenCount);
+    const handle = seenCount > 1 ? `${baseSlug}-${seenCount}` : baseSlug;
 
     return [
       title,
-      slugify(urlSourceText, rowIndex),
+      handle,
       description,
       "Trading Card Games",
       "", // Tags — laissé vide, rien d'universel à y mettre par défaut
@@ -90,7 +97,8 @@
   function exportToShopify(items, nameTemplate, descriptionTemplate, filename = "export_shopify.csv", liveDisclaimerOnly = false, locale = "en", urlMode = "title", urlTemplate = "") {
     items.forEach((item, i) => validateItem(item, i + 1));
 
-    const rows = items.map((item, i) => buildShopifyRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale, i + 1, urlMode, urlTemplate));
+    const usedSlugs = new Map();
+    const rows = items.map((item) => buildShopifyRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale, urlMode, urlTemplate, usedSlugs));
 
     const csvEscape = (val) => {
       const s = String(val ?? "");

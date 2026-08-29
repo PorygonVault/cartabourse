@@ -120,7 +120,7 @@
     return [
       countryConfig.category,
       countryConfig.subcategory,
-      resolveBlocks(nameTemplate, item),
+      resolveBlocks(nameTemplate, item, locale),
       buildDescription(descriptionTemplate, item, liveDisclaimerOnly, locale),
       item.quantity,
       saleType,

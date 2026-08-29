@@ -15,11 +15,16 @@
 // exposée publiquement, via window.exportToVoggt, pour être appelée
 // depuis le reste du site.
 (function() {
-  const LANGUAGE_NAMES = {
-    en: "Anglais", fr: "Français", de: "Allemand", nl: "Néerlandais",
-    it: "Italien", es: "Espagnol", pt: "Portugais", ru: "Russe", pl: "Polonais",
-    ja: "Japonais", zh: "Chinois", ko: "Coréen", id: "Indonésien", th: "Thaïlandais",
-    cs: "Tchèque", hu: "Hongrois",
+  // Noms de langue traduits selon la locale d'export choisie (pas
+  // toujours en français) — repli sur "fr" si la locale demandée n'a
+  // pas encore de traduction dédiée ci-dessous.
+  const LANGUAGE_NAMES_BY_LOCALE = {
+    fr: { en: "Anglais", fr: "Français", de: "Allemand", nl: "Néerlandais", it: "Italien", es: "Espagnol", pt: "Portugais", ru: "Russe", pl: "Polonais", ja: "Japonais", zh: "Chinois", ko: "Coréen", id: "Indonésien", th: "Thaïlandais", cs: "Tchèque", hu: "Hongrois" },
+    en: { en: "English", fr: "French", de: "German", nl: "Dutch", it: "Italian", es: "Spanish", pt: "Portuguese", ru: "Russian", pl: "Polish", ja: "Japanese", zh: "Chinese", ko: "Korean", id: "Indonesian", th: "Thai", cs: "Czech", hu: "Hungarian" },
+    de: { en: "Englisch", fr: "Französisch", de: "Deutsch", nl: "Niederländisch", it: "Italienisch", es: "Spanisch", pt: "Portugiesisch", ru: "Russisch", pl: "Polnisch", ja: "Japanisch", zh: "Chinesisch", ko: "Koreanisch", id: "Indonesisch", th: "Thailändisch", cs: "Tschechisch", hu: "Ungarisch" },
+    es: { en: "Inglés", fr: "Francés", de: "Alemán", nl: "Neerlandés", it: "Italiano", es: "Español", pt: "Portugués", ru: "Ruso", pl: "Polaco", ja: "Japonés", zh: "Chino", ko: "Coreano", id: "Indonesio", th: "Tailandés", cs: "Checo", hu: "Húngaro" },
+    it: { en: "Inglese", fr: "Francese", de: "Tedesco", nl: "Olandese", it: "Italiano", es: "Spagnolo", pt: "Portoghese", ru: "Russo", pl: "Polacco", ja: "Giapponese", zh: "Cinese", ko: "Coreano", id: "Indonesiano", th: "Tailandese", cs: "Ceco", hu: "Ungherese" },
+    nl: { en: "Engels", fr: "Frans", de: "Duits", nl: "Nederlands", it: "Italiaans", es: "Spaans", pt: "Portugees", ru: "Russisch", pl: "Pools", ja: "Japans", zh: "Chinees", ko: "Koreaans", id: "Indonesisch", th: "Thai", cs: "Tsjechisch", hu: "Hongaars" },
   };
 
   const LANGUAGE_FLAGS = {
@@ -29,6 +34,9 @@
   };
 
   // Échelle d'état standard — à ajuster ici si besoin, un seul endroit à changer
+  // État TOUJOURS en anglais, peu importe la locale choisie — "Near
+  // Mint", "Mint"... sont des termes internationalement reconnus dans
+  // le milieu de la carte à collectionner, jamais traduits.
   const CONDITION_NAMES = {
     MT: "Mint", NM: "Near Mint", EX: "Excellent", GD: "Good",
     LP: "Light Played", PL: "Played", PO: "Poor",
@@ -56,8 +64,9 @@
    *   condition (ex. "NM") OU grading_company + grade (jamais les deux),
    *   language, price
    */
-  function resolveBlocks(template, context) {
+  function resolveBlocks(template, context, locale = "fr") {
     const values = {};
+    const languageNames = LANGUAGE_NAMES_BY_LOCALE[locale] || LANGUAGE_NAMES_BY_LOCALE.fr;
 
     values.card_name = context.card_name;
     values.card_number = context.card_number;
@@ -81,7 +90,7 @@
     }
 
     if (context.language) {
-      values.language_name = LANGUAGE_NAMES[context.language] || context.language;
+      values.language_name = languageNames[context.language] || context.language;
       values.flag = LANGUAGE_FLAGS[context.language] || "";
     }
     if (context.price != null) values.price = context.price;
@@ -103,7 +112,7 @@
     // mention par défaut seule (traduite selon la locale du visiteur),
     // soit le gabarit personnalisé seul.
     if (liveDisclaimerOnly) return LIVE_CONDITION_DISCLAIMER_BY_LOCALE[locale] || LIVE_CONDITION_DISCLAIMER_BY_LOCALE.en;
-    return resolveBlocks(template, context);
+    return resolveBlocks(template, context, locale);
   }
 
   class ValidationError extends Error {}
@@ -131,7 +140,7 @@
 
   function buildVoggtRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly = false, locale = "en") {
     return {
-      name: resolveBlocks(nameTemplate, item),
+      name: resolveBlocks(nameTemplate, item, locale),
       description: buildDescription(descriptionTemplate, item, liveDisclaimerOnly, locale),
       quantity: item.quantity,
       startingPrice: item.starting_price != null ? item.starting_price : "",
