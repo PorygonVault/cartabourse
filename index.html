@@ -423,9 +423,11 @@
   .collection-tile:not(.swiping) .tile-body{transition:transform .15s ease-out;}
 
   @media (hover:hover) and (pointer:fine){
-    .tile-body-wrap .tile-body{width:calc(100% - 88px);margin:0 auto;}
+    .tile-body-wrap .tile-body{margin-left:44px;margin-right:44px;transition:margin .15s ease, transform .15s ease-out;}
     .tile-body-action{pointer-events:auto;cursor:pointer;font-size:16px;}
     .tile-body-action:hover{filter:brightness(1.15);width:68px;z-index:3;}
+    .tile-body-action-add:hover ~ .tile-body{margin-left:68px;}
+    .tile-body-action-edit:hover ~ .tile-body{margin-right:68px;}
   }
 
   .set-total-chart-wrap{margin-bottom:18px;}
