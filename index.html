@@ -1192,10 +1192,13 @@
 
       <div id="ie-woocommerce-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
         <div id="ie-woocommerce-status"></div>
-        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
-          <input type="checkbox" id="wc-show-attributes" checked>
-          Afficher les attributs (État, Langue, Extension, Numéro) sur la fiche produit
-        </label>
+        <p class="ie-hint" style="margin-top:10px;">Attributs à afficher sur la fiche produit :</p>
+        <div style="display:flex;flex-wrap:wrap;gap:14px;">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="wc-attr-condition" checked> État</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="wc-attr-language" checked> Langue</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="wc-attr-set" checked> Extension</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;"><input type="checkbox" id="wc-attr-number" checked> Numéro</label>
+        </div>
       </div>
 
       <div id="ie-workspace-wrapper" style="position:relative;">
@@ -3137,7 +3140,10 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
 
   const resolveBlocks = window.VoggtExportInternals.resolveBlocks;
   const buildDescription = window.VoggtExportInternals.buildDescription;
-  const showAttributes = document.getElementById("wc-show-attributes").checked;
+  const showCondition = document.getElementById("wc-attr-condition").checked;
+  const showLanguage = document.getElementById("wc-attr-language").checked;
+  const showSet = document.getElementById("wc-attr-set").checked;
+  const showNumber = document.getElementById("wc-attr-number").checked;
 
   let created = 0, failed = 0;
   const errorMessages = [];
@@ -3168,12 +3174,10 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
           price: item.instant_buy_price,
           quantity: parseInt(item.quantity, 10) || 1,
           imageUrl: item.image_url,
-          ...(showAttributes ? {
-            condition: CONDITION_NAMES_IE[(item.condition || "").toUpperCase()] || item.condition,
-            language: LANGUAGE_NAMES_IE[item.language] || item.language,
-            setName: item.set_name,
-            cardNumber: item.card_number,
-          } : {}),
+          condition: showCondition ? (CONDITION_NAMES_IE[(item.condition || "").toUpperCase()] || item.condition) : null,
+          language: showLanguage ? (LANGUAGE_NAMES_IE[item.language] || item.language) : null,
+          setName: showSet ? item.set_name : null,
+          cardNumber: showNumber ? item.card_number : null,
         }),
       });
       const result = await resp.json();
