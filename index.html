@@ -391,6 +391,32 @@
   }
   .tile-remove-btn:hover{border-color:var(--red);color:var(--red);}
 
+  /* Survol/appui : liste des états possédés, sur toute la zone image */
+  .collection-tile .art{position:relative;}
+  .condition-hover-overlay{
+    position:absolute;inset:0;background:rgba(8,8,12,0.88);color:#fff;
+    display:none;flex-direction:column;justify-content:center;gap:1px;
+    padding:8px 10px;font-size:10.5px;font-family:var(--font-mono);
+    z-index:4;border-radius:inherit;overflow-y:auto;
+  }
+  .condition-hover-overlay .cond-row{display:flex;justify-content:space-between;}
+  body:not(.quick-add-active) .collection-tile:hover .condition-hover-overlay{display:flex;}
+  body:not(.quick-add-active) .collection-tile.show-hover-overlay .condition-hover-overlay{display:flex;}
+
+  /* Balayage : seule la zone de texte du bas glisse, l'image reste fixe */
+  .tile-body-wrap{position:relative;overflow:hidden;touch-action:pan-y;}
+  .tile-body-action{
+    position:absolute;top:0;bottom:0;width:56px;display:flex;align-items:center;justify-content:center;
+    font-size:20px;color:#fff;z-index:1;
+  }
+  .tile-body-action-add{left:0;background:#3a9d4f;}
+  .tile-body-action-edit{right:0;background:#d98324;}
+  .tile-body{position:relative;z-index:2;background:var(--panel);}
+  .collection-tile.swiping .tile-body{transition:none;}
+  .collection-tile:not(.swiping) .tile-body{transition:transform .15s ease-out;}
+
+  .set-total-chart-wrap{margin-bottom:18px;}
+
   .quick-actions{position:absolute;top:8px;right:8px;z-index:3;display:flex;gap:5px;}
   .quick-fav-btn, .quick-add-btn, .quick-remove-btn{
     width:24px;height:24px;border-radius:50%;background:rgba(13,14,21,0.75);
@@ -4266,6 +4292,52 @@ async function renderSetPage(setId){
   }
 }
 
+/** Même principe que renderSetTotalChart, mais pour la valeur totale de
+ * toute la collection (déjà pondérée par les quantités possédées, pas
+ * juste la somme brute des prix carte par carte), avec un taux de
+ * progression affiché à côté. */
+function renderCollectionValueChart(totalByDate, currency){
+  const container = document.getElementById("collection-value-chart");
+  const dates = Object.keys(totalByDate).sort();
+  if (dates.length < 2){
+    container.innerHTML = `<div class="empty-state">Pas encore assez de jours de données pour un graphique.</div>`;
+    return;
+  }
+
+  const W = 280, H = 90, pad = 4;
+  const values = dates.map(d => totalByDate[d]);
+  const minV = Math.min(...values), maxV = Math.max(...values);
+  const span = (maxV - minV) || 1;
+  const coords = values.map((v, i) => {
+    const x = pad + (i / (values.length - 1)) * (W - pad * 2);
+    const y = pad + (H - pad * 2) - ((v - minV) / span) * (H - pad * 2);
+    return [x, y];
+  });
+  const linePath = coords.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+
+  // Taux de progression : même fenêtre de 14 jours que le reste du
+  // site (computeCardPriceTrends), premier point vs dernier point.
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - 14);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const windowDates = dates.filter(d => d >= cutoffStr);
+  let pct = null;
+  if (windowDates.length >= 2){
+    const first = totalByDate[windowDates[0]];
+    const last = totalByDate[windowDates[windowDates.length - 1]];
+    if (first) pct = ((last - first) / first) * 100;
+  }
+
+  container.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+      <path d="${linePath}" fill="none" stroke="#e3c15a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+    </svg>
+    <div class="price-chart-source">
+      ${displayPrice(values[values.length - 1], currency)} au total aujourd'hui
+      ${pct != null ? `<span style="margin-left:8px;">${priceTrendIcon(pct)} ${pct > 0 ? "+" : ""}${pct.toFixed(1)}%</span>` : ""}
+    </div>`;
+}
+
 function renderSetTotalChart(history){
   const container = document.getElementById("set-total-chart");
   if (!history.length){
@@ -4396,40 +4468,64 @@ async function renderCollectionContent(){
     // Onglet "Ma collection" : tous les sets en accordéon (léger, chargé
     // d'un coup), les cartes de chaque set récupérées seulement au clic.
     const collectionRows = await supabaseAuthedFetch(
-      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,cards(set_id)`
+      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,grading_company_id,cards(set_id)`
     );
 
     const ownedBySet = {};
     const qtyByCard = {};
+    const conditionCountsByCard = {}; // pour la liste au survol/appui
+    const gradingCompaniesForCollection = await fetchGradingCompanies();
+    const psaCompany = gradingCompaniesForCollection.find(c => c.name.toLowerCase().includes("psa"));
+    const psaId = psaCompany ? psaCompany.id : null;
+
     for (const r of collectionRows){
       if (!r.cards) continue;
       const setId = r.cards.set_id;
+      const qty = r.quantity || 1;
       if (!ownedBySet[setId]) ownedBySet[setId] = { cardIds: new Set(), qtyByCard: {}, badgeByCard: {}, rowIdsByCard: {} };
       const bucket = ownedBySet[setId];
       bucket.cardIds.add(r.card_id);
-      bucket.qtyByCard[r.card_id] = (bucket.qtyByCard[r.card_id] || 0) + (r.quantity || 1);
+      bucket.qtyByCard[r.card_id] = (bucket.qtyByCard[r.card_id] || 0) + qty;
       if (!bucket.badgeByCard[r.card_id]) bucket.badgeByCard[r.card_id] = r.is_graded ? `${r.grade ?? ""} gradée` : (r.condition || "");
       (bucket.rowIdsByCard[r.card_id] = bucket.rowIdsByCard[r.card_id] || []).push(r.id);
-      qtyByCard[r.card_id] = (qtyByCard[r.card_id] || 0) + (r.quantity || 1);
+      qtyByCard[r.card_id] = (qtyByCard[r.card_id] || 0) + qty;
+
+      if (!conditionCountsByCard[r.card_id]){
+        conditionCountsByCard[r.card_id] = { MT: 0, NM: 0, EX: 0, GD: 0, LP: 0, PL: 0, PO: 0, gradedNon10: 0, graded10NonPsa: 0, gradedPsa10: 0 };
+      }
+      const counts = conditionCountsByCard[r.card_id];
+      if (r.is_graded){
+        const is10 = String(r.grade || "").trim() === "10";
+        const isPsa = psaId != null && r.grading_company_id === psaId;
+        if (is10 && isPsa) counts.gradedPsa10 += qty;
+        else if (is10) counts.graded10NonPsa += qty;
+        else counts.gradedNon10 += qty;
+      } else {
+        const c = (r.condition || "NM").toUpperCase();
+        if (c in counts) counts[c] += qty;
+      }
     }
     const uniqueCardIds = Object.keys(qtyByCard).map(Number);
 
-    // Statistiques globales
+    // Statistiques globales + historique complet (pour le graphique de
+    // valeur, pas seulement le dernier prix connu)
     const totalCardCount = collectionRows.reduce((sum, r) => sum + (r.quantity || 1), 0);
     let totalValue = 0, valueCurrency = "EUR";
+    const totalByDate = {};
     if (uniqueCardIds.length){
       try {
         const priceRows = await supabaseSelect(
-          `price_history?card_id=in.(${uniqueCardIds.join(",")})&select=card_id,period_date,price,currency&order=period_date.desc`
+          `price_history?card_id=in.(${uniqueCardIds.join(",")})&select=card_id,period_date,price,currency&order=period_date.asc`
         );
         const latestByCard = {};
         for (const p of priceRows){
-          if (!(p.card_id in latestByCard) && p.price != null) latestByCard[p.card_id] = p;
+          if (p.price == null) continue;
+          latestByCard[p.card_id] = p; // ASC : la dernière écriture est la plus récente
+          valueCurrency = p.currency || valueCurrency;
+          totalByDate[p.period_date] = (totalByDate[p.period_date] || 0) + Number(p.price) * (qtyByCard[p.card_id] || 0);
         }
         for (const cardId in latestByCard){
-          const p = latestByCard[cardId];
-          totalValue += Number(p.price) * (qtyByCard[cardId] || 0);
-          valueCurrency = p.currency || "EUR";
+          totalValue += Number(latestByCard[cardId].price) * (qtyByCard[cardId] || 0);
         }
       } catch (e) {
         console.warn("Valeur de collection non calculée :", e.message);
@@ -4442,6 +4538,7 @@ async function renderCollectionContent(){
         <div class="collection-stat"><div class="label">Cartes uniques</div><div class="value">${uniqueCardIds.length}</div></div>
         <div class="collection-stat"><div class="label">Valeur estimée</div><div class="value">${displayPrice(totalValue, valueCurrency)}</div></div>
       </div>
+      <div class="set-total-chart-wrap" id="collection-value-chart"></div>
       <div class="collection-catalog-toolbar">
         <div class="search-wrap collection-search-wrap">
           <span class="search-icon">⌕</span>
@@ -4486,8 +4583,9 @@ async function renderCollectionContent(){
     // cartes — chaque set charge les siennes à la demande, au premier clic.
     const allSets = await fetchAllPaginated(`sets?select=id,name_en,total_cards,release_region,set_names(locale,name)&order=id.asc`);
 
-    collectionCatalogState = { allSets, ownedBySet, loadedCardsBySet: {} };
+    collectionCatalogState = { allSets, ownedBySet, loadedCardsBySet: {}, conditionCountsByCard };
     renderCollectionCatalog();
+    renderCollectionValueChart(totalByDate, valueCurrency);
   } catch (e) {
     content.innerHTML = `<div class="empty-state">Erreur de chargement : ${e.message}</div>`;
   }
@@ -4592,6 +4690,7 @@ async function toggleSetAccordion(setId, accordionEl){
     // sans devoir re-télécharger ses cartes depuis Supabase à chaque fois.
     collectionCatalogState.loadedCardsBySet[setId] = cards;
     body.innerHTML = buildSetCardsHtml(setId);
+    ieAttachSwipeHandlers(body);
     accordionEl.dataset.loaded = "1";
   } catch (e) {
     body.innerHTML = `<div class="empty-state">Erreur de chargement : ${e.message}</div>`;
@@ -4603,22 +4702,37 @@ async function toggleSetAccordion(setId, accordionEl){
 function buildSetCardsHtml(setId){
   const cards = collectionCatalogState.loadedCardsBySet[setId] || [];
   const owned = collectionCatalogState.ownedBySet[setId] || { cardIds: new Set(), qtyByCard: {}, badgeByCard: {}, rowIdsByCard: {} };
+  const conditionCounts = collectionCatalogState.conditionCountsByCard || {};
+
+  const CONDITION_ROW_LABELS = [
+    ["MT", "Mint"], ["NM", "Near Mint"], ["EX", "Excellent"], ["GD", "Good"],
+    ["LP", "Light Played"], ["PL", "Played"], ["PO", "Poor"],
+  ];
 
   return cards.map(cardRow => {
     const c = shapeCard(cardRow);
     const isOwned = owned.cardIds.has(c.id);
     const qty = owned.qtyByCard[c.id] || 0;
     const badge = owned.badgeByCard[c.id];
-    const lastRowId = isOwned ? owned.rowIdsByCard[c.id][owned.rowIdsByCard[c.id].length - 1] : null;
+    const counts = conditionCounts[c.id] || {};
+
+    const overlayRows = CONDITION_ROW_LABELS
+      .map(([code, label]) => `<div class="cond-row"><span>${label}</span><span>${counts[code] || 0}</span></div>`)
+      .join("") + `
+        <div class="cond-row"><span>Gradée (hors 10)</span><span>${counts.gradedNon10 || 0}</span></div>
+        <div class="cond-row"><span>Gradée 10 (hors PSA)</span><span>${counts.graded10NonPsa || 0}</span></div>
+        <div class="cond-row"><span>Gradée PSA 10</span><span>${counts.gradedPsa10 || 0}</span></div>`;
+
     return `
-      <div class="card-tile collection-tile ${isOwned ? "owned" : "not-owned"}" ${!isOwned ? `onclick="handleCollectionTileClick(${c.id}, ${setId})"` : ""}>
-        ${isOwned ? `<button class="tile-remove-btn" title="Retirer un exemplaire" onclick="event.stopPropagation();collectionRemoveOne(${c.id}, ${setId}, ${lastRowId})">×</button>` : ""}
-        ${isOwned ? `<button class="tile-edit-btn" title="Gérer mes exemplaires" onclick="event.stopPropagation();openManageOwnedModal(${c.id}, ${setId})" style="position:absolute;top:6px;left:6px;background:rgba(0,0,0,0.6);color:#fff;border:none;border-radius:50%;width:22px;height:22px;cursor:pointer;z-index:2;">✎</button>` : ""}
-        <div ${isOwned ? `onclick="navigateCard(${c.id})"` : ""}>
-          <div class="art">
-            ${qty > 1 ? `<span class="set-tag">×${qty}</span>` : ""}
-            ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
-          </div>
+      <div class="card-tile collection-tile ${isOwned ? "owned" : "not-owned"}" data-card-id="${c.id}" data-set-id="${setId}">
+        <div class="art">
+          ${qty > 1 ? `<span class="set-tag">×${qty}</span>` : ""}
+          ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
+          <div class="condition-hover-overlay">${overlayRows}</div>
+        </div>
+        <div class="tile-body-wrap">
+          <div class="tile-body-action tile-body-action-add">+</div>
+          <div class="tile-body-action tile-body-action-edit">✎</div>
           <div class="tile-body">
             <h3>${c.name}</h3>
             ${isOwned && badge ? `<div class="tcg-label">${badge}</div>` : ""}
@@ -4645,7 +4759,9 @@ function refreshSetView(setId){
   if (barEl && pct != null) barEl.style.width = `${pct}%`;
 
   if (accordionEl.dataset.loaded){
-    accordionEl.querySelector(".collection-set-body .grid").innerHTML = buildSetCardsHtml(setId);
+    const gridEl = accordionEl.querySelector(".collection-set-body .grid");
+    gridEl.innerHTML = buildSetCardsHtml(setId);
+    ieAttachSwipeHandlers(gridEl);
   }
 }
 
@@ -4755,6 +4871,69 @@ const COLLECTION_CONDITIONS = ["MT", "NM", "EX", "GD", "LP", "PL", "PO"];
    ------------------------------------------------------------ */
 const IE_CONDITION_CODES = { MT: 1, NM: 2, EX: 3, GD: 4, LP: 5, PL: 6, PO: 7 };
 const IE_GAME_ID = 1; // toujours 1 pour l'instant — site mono-jeu (Pokémon)
+
+/* ------------------------------------------------------------
+   Geste de balayage sur les tuiles de la page Collection — remplace
+   les anciens boutons ✎/×. Fonctionne au clic/tap ET à la souris/au
+   doigt (Pointer Events, compatible desktop et mobile).
+   - Balayage vers la gauche assez fort → "Gérer mes exemplaires"
+   - Balayage vers la droite assez fort → ajouter une carte
+   - Simple tap/clic (pas de vrai balayage) :
+       - mode ajout rapide activé → ajoute directement
+       - sinon → bascule l'aperçu des états au survol (utile sur mobile,
+         où il n'y a pas de vrai survol de souris)
+   ------------------------------------------------------------ */
+function ieAttachSwipeHandlers(container){
+  container.querySelectorAll(".card-tile.collection-tile").forEach(tile => {
+    const cardId = parseInt(tile.dataset.cardId, 10);
+    const setId = parseInt(tile.dataset.setId, 10);
+    const bodyEl = tile.querySelector(".tile-body");
+    if (!bodyEl) return;
+
+    const THRESHOLD_START = 8;
+    const THRESHOLD_COMMIT = 70;
+    let startX = 0, startY = 0, currentX = 0, dragging = false, isSwipe = false;
+
+    tile.addEventListener("pointerdown", (e) => {
+      startX = e.clientX; startY = e.clientY; currentX = 0; dragging = true; isSwipe = false;
+    });
+
+    tile.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      if (!isSwipe && Math.abs(dx) > THRESHOLD_START && Math.abs(dx) > Math.abs(dy)){
+        isSwipe = true;
+        tile.classList.add("swiping");
+      }
+      if (isSwipe){
+        currentX = Math.max(-100, Math.min(100, dx));
+        bodyEl.style.transform = `translateX(${currentX}px)`;
+      }
+    });
+
+    const endDrag = () => {
+      if (!dragging) return;
+      dragging = false;
+      if (isSwipe){
+        tile.classList.remove("swiping");
+        bodyEl.style.transform = "";
+        if (currentX <= -THRESHOLD_COMMIT){
+          openManageOwnedModal(cardId, setId);
+        } else if (currentX >= THRESHOLD_COMMIT){
+          openCollectionAddModal(cardId, setId);
+        }
+      } else if (quickAddEnabled){
+        quickAddCard(cardId, setId);
+      } else {
+        tile.classList.toggle("show-hover-overlay");
+      }
+      isSwipe = false;
+    };
+    tile.addEventListener("pointerup", endDrag);
+    tile.addEventListener("pointercancel", () => { dragging = false; isSwipe = false; tile.classList.remove("swiping"); bodyEl.style.transform = ""; });
+  });
+}
 
 function ieGenerateOrbisSku(item){
   if (!item.card_id || !item.set_id) return null;
@@ -4871,6 +5050,7 @@ let quickAddEnabled = false;
 
 async function toggleQuickAddMode(enabled){
   quickAddEnabled = enabled;
+  document.body.classList.toggle("quick-add-active", enabled);
   document.getElementById("quick-add-form").style.display = enabled ? "flex" : "none";
   if (enabled){
     try {
@@ -4887,17 +5067,6 @@ function toggleQuickAddGraded(isGraded){
   document.getElementById("quick-add-condition").style.display = isGraded ? "none" : "inline-block";
   document.getElementById("quick-add-grading-company").style.display = isGraded ? "inline-block" : "none";
   document.getElementById("quick-add-grade").style.display = isGraded ? "inline-block" : "none";
-}
-
-/** Point d'entrée unique au clic sur une carte non possédée — bascule
- * entre la fenêtre de choix classique et l'ajout rapide silencieux
- * selon que le mode soit activé ou non. */
-function handleCollectionTileClick(cardId, setId){
-  if (quickAddEnabled){
-    quickAddCard(cardId, setId);
-  } else {
-    openCollectionAddModal(cardId, setId);
-  }
 }
 
 function quickAddCard(cardId, setId){
