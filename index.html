@@ -400,6 +400,9 @@
     z-index:4;border-radius:inherit;overflow-y:auto;
   }
   .condition-hover-overlay .cond-row{display:flex;justify-content:space-between;}
+  .condition-hover-overlay .cond-grid-normal{display:grid;grid-template-columns:1fr 1fr;gap:0 8px;}
+  .condition-hover-overlay .cond-separator{height:1px;background:rgba(255,255,255,0.2);margin:6px 0;}
+  .condition-hover-overlay .cond-grid-graded{display:flex;flex-direction:column;gap:1px;}
   body:not(.quick-add-active) .collection-tile:hover .condition-hover-overlay{display:flex;}
   body:not(.quick-add-active) .collection-tile.show-hover-overlay .condition-hover-overlay{display:flex;}
 
@@ -416,6 +419,10 @@
   .collection-tile:not(.swiping) .tile-body{transition:transform .15s ease-out;}
 
   .set-total-chart-wrap{margin-bottom:18px;}
+  .collection-stats-with-chart{display:flex;align-items:stretch;gap:20px;flex-wrap:wrap;margin-bottom:20px;}
+  .collection-stats-with-chart .collection-stats-row{margin-bottom:0;flex:1;min-width:220px;}
+  .collection-stats-with-chart .set-total-chart-wrap{flex:1;min-width:220px;max-width:320px;margin-bottom:0;position:relative;}
+  .collection-stats-with-chart .set-total-chart-wrap svg{width:100%;height:100px;overflow:visible;}
 
   .quick-actions{position:absolute;top:8px;right:8px;z-index:3;display:flex;gap:5px;}
   .quick-fav-btn, .quick-add-btn, .quick-remove-btn{
@@ -927,7 +934,10 @@
     <button class="modal-close" onclick="closeManageOwnedModal()">×</button>
     <h3>Gérer mes exemplaires</h3>
     <div id="manage-owned-list" class="ie-right-scroll" style="max-height:400px;"></div>
-    <button class="auth-btn" style="margin-top:14px;width:100%;" onclick="addAnotherExemplar()">+ Ajouter un autre exemplaire</button>
+    <div style="display:flex;gap:10px;margin-top:14px;">
+      <button class="auth-btn" style="flex:1;" onclick="addAnotherExemplar()">+ Ajouter un autre exemplaire</button>
+      <button class="auth-btn" style="flex:1;" onclick="saveAllManageRows()">Enregistrer</button>
+    </div>
   </div>
 </div>
 
@@ -4292,10 +4302,9 @@ async function renderSetPage(setId){
   }
 }
 
-/** Même principe que renderSetTotalChart, mais pour la valeur totale de
- * toute la collection (déjà pondérée par les quantités possédées, pas
- * juste la somme brute des prix carte par carte), avec un taux de
- * progression affiché à côté. */
+/** Même principe que drawPriceChart (fiche carte) — point/ligne/infobulle
+ * au survol — mais en version compacte, pour la valeur totale de la
+ * collection (déjà pondérée par les quantités possédées). */
 function renderCollectionValueChart(totalByDate, currency){
   const container = document.getElementById("collection-value-chart");
   const dates = Object.keys(totalByDate).sort();
@@ -4304,19 +4313,22 @@ function renderCollectionValueChart(totalByDate, currency){
     return;
   }
 
-  const W = 280, H = 90, pad = 4;
   const values = dates.map(d => totalByDate[d]);
+  const W = 220, H = 100, padL = 4, padR = 4, padT = 8, padB = 8;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
   const minV = Math.min(...values), maxV = Math.max(...values);
-  const span = (maxV - minV) || 1;
-  const coords = values.map((v, i) => {
-    const x = pad + (i / (values.length - 1)) * (W - pad * 2);
-    const y = pad + (H - pad * 2) - ((v - minV) / span) * (H - pad * 2);
-    return [x, y];
-  });
-  const linePath = coords.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const span = (maxV - minV) || Math.max(minV * 0.1, 1);
+  const niceMin = Math.max(0, minV - span * 0.1);
+  const niceMax = maxV + span * 0.1;
+  const niceSpan = (niceMax - niceMin) || 1;
 
-  // Taux de progression : même fenêtre de 14 jours que le reste du
-  // site (computeCardPriceTrends), premier point vs dernier point.
+  const xFor = (i) => padL + (i / (values.length - 1)) * plotW;
+  const yFor = (v) => padT + plotH - ((v - niceMin) / niceSpan) * plotH;
+  const coords = values.map((v, i) => [xFor(i), yFor(v)]);
+  const linePath = coords.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  const areaPath = linePath + ` L${coords[coords.length-1][0].toFixed(1)} ${H-padB} L${coords[0][0].toFixed(1)} ${H-padB} Z`;
+
+  // Taux de progression : même fenêtre de 14 jours que le reste du site.
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 14);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
@@ -4329,13 +4341,63 @@ function renderCollectionValueChart(totalByDate, currency){
   }
 
   container.innerHTML = `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" id="cc-svg">
+      <defs>
+        <linearGradient id="cc-gradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#c9a227" stop-opacity="0.3"></stop>
+          <stop offset="100%" stop-color="#c9a227" stop-opacity="0"></stop>
+        </linearGradient>
+      </defs>
+      <path d="${areaPath}" fill="url(#cc-gradient)"></path>
       <path d="${linePath}" fill="none" stroke="#e3c15a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+      <line class="pc-hover-line" id="cc-hover-line" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}"></line>
+      <circle class="pc-hover-dot" id="cc-hover-dot" r="3"></circle>
+      <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" id="cc-hit-area"></rect>
     </svg>
+    <div class="pc-tooltip" id="cc-tooltip"></div>
     <div class="price-chart-source">
-      ${displayPrice(values[values.length - 1], currency)} au total aujourd'hui
-      ${pct != null ? `<span style="margin-left:8px;">${priceTrendIcon(pct)} ${pct > 0 ? "+" : ""}${pct.toFixed(1)}%</span>` : ""}
+      ${pct != null ? `${priceTrendIcon(pct)} ${pct > 0 ? "+" : ""}${pct.toFixed(1)}% sur 14 jours` : ""}
     </div>`;
+
+  const hitArea = document.getElementById("cc-hit-area");
+  const hoverDot = document.getElementById("cc-hover-dot");
+  const hoverLine = document.getElementById("cc-hover-line");
+  const tooltip = document.getElementById("cc-tooltip");
+  const svgEl = document.getElementById("cc-svg");
+  const wrap = container;
+
+  function showPoint(i){
+    i = Math.max(0, Math.min(coords.length - 1, i));
+    const [x, y] = coords[i];
+    hoverDot.setAttribute("cx", x); hoverDot.setAttribute("cy", y); hoverDot.style.opacity = 1;
+    hoverLine.setAttribute("x1", x); hoverLine.setAttribute("x2", x); hoverLine.style.opacity = 1;
+    const rect = wrap.getBoundingClientRect();
+    tooltip.style.left = `${(x / W) * rect.width}px`;
+    tooltip.style.top = `${(y / H) * rect.height}px`;
+    tooltip.style.opacity = 1;
+    const d = new Date(dates[i]);
+    const dateLabel = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+    tooltip.textContent = `${dateLabel} · ${displayPrice(values[i], currency)}`;
+  }
+  function hidePoint(){
+    hoverDot.style.opacity = 0; hoverLine.style.opacity = 0; tooltip.style.opacity = 0;
+  }
+  hitArea.addEventListener("mousemove", (e) => {
+    const rect = svgEl.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * W;
+    const idx = Math.round(((relX - padL) / plotW) * (coords.length - 1));
+    showPoint(idx);
+  });
+  hitArea.addEventListener("mouseleave", hidePoint);
+  hitArea.addEventListener("touchstart", (e) => {
+    const touch = e.touches[0];
+    const rect = svgEl.getBoundingClientRect();
+    const relX = ((touch.clientX - rect.left) / rect.width) * W;
+    const idx = Math.round(((relX - padL) / plotW) * (coords.length - 1));
+    showPoint(idx);
+  }, { passive: true });
+
+  showPoint(coords.length - 1);
 }
 
 function renderSetTotalChart(history){
@@ -4533,12 +4595,14 @@ async function renderCollectionContent(){
     }
 
     const statsHtml = `
-      <div class="collection-stats-row">
-        <div class="collection-stat"><div class="label">Cartes</div><div class="value">${totalCardCount}</div></div>
-        <div class="collection-stat"><div class="label">Cartes uniques</div><div class="value">${uniqueCardIds.length}</div></div>
-        <div class="collection-stat"><div class="label">Valeur estimée</div><div class="value">${displayPrice(totalValue, valueCurrency)}</div></div>
+      <div class="collection-stats-with-chart">
+        <div class="collection-stats-row">
+          <div class="collection-stat"><div class="label">Cartes</div><div class="value">${totalCardCount}</div></div>
+          <div class="collection-stat"><div class="label">Cartes uniques</div><div class="value">${uniqueCardIds.length}</div></div>
+          <div class="collection-stat"><div class="label">Valeur estimée</div><div class="value">${displayPrice(totalValue, valueCurrency)}</div></div>
+        </div>
+        <div class="set-total-chart-wrap" id="collection-value-chart"></div>
       </div>
-      <div class="set-total-chart-wrap" id="collection-value-chart"></div>
       <div class="collection-catalog-toolbar">
         <div class="search-wrap collection-search-wrap">
           <span class="search-icon">⌕</span>
@@ -4554,9 +4618,16 @@ async function renderCollectionContent(){
           <button id="sets-grid-btn" class="view-toggle-btn" onclick="setCollectionSetsViewMode('grid')">Grille</button>
         </div>
       </div>
-      <div class="region-filter" id="collection-sets-tab" style="margin-bottom:14px;">
+      <div class="region-filter" id="collection-sets-tab" style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
         <button class="tab-btn" data-tab="en_cours" onclick="setCollectionSetsTab('en_cours', this)">Sets en cours</button>
         <button class="tab-btn active" data-tab="tous" onclick="setCollectionSetsTab('tous', this)">Tous les sets</button>
+        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-dim);margin-left:auto;">
+          Trier les sets en cours :
+          <select onchange="setCollectionSortMode(this.value)">
+            <option value="alpha">Alphabétique</option>
+            <option value="completion">Taux de complétion</option>
+          </select>
+        </label>
       </div>
       <div class="quick-add-bar">
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
@@ -4610,11 +4681,17 @@ let collectionCatalogState = null;
 
 let collectionSetsViewMode = "list";
 let collectionSetsTab = "tous"; // "en_cours" | "tous" — "tous" par défaut
+let collectionSortMode = "alpha"; // "alpha" | "completion" — pour les sets en cours
 
 function setCollectionSetsTab(tab, btn){
   collectionSetsTab = tab;
   document.querySelectorAll("#collection-sets-tab .tab-btn").forEach(b => b.classList.remove("active"));
   btn.classList.add("active");
+  renderCollectionCatalog();
+}
+
+function setCollectionSortMode(mode){
+  collectionSortMode = mode;
   renderCollectionCatalog();
 }
 
@@ -4650,6 +4727,15 @@ function renderCollectionCatalog(){
 
   const inProgress = allSets.filter(s => ownedBySet[s.id] && ownedBySet[s.id].cardIds.size > 0);
   const notStarted = allSets.filter(s => !(ownedBySet[s.id] && ownedBySet[s.id].cardIds.size > 0));
+
+  if (collectionSortMode === "completion"){
+    inProgress.sort((a, b) => {
+      const pctA = a.total_cards ? (ownedBySet[a.id].cardIds.size / a.total_cards) : 0;
+      const pctB = b.total_cards ? (ownedBySet[b.id].cardIds.size / b.total_cards) : 0;
+      return pctB - pctA; // les plus proches de la complétion en premier
+    });
+  }
+  // "alpha" : ordre déjà fourni par allSets (alphabétique), rien à faire.
 
   if (collectionSetsTab === "en_cours"){
     container.innerHTML = inProgress.length
@@ -4716,12 +4802,15 @@ function buildSetCardsHtml(setId){
     const badge = owned.badgeByCard[c.id];
     const counts = conditionCounts[c.id] || {};
 
-    const overlayRows = CONDITION_ROW_LABELS
-      .map(([code, label]) => `<div class="cond-row"><span>${label}</span><span>${counts[code] || 0}</span></div>`)
-      .join("") + `
+    const overlayRows = `<div class="cond-grid-normal">` +
+      CONDITION_ROW_LABELS.map(([code, label]) => `<div class="cond-row"><span>${label}</span><span>${counts[code] || 0}</span></div>`).join("") +
+      `</div>
+      <div class="cond-separator"></div>
+      <div class="cond-grid-graded">
         <div class="cond-row"><span>Gradée (hors 10)</span><span>${counts.gradedNon10 || 0}</span></div>
         <div class="cond-row"><span>Gradée 10 (hors PSA)</span><span>${counts.graded10NonPsa || 0}</span></div>
-        <div class="cond-row"><span>Gradée PSA 10</span><span>${counts.gradedPsa10 || 0}</span></div>`;
+        <div class="cond-row"><span>Gradée PSA 10</span><span>${counts.gradedPsa10 || 0}</span></div>
+      </div>`;
 
     return `
       <div class="card-tile collection-tile ${isOwned ? "owned" : "not-owned"}" data-card-id="${c.id}" data-set-id="${setId}">
@@ -4926,7 +5015,9 @@ function ieAttachSwipeHandlers(container){
       } else if (quickAddEnabled){
         quickAddCard(cardId, setId);
       } else {
-        tile.classList.toggle("show-hover-overlay");
+        const wasOpen = tile.classList.contains("show-hover-overlay");
+        document.querySelectorAll(".collection-tile.show-hover-overlay").forEach(t => t.classList.remove("show-hover-overlay"));
+        if (!wasOpen) tile.classList.add("show-hover-overlay");
       }
       isSwipe = false;
     };
@@ -5126,7 +5217,6 @@ function renderManageOwnedRow(r, companies){
         ${companies.map(c => `<option value="${c.id}" ${r.grading_company_id === c.id ? "selected" : ""}>${c.name}</option>`).join("")}
       </select>
       <input type="text" class="manage-owned-grade" style="display:${r.is_graded ? "inline-block" : "none"};width:80px;" value="${r.grade || ""}" placeholder="Note" onchange="updateManageRow(${r.id}, 'grade', this.value)">
-      <button class="auth-btn" style="padding:6px 12px;font-size:13px;" onclick="saveManageRow(${r.id})">Enregistrer</button>
       <button class="tile-remove-btn" style="position:static;" onclick="deleteManageRow(${r.id})">×</button>
     </div>`;
 }
@@ -5144,21 +5234,24 @@ function updateManageRow(rowId, field, value){
   manageOwnedPendingEdits[rowId][field] = field === "grading_company_id" ? (parseInt(value, 10) || null) : value;
 }
 
-async function saveManageRow(rowId){
-  const edits = manageOwnedPendingEdits[rowId] || {};
-  if (edits.is_graded === true){
-    edits.condition = null;
-  } else if (edits.is_graded === false){
-    edits.grading_company_id = null;
-    edits.grade = null;
-  }
-  if (Object.keys(edits).length === 0){
+async function saveAllManageRows(){
+  const rowIds = Object.keys(manageOwnedPendingEdits);
+  if (rowIds.length === 0){
     closeManageOwnedModal();
     return;
   }
   try {
-    await supabaseAuthedFetch(`collection_items?id=eq.${rowId}`, { method: "PATCH", body: JSON.stringify(edits) });
-    delete manageOwnedPendingEdits[rowId];
+    for (const rowId of rowIds){
+      const edits = manageOwnedPendingEdits[rowId];
+      if (edits.is_graded === true){
+        edits.condition = null;
+      } else if (edits.is_graded === false){
+        edits.grading_company_id = null;
+        edits.grade = null;
+      }
+      await supabaseAuthedFetch(`collection_items?id=eq.${rowId}`, { method: "PATCH", body: JSON.stringify(edits) });
+    }
+    manageOwnedPendingEdits = {};
     await refreshAfterManageEdit();
   } catch (e) {
     alert(`Erreur lors de l'enregistrement : ${e.message}`);
