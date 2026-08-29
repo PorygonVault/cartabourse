@@ -846,6 +846,15 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="ie-trashed-decision-modal-overlay">
+  <div class="modal" style="max-width:440px;">
+    <h3>Carte déjà en corbeille</h3>
+    <p id="ie-trashed-decision-text" style="margin-bottom:16px;"></p>
+    <button class="auth-btn" style="width:100%;margin-bottom:8px;" onclick="ieResolveTrashedDecision('add')">Restaurer et ajouter au stock existant</button>
+    <button class="auth-btn" style="width:100%;" onclick="ieResolveTrashedDecision('replace')">Restaurer et remplacer par la nouvelle quantité</button>
+  </div>
+</div>
+
 <div class="modal-overlay" id="ie-ebay-results-modal-overlay" onclick="if(event.target===this)document.getElementById('ie-ebay-results-modal-overlay').classList.remove('active')">
   <div class="modal" style="max-width:520px;">
     <button class="modal-close" onclick="document.getElementById('ie-ebay-results-modal-overlay').classList.remove('active')">×</button>
@@ -3180,6 +3189,27 @@ function ieToggleConditionMode(localId, mode){
    d'enchère/format à gérer, pas de cartes gradées à mettre de côté
    (WooCommerce n'a aucune contrainte de catégorie particulière).
    ------------------------------------------------------------ */
+/** Affiche la modale de décision "corbeille" et attend le choix de la
+ * personne — met en pause le traitement de l'export le temps de la
+ * réponse, une carte à la fois (jamais plusieurs demandes en même
+ * temps, pour ne pas semer la confusion). */
+let ieTrashedDecisionResolver = null;
+function ieAskTrashedStrategy(productName, existingStock){
+  return new Promise((resolve) => {
+    document.getElementById("ie-trashed-decision-text").textContent =
+      `"${productName}" est déjà présente sur votre boutique, mais en corbeille (stock actuel : ${existingStock}).`;
+    document.getElementById("ie-trashed-decision-modal-overlay").classList.add("active");
+    ieTrashedDecisionResolver = resolve;
+  });
+}
+function ieResolveTrashedDecision(strategy){
+  document.getElementById("ie-trashed-decision-modal-overlay").classList.remove("active");
+  if (ieTrashedDecisionResolver){
+    ieTrashedDecisionResolver(strategy);
+    ieTrashedDecisionResolver = null;
+  }
+}
+
 async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate, liveDisclaimerOnly, statusEl){
   const { data: sessionData } = await supabaseClient.auth.getSession();
   if (!sessionData.session){
@@ -3199,7 +3229,7 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
   const showNumber = document.getElementById("wc-attr-number").checked;
   const usedSlugs = new Map(); // même principe que Shopify : suffixe uniquement si vrai doublon dans ce lot
 
-  let created = 0, updated = 0, failed = 0;
+  let created = 0, updated = 0, restored = 0, failed = 0;
   const errorMessages = [];
   const createdLinks = [];
 
@@ -3225,35 +3255,56 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
 
     const sku = ieGenerateOrbisSku(item) || `orbis-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+    const buildPayload = (trashedStrategy) => ({
+      title,
+      description,
+      slug,
+      sku,
+      locale: LANG,
+      price: item.instant_buy_price,
+      quantity: parseInt(item.quantity, 10) || 1,
+      imageUrl: item.image_url,
+      condition: showCondition
+        ? (item.conditionMode === "grading"
+            ? `${item.grading_company || "Gradée"} ${item.grade || ""}`.trim()
+            : (CONDITION_NAMES_IE[(item.condition || "").toUpperCase()] || item.condition))
+        : null,
+      language: showLanguage ? (LANGUAGE_NAMES_IE[item.language] || item.language) : null,
+      setName: showSet ? item.set_name : null,
+      cardNumber: showNumber ? item.card_number : null,
+      ...(trashedStrategy ? { trashedStrategy } : {}),
+    });
+
     try {
-      const resp = await fetch(`${SUPABASE_URL}/functions/v1/woocommerce-create-listing`, {
+      let resp = await fetch(`${SUPABASE_URL}/functions/v1/woocommerce-create-listing`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${sessionData.session.access_token}`,
         },
-        body: JSON.stringify({
-          title,
-          description,
-          slug,
-          sku,
-          locale: LANG,
-          price: item.instant_buy_price,
-          quantity: parseInt(item.quantity, 10) || 1,
-          imageUrl: item.image_url,
-          condition: showCondition
-            ? (item.conditionMode === "grading"
-                ? `${item.grading_company || "Gradée"} ${item.grade || ""}`.trim()
-                : (CONDITION_NAMES_IE[(item.condition || "").toUpperCase()] || item.condition))
-            : null,
-          language: showLanguage ? (LANGUAGE_NAMES_IE[item.language] || item.language) : null,
-          setName: showSet ? item.set_name : null,
-          cardNumber: showNumber ? item.card_number : null,
-        }),
+        body: JSON.stringify(buildPayload()),
       });
-      const result = await resp.json();
+      let result = await resp.json();
+
+      // Carte trouvée en corbeille : on demande la stratégie voulue,
+      // puis on relance le même appel avec la réponse — jamais décidé
+      // tout seul à la place de la personne.
+      if (result.needsDecision){
+        const strategy = await ieAskTrashedStrategy(result.productName, result.existingStock);
+        resp = await fetch(`${SUPABASE_URL}/functions/v1/woocommerce-create-listing`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${sessionData.session.access_token}`,
+          },
+          body: JSON.stringify(buildPayload(strategy)),
+        });
+        result = await resp.json();
+      }
       if (result.success){
-        if (result.updated){
+        if (result.restored){
+          restored += 1;
+        } else if (result.updated){
           updated += 1;
         } else {
           created += 1;
@@ -3272,6 +3323,7 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
 
   let summary = `${created} annonce(s) créée(s)`;
   if (updated) summary += `, ${updated} stock mis à jour (carte déjà en vente)`;
+  if (restored) summary += `, ${restored} restaurée(s) depuis la corbeille`;
   if (failed) summary += `, ${failed} échec(s)`;
   if (errorMessages.length) summary += ` — ${errorMessages.slice(0, 3).join(" ; ")}`;
   statusEl.textContent = summary;
