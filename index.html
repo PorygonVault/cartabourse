@@ -2286,7 +2286,7 @@ function ieRenderPreview(){
     context.condition = firstItem.condition;
   }
 
-  const previewName = window.VoggtExportInternals.resolveBlocks(nameTemplate, context);
+  const previewName = window.VoggtExportInternals.resolveBlocks(nameTemplate, context, LANG);
   const previewDescription = window.VoggtExportInternals.buildDescription(descriptionTemplate, context, liveDisclaimerOnly, LANG);
   // Pour eBay/Shopify, la description contient du vrai HTML — on
   // l'affiche tel quel (rendu), pas comme du texte brut avec les
@@ -2603,6 +2603,13 @@ function renderImportExportPage(mode = "export", platform = "voggt"){
   renderIeItemsList();
   ieLoadPickerSets(); // charge la liste des extensions dès l'arrivée sur la page, pas seulement au clic sur l'onglet
 
+  // Précharge les sociétés de gradation pour le menu déroulant des
+  // cartes gradées — rafraîchit la liste une fois chargées, au cas où
+  // le premier rendu a eu lieu avant la fin de cette requête.
+  if (!cachedGradingCompanies){
+    fetchGradingCompanies().then(() => renderIeItemsList());
+  }
+
   // Reflète l'URL dans l'état de la page (onglet mode + plateforme),
   // pour qu'un lien direct vers #/export/ebay atterrisse déjà au bon
   // endroit, sans avoir à recliquer les onglets à la main.
@@ -2685,6 +2692,7 @@ async function ieLoadCollectionTab(){
       const payload = encodeURIComponent(JSON.stringify({
         card_id: c.id, card_name: name, card_number: c.card_number,
         total_cards: c.sets ? c.sets.total_cards : null,
+        set_id: c.sets ? c.sets.id : null,
         set_name: c.sets ? c.sets.name_en : "",
         set_abbreviation: c.sets ? c.sets.official_abbreviation : "",
         set_code: c.sets ? c.sets.code : "",
@@ -2745,7 +2753,7 @@ async function ieOpenCollectionModal(){
       return;
     }
     const rows = await supabaseAuthedFetch(
-      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,grading_companies(name),` +
+      `collection_items?select=id,card_id,quantity,condition,is_graded,grade,grading_company_id,grading_companies(name),` +
       `cards(id,card_number,card_names(locale,name),card_images(image_url),sets(id,name_en,total_cards,official_abbreviation,code))`
     );
     ieCollectionModalData = rows.filter(r => r.cards).map(r => {
@@ -2757,6 +2765,7 @@ async function ieOpenCollectionModal(){
         card_name: nameObj ? nameObj.name : "?",
         card_number: c.card_number,
         total_cards: c.sets ? c.sets.total_cards : null,
+        set_id: c.sets ? c.sets.id : null,
         set_name: c.sets ? c.sets.name_en : "",
         set_abbreviation: c.sets ? c.sets.official_abbreviation : "",
         set_code: c.sets ? c.sets.code : "",
@@ -2765,6 +2774,7 @@ async function ieOpenCollectionModal(){
         conditionMode: r.is_graded ? "grading" : "condition",
         condition: r.is_graded ? "NM" : (r.condition || "NM"),
         grading_company: (r.grading_companies && r.grading_companies.name) || "",
+        grading_company_id: r.grading_company_id || null,
         grade: r.is_graded ? (r.grade || "") : "",
         starting_price: "",
         instant_buy_price: "",
@@ -2885,6 +2895,7 @@ async function ieTogglePickerSet(setId, accordionEl){
       const payload = encodeURIComponent(JSON.stringify({
         card_id: c.id, card_name: name, card_number: c.card_number,
         total_cards: setInfo ? setInfo.total_cards : null,
+        set_id: setId,
         set_name: setInfo ? setInfo.name_en : "",
         set_abbreviation: setInfo ? setInfo.official_abbreviation : "",
         set_code: setInfo ? setInfo.code : "",
@@ -2981,6 +2992,16 @@ function ieRemoveItem(localId){
 function ieUpdateItem(localId, field, value){
   const item = ieExportItems.find(it => it.localId === localId);
   if (item) item[field] = value;
+  if (ieExportItems[0] && ieExportItems[0].localId === localId) ieRenderPreview();
+}
+
+function ieSetItemGradingCompany(localId, selectEl){
+  const item = ieExportItems.find(it => it.localId === localId);
+  if (!item) return;
+  const id = parseInt(selectEl.value, 10) || null;
+  item.grading_company_id = id;
+  const company = (cachedGradingCompanies || []).find(c => c.id === id);
+  item.grading_company = company ? company.name : "";
   if (ieExportItems[0] && ieExportItems[0].localId === localId) ieRenderPreview();
 }
 
@@ -3096,7 +3117,12 @@ function renderIeItemsList(){
           </label>
         </span>
         <span class="ie-grading-fields" style="${item.conditionMode !== "grading" ? "display:none;" : ""}">
-          <label>Société <input type="text" placeholder="PSA" value="${item.grading_company || ""}" onchange="ieUpdateItem(${item.localId},'grading_company',this.value)"></label>
+          <label>Société
+            <select onchange="ieSetItemGradingCompany(${item.localId}, this)">
+              <option value="">— Choisir —</option>
+              ${(cachedGradingCompanies || []).map(c => `<option value="${c.id}" ${item.grading_company_id === c.id ? "selected" : ""}>${c.name}</option>`).join("")}
+            </select>
+          </label>
           <label>Note <input type="text" placeholder="10" value="${item.grade || ""}" onchange="ieUpdateItem(${item.localId},'grade',this.value)"></label>
         </span>
         ${ieCurrentPlatform === "ebay" ? `
@@ -3171,8 +3197,9 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
   const showLanguage = document.getElementById("wc-attr-language").checked;
   const showSet = document.getElementById("wc-attr-set").checked;
   const showNumber = document.getElementById("wc-attr-number").checked;
+  const usedSlugs = new Map(); // même principe que Shopify : suffixe uniquement si vrai doublon dans ce lot
 
-  let created = 0, failed = 0;
+  let created = 0, updated = 0, failed = 0;
   const errorMessages = [];
   const createdLinks = [];
 
@@ -3185,15 +3212,18 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
       set_name: item.set_name, set_abbreviation: item.set_abbreviation, set_code: item.set_code,
       language: item.language, condition: item.condition,
     };
-    const title = resolveBlocks(nameTemplate, context);
+    const title = resolveBlocks(nameTemplate, context, LANG);
     const description = buildDescription(descriptionTemplate, context, liveDisclaimerOnly, LANG);
 
-    // Même logique de choix d'URL que Shopify — soit dérivée du titre,
-    // soit d'un modèle personnalisé (jamais le drapeau).
     const urlSourceText = (ieUrlMode === "custom")
-      ? resolveBlocks(document.getElementById("ie-url-template").value, context)
+      ? resolveBlocks(document.getElementById("ie-url-template").value, context, LANG)
       : title;
-    const slug = window.ShopifyExportInternals.slugify(urlSourceText, i + 1);
+    const baseSlug = window.ShopifyExportInternals.slugify(urlSourceText);
+    const seenCount = (usedSlugs.get(baseSlug) || 0) + 1;
+    usedSlugs.set(baseSlug, seenCount);
+    const slug = seenCount > 1 ? `${baseSlug}-${seenCount}` : baseSlug;
+
+    const sku = ieGenerateOrbisSku(item) || `orbis-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
     try {
       const resp = await fetch(`${SUPABASE_URL}/functions/v1/woocommerce-create-listing`, {
@@ -3206,6 +3236,8 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
           title,
           description,
           slug,
+          sku,
+          locale: LANG,
           price: item.instant_buy_price,
           quantity: parseInt(item.quantity, 10) || 1,
           imageUrl: item.image_url,
@@ -3217,7 +3249,11 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
       });
       const result = await resp.json();
       if (result.success){
-        created += 1;
+        if (result.updated){
+          updated += 1;
+        } else {
+          created += 1;
+        }
         if (result.permalink) createdLinks.push({ name: item.card_name, url: result.permalink });
       } else {
         failed += 1;
@@ -3230,6 +3266,7 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
   }
 
   let summary = `${created} annonce(s) créée(s)`;
+  if (updated) summary += `, ${updated} stock mis à jour (carte déjà en vente)`;
   if (failed) summary += `, ${failed} échec(s)`;
   if (errorMessages.length) summary += ` — ${errorMessages.slice(0, 3).join(" ; ")}`;
   statusEl.textContent = summary;
@@ -3277,7 +3314,7 @@ async function ieExportToEbay(rawItems, nameTemplate, descriptionTemplate, liveD
       set_name: item.set_name, set_abbreviation: item.set_abbreviation, set_code: item.set_code,
       language: item.language, condition: item.condition,
     };
-    const title = resolveBlocks(nameTemplate, context);
+    const title = resolveBlocks(nameTemplate, context, LANG);
     const description = buildDescription(descriptionTemplate, context, liveDisclaimerOnly, LANG);
 
     try {
@@ -3291,6 +3328,7 @@ async function ieExportToEbay(rawItems, nameTemplate, descriptionTemplate, liveD
           environment: EBAY_ENV,
           title,
           description,
+          sku: ieGenerateOrbisSku(item),
           starting_price: item.starting_price !== "" ? item.starting_price : null,
           instant_buy_price: item.instant_buy_price !== "" ? item.instant_buy_price : null,
           currency: "EUR",
@@ -3402,9 +3440,9 @@ async function generateExport(){
    plateforme, pas à la reprise de travail).
    ------------------------------------------------------------ */
 const IE_RESUME_COLUMNS = [
-  "card_id", "card_name", "card_number", "total_cards", "set_name",
+  "card_id", "card_name", "card_number", "total_cards", "set_id", "set_name",
   "set_abbreviation", "set_code", "image_url", "language",
-  "condition_mode", "condition", "grading_company", "grade",
+  "condition_mode", "condition", "grading_company", "grading_company_id", "grade",
   "starting_price", "instant_buy_price", "quantity",
 ];
 
@@ -3507,6 +3545,7 @@ function ieImportResumeFile(event){
           card_name: r.card_name || "?",
           card_number: r.card_number || "",
           total_cards: r.total_cards ? parseInt(r.total_cards, 10) : null,
+          set_id: r.set_id ? parseInt(r.set_id, 10) : null,
           set_name: r.set_name || "",
           set_abbreviation: r.set_abbreviation || "",
           set_code: r.set_code || "",
@@ -3515,6 +3554,7 @@ function ieImportResumeFile(event){
           conditionMode: r.condition_mode === "grading" ? "grading" : "condition",
           condition: r.condition || "NM",
           grading_company: r.grading_company || "",
+          grading_company_id: r.grading_company_id ? parseInt(r.grading_company_id, 10) : null,
           grade: r.grade || "",
           starting_price: r.starting_price || "",
           instant_buy_price: r.instant_buy_price || "",
@@ -4647,6 +4687,31 @@ async function fetchGradingCompanies(){
 }
 
 const COLLECTION_CONDITIONS = ["MT", "NM", "EX", "GD", "LP", "PL", "PO"];
+
+/* ------------------------------------------------------------
+   SKU structuré, partagé entre Shopify/WooCommerce/eBay —
+   {game_id}-{set_id}-{card_id}-{état}, ou avec note+société en plus
+   pour une carte gradée. Confirmé avec l'exemple 1-17-49-0-10-1.
+   Retourne null si les identifiants nécessaires manquent (carte ajoutée
+   à la main, sans lien réel vers la base) — l'appelant doit alors
+   prévoir son propre repli.
+   ------------------------------------------------------------ */
+const IE_CONDITION_CODES = { MT: 1, NM: 2, EX: 3, GD: 4, LP: 5, PL: 6, PO: 7 };
+const IE_GAME_ID = 1; // toujours 1 pour l'instant — site mono-jeu (Pokémon)
+
+function ieGenerateOrbisSku(item){
+  if (!item.card_id || !item.set_id) return null;
+  const parts = [IE_GAME_ID, item.set_id, item.card_id];
+  if (item.conditionMode === "grading"){
+    parts.push(0);
+    if (item.grade) parts.push(item.grade);
+    if (item.grading_company_id) parts.push(item.grading_company_id);
+  } else {
+    parts.push(IE_CONDITION_CODES[(item.condition || "NM").toUpperCase()] || 2);
+  }
+  return parts.join("-");
+}
+window.ieGenerateOrbisSku = ieGenerateOrbisSku; // exposée pour export-shopify.js (espace isolé séparé)
 const CONDITION_NAMES_IE = { MT: "Mint", NM: "Near Mint", EX: "Excellent", GD: "Good", LP: "Light Played", PL: "Played", PO: "Poor" };
 
 /* ------------------------------------------------------------
