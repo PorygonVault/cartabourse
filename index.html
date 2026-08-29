@@ -406,6 +406,17 @@
   body:not(.quick-add-active) .collection-tile:hover .condition-hover-overlay{display:flex;}
   body:not(.quick-add-active) .collection-tile.show-hover-overlay .condition-hover-overlay{display:flex;}
 
+  .hover-action-btn{
+    position:absolute;top:6px;z-index:5;width:22px;height:22px;border-radius:50%;
+    background:rgba(13,14,21,0.85);border:1px solid var(--border);color:#fff;
+    font-size:13px;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;
+  }
+  .hover-action-add{left:6px;}
+  .hover-action-edit{right:6px;}
+  .hover-action-btn:hover{border-color:var(--gold);color:var(--gold-bright);}
+  body:not(.quick-add-active) .collection-tile:hover .hover-action-btn{display:flex;}
+  body:not(.quick-add-active) .collection-tile.show-hover-overlay .hover-action-btn{display:flex;}
+
   /* Balayage : seule la zone de texte du bas glisse, l'image reste fixe */
   .tile-body-wrap{position:relative;overflow:hidden;touch-action:pan-y;}
   .tile-body-action{
@@ -419,10 +430,6 @@
   .collection-tile:not(.swiping) .tile-body{transition:transform .15s ease-out;}
 
   .set-total-chart-wrap{margin-bottom:18px;}
-  .collection-stats-with-chart{display:flex;align-items:stretch;gap:20px;flex-wrap:wrap;margin-bottom:20px;}
-  .collection-stats-with-chart .collection-stats-row{margin-bottom:0;flex:1;min-width:220px;}
-  .collection-stats-with-chart .set-total-chart-wrap{flex:1;min-width:220px;max-width:320px;margin-bottom:0;position:relative;}
-  .collection-stats-with-chart .set-total-chart-wrap svg{width:100%;height:100px;overflow:visible;}
 
   .quick-actions{position:absolute;top:8px;right:8px;z-index:3;display:flex;gap:5px;}
   .quick-fav-btn, .quick-add-btn, .quick-remove-btn{
@@ -4302,9 +4309,9 @@ async function renderSetPage(setId){
   }
 }
 
-/** Même principe que drawPriceChart (fiche carte) — point/ligne/infobulle
- * au survol — mais en version compacte, pour la valeur totale de la
- * collection (déjà pondérée par les quantités possédées). */
+/** Même style que drawPriceChart (fiche carte) — grille, libellés
+ * d'axes, dégradé, survol avec infobulle — appliqué à la valeur totale
+ * de la collection (déjà pondérée par les quantités possédées). */
 function renderCollectionValueChart(totalByDate, currency){
   const container = document.getElementById("collection-value-chart");
   const dates = Object.keys(totalByDate).sort();
@@ -4312,14 +4319,16 @@ function renderCollectionValueChart(totalByDate, currency){
     container.innerHTML = `<div class="empty-state">Pas encore assez de jours de données pour un graphique.</div>`;
     return;
   }
-
   const values = dates.map(d => totalByDate[d]);
-  const W = 220, H = 100, padL = 4, padR = 4, padT = 8, padB = 8;
+
+  const W = 640, H = 220;
+  const padL = 50, padR = 10, padT = 14, padB = 26;
   const plotW = W - padL - padR, plotH = H - padT - padB;
+
   const minV = Math.min(...values), maxV = Math.max(...values);
   const span = (maxV - minV) || Math.max(minV * 0.1, 1);
-  const niceMin = Math.max(0, minV - span * 0.1);
-  const niceMax = maxV + span * 0.1;
+  const niceMin = Math.max(0, minV - span * 0.12);
+  const niceMax = maxV + span * 0.12;
   const niceSpan = (niceMax - niceMin) || 1;
 
   const xFor = (i) => padL + (i / (values.length - 1)) * plotW;
@@ -4327,6 +4336,21 @@ function renderCollectionValueChart(totalByDate, currency){
   const coords = values.map((v, i) => [xFor(i), yFor(v)]);
   const linePath = coords.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
   const areaPath = linePath + ` L${coords[coords.length-1][0].toFixed(1)} ${H-padB} L${coords[0][0].toFixed(1)} ${H-padB} Z`;
+
+  const gridLines = [0, 1, 2, 3].map(i => {
+    const y = padT + (plotH / 3) * i;
+    const value = niceMax - (niceSpan / 3) * i;
+    return `<line class="pc-grid" x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}"></line>
+      <text class="pc-axis-label" x="4" y="${y + 3}">${displayPrice(value, currency)}</text>`;
+  }).join("");
+
+  const xLabelIdx = [0, Math.floor((dates.length - 1) / 2), dates.length - 1];
+  const xLabels = xLabelIdx.map(i => {
+    const d = new Date(dates[i]);
+    const label = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit" });
+    const anchor = i === 0 ? "start" : (i === dates.length - 1 ? "end" : "middle");
+    return `<text class="pc-axis-label" x="${xFor(i)}" y="${H - 6}" text-anchor="${anchor}">${label}</text>`;
+  }).join("");
 
   // Taux de progression : même fenêtre de 14 jours que le reste du site.
   const cutoff = new Date();
@@ -4341,6 +4365,13 @@ function renderCollectionValueChart(totalByDate, currency){
   }
 
   container.innerHTML = `
+    <div id="collection-chart-svg"></div>
+    <div class="price-chart-source">
+      Valeur de votre collection dans le temps
+      ${pct != null ? ` — ${priceTrendIcon(pct)} ${pct > 0 ? "+" : ""}${pct.toFixed(1)}% sur 14 jours` : ""}
+    </div>`;
+
+  document.getElementById("collection-chart-svg").innerHTML = `
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" id="cc-svg">
       <defs>
         <linearGradient id="cc-gradient" x1="0" y1="0" x2="0" y2="1">
@@ -4348,23 +4379,22 @@ function renderCollectionValueChart(totalByDate, currency){
           <stop offset="100%" stop-color="#c9a227" stop-opacity="0"></stop>
         </linearGradient>
       </defs>
+      ${gridLines}
+      ${xLabels}
       <path d="${areaPath}" fill="url(#cc-gradient)"></path>
       <path d="${linePath}" fill="none" stroke="#e3c15a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
       <line class="pc-hover-line" id="cc-hover-line" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}"></line>
-      <circle class="pc-hover-dot" id="cc-hover-dot" r="3"></circle>
+      <circle class="pc-hover-dot" id="cc-hover-dot" r="4"></circle>
       <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" id="cc-hit-area"></rect>
     </svg>
-    <div class="pc-tooltip" id="cc-tooltip"></div>
-    <div class="price-chart-source">
-      ${pct != null ? `${priceTrendIcon(pct)} ${pct > 0 ? "+" : ""}${pct.toFixed(1)}% sur 14 jours` : ""}
-    </div>`;
+    <div class="pc-tooltip" id="cc-tooltip"></div>`;
 
+  const wrap = document.getElementById("collection-chart-svg");
   const hitArea = document.getElementById("cc-hit-area");
   const hoverDot = document.getElementById("cc-hover-dot");
   const hoverLine = document.getElementById("cc-hover-line");
   const tooltip = document.getElementById("cc-tooltip");
   const svgEl = document.getElementById("cc-svg");
-  const wrap = container;
 
   function showPoint(i){
     i = Math.max(0, Math.min(coords.length - 1, i));
@@ -4376,7 +4406,7 @@ function renderCollectionValueChart(totalByDate, currency){
     tooltip.style.top = `${(y / H) * rect.height}px`;
     tooltip.style.opacity = 1;
     const d = new Date(dates[i]);
-    const dateLabel = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+    const dateLabel = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
     tooltip.textContent = `${dateLabel} · ${displayPrice(values[i], currency)}`;
   }
   function hidePoint(){
@@ -4595,14 +4625,12 @@ async function renderCollectionContent(){
     }
 
     const statsHtml = `
-      <div class="collection-stats-with-chart">
-        <div class="collection-stats-row">
-          <div class="collection-stat"><div class="label">Cartes</div><div class="value">${totalCardCount}</div></div>
-          <div class="collection-stat"><div class="label">Cartes uniques</div><div class="value">${uniqueCardIds.length}</div></div>
-          <div class="collection-stat"><div class="label">Valeur estimée</div><div class="value">${displayPrice(totalValue, valueCurrency)}</div></div>
-        </div>
-        <div class="set-total-chart-wrap" id="collection-value-chart"></div>
+      <div class="collection-stats-row">
+        <div class="collection-stat"><div class="label">Cartes</div><div class="value">${totalCardCount}</div></div>
+        <div class="collection-stat"><div class="label">Cartes uniques</div><div class="value">${uniqueCardIds.length}</div></div>
+        <div class="collection-stat"><div class="label">Valeur estimée</div><div class="value">${displayPrice(totalValue, valueCurrency)}</div></div>
       </div>
+      <div class="price-chart-wrap" id="collection-value-chart"></div>
       <div class="collection-catalog-toolbar">
         <div class="search-wrap collection-search-wrap">
           <span class="search-icon">⌕</span>
@@ -4626,7 +4654,9 @@ async function renderCollectionContent(){
           <select onchange="setCollectionSortMode(this.value)">
             <option value="alpha">Alphabétique</option>
             <option value="completion">Taux de complétion</option>
+            <option value="missing">Cartes manquantes</option>
           </select>
+          <button class="tab-btn" style="padding:4px 10px;" onclick="toggleCollectionSortDirection(this)" title="Inverser l'ordre">↑</button>
         </label>
       </div>
       <div class="quick-add-bar">
@@ -4681,7 +4711,8 @@ let collectionCatalogState = null;
 
 let collectionSetsViewMode = "list";
 let collectionSetsTab = "tous"; // "en_cours" | "tous" — "tous" par défaut
-let collectionSortMode = "alpha"; // "alpha" | "completion" — pour les sets en cours
+let collectionSortMode = "alpha"; // "alpha" | "completion" | "missing" — pour les sets en cours
+let collectionSortDirection = 1; // 1 = ordre normal, -1 = inversé
 
 function setCollectionSetsTab(tab, btn){
   collectionSetsTab = tab;
@@ -4692,6 +4723,12 @@ function setCollectionSetsTab(tab, btn){
 
 function setCollectionSortMode(mode){
   collectionSortMode = mode;
+  renderCollectionCatalog();
+}
+
+function toggleCollectionSortDirection(btn){
+  collectionSortDirection *= -1;
+  btn.textContent = collectionSortDirection === 1 ? "↑" : "↓";
   renderCollectionCatalog();
 }
 
@@ -4732,10 +4769,17 @@ function renderCollectionCatalog(){
     inProgress.sort((a, b) => {
       const pctA = a.total_cards ? (ownedBySet[a.id].cardIds.size / a.total_cards) : 0;
       const pctB = b.total_cards ? (ownedBySet[b.id].cardIds.size / b.total_cards) : 0;
-      return pctB - pctA; // les plus proches de la complétion en premier
+      return (pctB - pctA) * collectionSortDirection; // les plus proches de la complétion en premier
     });
+  } else if (collectionSortMode === "missing"){
+    inProgress.sort((a, b) => {
+      const missingA = (a.total_cards || 0) - ownedBySet[a.id].cardIds.size;
+      const missingB = (b.total_cards || 0) - ownedBySet[b.id].cardIds.size;
+      return (missingA - missingB) * collectionSortDirection; // le moins de cartes manquantes en premier
+    });
+  } else if (collectionSortDirection === -1){
+    inProgress.reverse(); // "alpha" inversé — l'ordre normal vient déjà de allSets
   }
-  // "alpha" : ordre déjà fourni par allSets (alphabétique), rien à faire.
 
   if (collectionSetsTab === "en_cours"){
     container.innerHTML = inProgress.length
@@ -4799,7 +4843,6 @@ function buildSetCardsHtml(setId){
     const c = shapeCard(cardRow);
     const isOwned = owned.cardIds.has(c.id);
     const qty = owned.qtyByCard[c.id] || 0;
-    const badge = owned.badgeByCard[c.id];
     const counts = conditionCounts[c.id] || {};
 
     const overlayRows = `<div class="cond-grid-normal">` +
@@ -4818,13 +4861,14 @@ function buildSetCardsHtml(setId){
           ${qty > 1 ? `<span class="set-tag">×${qty}</span>` : ""}
           ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
           <div class="condition-hover-overlay">${overlayRows}</div>
+          <button class="hover-action-btn hover-action-add" title="Ajouter" onclick="event.stopPropagation();openCollectionAddModal(${c.id}, ${setId})">+</button>
+          <button class="hover-action-btn hover-action-edit" title="Gérer mes exemplaires" onclick="event.stopPropagation();openManageOwnedModal(${c.id}, ${setId})">✎</button>
         </div>
         <div class="tile-body-wrap">
           <div class="tile-body-action tile-body-action-add">+</div>
           <div class="tile-body-action tile-body-action-edit">✎</div>
           <div class="tile-body">
             <h3>${c.name}</h3>
-            ${isOwned && badge ? `<div class="tcg-label">${badge}</div>` : ""}
           </div>
         </div>
       </div>`;
@@ -4914,25 +4958,35 @@ function filterCollectionCatalog(term){
   });
 }
 
-async function collectionRemoveOne(cardId, setId, rowId){
+/** Recalcule les compteurs d'états d'UNE carte (pour la liste au
+ * survol), et met à jour l'état partagé — appelée après chaque ajout,
+ * modification ou suppression, pour que le survol reflète toujours la
+ * réalité sans recharger toute la page. */
+async function ieRecomputeConditionCounts(cardId){
   try {
-    await supabaseAuthedFetch(`collection_items?id=eq.${rowId}`, { method: "DELETE" });
+    const rows = await supabaseAuthedFetch(`collection_items?card_id=eq.${cardId}&select=quantity,condition,is_graded,grade,grading_company_id`);
+    const companies = await fetchGradingCompanies();
+    const psaCompany = companies.find(c => c.name.toLowerCase().includes("psa"));
+    const psaId = psaCompany ? psaCompany.id : null;
 
-    const bucket = collectionCatalogState.ownedBySet[setId];
-    if (bucket){
-      bucket.qtyByCard[cardId] = (bucket.qtyByCard[cardId] || 1) - 1;
-      bucket.rowIdsByCard[cardId] = (bucket.rowIdsByCard[cardId] || []).filter(id => id !== rowId);
-      if (bucket.qtyByCard[cardId] <= 0){
-        bucket.cardIds.delete(cardId);
-        delete bucket.qtyByCard[cardId];
-        delete bucket.badgeByCard[cardId];
-        delete bucket.rowIdsByCard[cardId];
+    const counts = { MT: 0, NM: 0, EX: 0, GD: 0, LP: 0, PL: 0, PO: 0, gradedNon10: 0, graded10NonPsa: 0, gradedPsa10: 0 };
+    for (const r of rows){
+      const qty = r.quantity || 1;
+      if (r.is_graded){
+        const is10 = String(r.grade || "").trim() === "10";
+        const isPsa = psaId != null && r.grading_company_id === psaId;
+        if (is10 && isPsa) counts.gradedPsa10 += qty;
+        else if (is10) counts.graded10NonPsa += qty;
+        else counts.gradedNon10 += qty;
+      } else {
+        const c = (r.condition || "NM").toUpperCase();
+        if (c in counts) counts[c] += qty;
       }
     }
-    refreshSetView(setId);
-    refreshCollectionStats();
+    if (!collectionCatalogState.conditionCountsByCard) collectionCatalogState.conditionCountsByCard = {};
+    collectionCatalogState.conditionCountsByCard[cardId] = counts;
   } catch (e) {
-    alert(`Impossible de retirer cette carte : ${e.message}`);
+    console.warn("Recalcul des états par carte échoué :", e.message);
   }
 }
 
@@ -4981,14 +5035,15 @@ function ieAttachSwipeHandlers(container){
 
     const THRESHOLD_START = 8;
     const THRESHOLD_COMMIT = 70;
-    let startX = 0, startY = 0, currentX = 0, dragging = false, isSwipe = false;
+    let startX = 0, startY = 0, currentX = 0, dragging = false, isSwipe = false, isMouse = false;
 
     tile.addEventListener("pointerdown", (e) => {
+      isMouse = e.pointerType === "mouse";
       startX = e.clientX; startY = e.clientY; currentX = 0; dragging = true; isSwipe = false;
     });
 
     tile.addEventListener("pointermove", (e) => {
-      if (!dragging) return;
+      if (!dragging || isMouse) return; // souris : pas de balayage, ça gênerait la sélection de texte — les deux petits boutons au survol remplacent ce geste
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
       if (!isSwipe && Math.abs(dx) > THRESHOLD_START && Math.abs(dx) > Math.abs(dy)){
@@ -5110,6 +5165,7 @@ async function performCollectionAdd(cardId, setId, { isGraded, condition, gradin
     bucket.badgeByCard[cardId] = badge;
     (bucket.rowIdsByCard[cardId] = bucket.rowIdsByCard[cardId] || []).push(created[0].id);
 
+    await ieRecomputeConditionCounts(cardId);
     refreshSetView(setId);
     refreshCollectionStats();
     return true;
@@ -5289,6 +5345,7 @@ async function refreshAfterManageEdit(){
   }
   collectionCatalogState.ownedBySet[setId] = bucket;
 
+  await ieRecomputeConditionCounts(cardId);
   await openManageOwnedModal(cardId, setId);
   refreshSetView(setId);
   refreshCollectionStats();
