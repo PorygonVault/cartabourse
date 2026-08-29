@@ -3241,7 +3241,11 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
           price: item.instant_buy_price,
           quantity: parseInt(item.quantity, 10) || 1,
           imageUrl: item.image_url,
-          condition: showCondition ? (CONDITION_NAMES_IE[(item.condition || "").toUpperCase()] || item.condition) : null,
+          condition: showCondition
+            ? (item.conditionMode === "grading"
+                ? `${item.grading_company || "Gradée"} ${item.grade || ""}`.trim()
+                : (CONDITION_NAMES_IE[(item.condition || "").toUpperCase()] || item.condition))
+            : null,
           language: showLanguage ? (LANGUAGE_NAMES_IE[item.language] || item.language) : null,
           setName: showSet ? item.set_name : null,
           cardNumber: showNumber ? item.card_number : null,
@@ -3257,7 +3261,8 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
         if (result.permalink) createdLinks.push({ name: item.card_name, url: result.permalink });
       } else {
         failed += 1;
-        errorMessages.push(`${item.card_name} : ${result.error || "erreur inconnue"}`);
+        const detailMsg = result.details && result.details.message ? ` (${result.details.message})` : "";
+        errorMessages.push(`${item.card_name} : ${result.error || "erreur inconnue"}${detailMsg}`);
       }
     } catch (err) {
       failed += 1;
