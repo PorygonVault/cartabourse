@@ -47,18 +47,27 @@
     return `${base}-${suffix}`;
   }
 
-  function buildShopifyRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale, rowIndex) {
+  function buildShopifyRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale, rowIndex, urlMode, urlTemplate) {
     const resolveBlocks = window.VoggtExportInternals.resolveBlocks;
     const buildDescription = window.VoggtExportInternals.buildDescription;
 
     const title = resolveBlocks(nameTemplate, item);
     const description = buildDescription(descriptionTemplate, item, liveDisclaimerOnly, locale);
     const price = item.instant_buy_price != null && item.instant_buy_price !== "" ? item.instant_buy_price : item.starting_price;
-    const sku = item.card_id ? `orbis-${item.card_id}` : `orbis-${Date.now()}-${rowIndex}`;
+    // SKU personnalisé si renseigné par la personne, sinon système
+    // automatique basé sur l'identifiant interne de la carte.
+    const sku = (item.shopify_sku && item.shopify_sku.trim())
+      ? item.shopify_sku.trim()
+      : (item.card_id ? `orbis-${item.card_id}` : `orbis-${Date.now()}-${rowIndex}`);
+
+    // URL : soit dérivée du titre (par défaut), soit d'un modèle propre
+    // choisi par la personne (jamais le drapeau, exclu de ce champ
+    // ailleurs dans l'interface — inadapté à une adresse web).
+    const urlSourceText = (urlMode === "custom" && urlTemplate) ? resolveBlocks(urlTemplate, item) : title;
 
     return [
       title,
-      slugify(title, rowIndex),
+      slugify(urlSourceText, rowIndex),
       description,
       "Trading Card Games",
       "", // Tags — laissé vide, rien d'universel à y mettre par défaut
@@ -78,10 +87,10 @@
   /** Génère le CSV Shopify et déclenche le téléchargement. Valide TOUS
    * les items avant d'écrire quoi que ce soit — même principe que
    * exportToVoggt/exportToWhatnot. */
-  function exportToShopify(items, nameTemplate, descriptionTemplate, filename = "export_shopify.csv", liveDisclaimerOnly = false, locale = "en") {
+  function exportToShopify(items, nameTemplate, descriptionTemplate, filename = "export_shopify.csv", liveDisclaimerOnly = false, locale = "en", urlMode = "title", urlTemplate = "") {
     items.forEach((item, i) => validateItem(item, i + 1));
 
-    const rows = items.map((item, i) => buildShopifyRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale, i + 1));
+    const rows = items.map((item, i) => buildShopifyRow(item, nameTemplate, descriptionTemplate, liveDisclaimerOnly, locale, i + 1, urlMode, urlTemplate));
 
     const csvEscape = (val) => {
       const s = String(val ?? "");
