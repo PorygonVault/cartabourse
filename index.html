@@ -406,22 +406,14 @@
   body:not(.quick-add-active) .collection-tile:hover .condition-hover-overlay{display:flex;}
   body:not(.quick-add-active) .collection-tile.show-hover-overlay .condition-hover-overlay{display:flex;}
 
-  .hover-action-btn{
-    position:absolute;top:6px;z-index:5;width:22px;height:22px;border-radius:50%;
-    background:rgba(13,14,21,0.85);border:1px solid var(--border);color:#fff;
-    font-size:13px;line-height:1;cursor:pointer;display:none;align-items:center;justify-content:center;
-  }
-  .hover-action-add{left:6px;}
-  .hover-action-edit{right:6px;}
-  .hover-action-btn:hover{border-color:var(--gold);color:var(--gold-bright);}
-  body:not(.quick-add-active) .collection-tile:hover .hover-action-btn{display:flex;}
-  body:not(.quick-add-active) .collection-tile.show-hover-overlay .hover-action-btn{display:flex;}
-
-  /* Balayage : seule la zone de texte du bas glisse, l'image reste fixe */
+  /* Balayage : seule la zone de texte du bas glisse, l'image reste fixe.
+     Sur PC (vraie souris détectée) : carrés d'action toujours visibles
+     et cliquables, pas besoin de balayer — la souris gênerait la
+     sélection de texte, donc pas de balayage sur PC, remplacé par ceci. */
   .tile-body-wrap{position:relative;overflow:hidden;touch-action:pan-y;}
   .tile-body-action{
     position:absolute;top:0;bottom:0;width:56px;display:flex;align-items:center;justify-content:center;
-    font-size:20px;color:#fff;z-index:1;
+    font-size:20px;color:#fff;z-index:1;pointer-events:none;
   }
   .tile-body-action-add{left:0;background:#3a9d4f;}
   .tile-body-action-edit{right:0;background:#d98324;}
@@ -429,7 +421,21 @@
   .collection-tile.swiping .tile-body{transition:none;}
   .collection-tile:not(.swiping) .tile-body{transition:transform .15s ease-out;}
 
+  @media (hover:hover) and (pointer:fine){
+    .tile-body-wrap .tile-body{width:calc(100% - 88px);margin:0 auto;}
+    .tile-body-action{pointer-events:auto;cursor:pointer;font-size:16px;}
+    .tile-body-action:hover{filter:brightness(1.15);}
+  }
+
   .set-total-chart-wrap{margin-bottom:18px;}
+  .collection-stats-chart-row{display:flex;gap:24px;align-items:stretch;margin-bottom:20px;}
+  .collection-stats-col{flex:0 0 30%;display:flex;flex-direction:column;justify-content:space-between;gap:10px;}
+  .collection-stats-col .collection-stats-row{margin-bottom:0;}
+  .collection-stats-chart{flex:1;min-width:0;margin-bottom:0;}
+  @media (max-width:768px){
+    .collection-stats-chart-row{flex-direction:column;}
+    .collection-stats-col{flex:none;}
+  }
 
   .quick-actions{position:absolute;top:8px;right:8px;z-index:3;display:flex;gap:5px;}
   .quick-fav-btn, .quick-add-btn, .quick-remove-btn{
@@ -491,7 +497,7 @@
   .market-placeholder h4{font-family:var(--font-display);font-size:16px;color:var(--text);margin:0 0 6px;}
   .market-placeholder p{font-size:13px;line-height:1.5;margin:0;max-width:420px;margin:0 auto;}
   .price-chart-wrap{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:20px;}
-  #price-chart-svg{position:relative;}
+  #price-chart-svg, .pc-chart-anchor{position:relative;}
   .price-stat-row{display:flex;gap:28px;margin-bottom:16px;flex-wrap:wrap;}
   .price-stat .label{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;margin-bottom:3px;}
   .price-stat .value{font-family:var(--font-mono);font-size:19px;color:var(--gold-bright);font-weight:600;}
@@ -4365,7 +4371,7 @@ function renderCollectionValueChart(totalByDate, currency){
   }
 
   container.innerHTML = `
-    <div id="collection-chart-svg"></div>
+    <div id="collection-chart-svg" class="pc-chart-anchor"></div>
     <div class="price-chart-source">
       Valeur de votre collection dans le temps
       ${pct != null ? ` — ${priceTrendIcon(pct)} ${pct > 0 ? "+" : ""}${pct.toFixed(1)}% sur 14 jours` : ""}
@@ -4624,13 +4630,35 @@ async function renderCollectionContent(){
       }
     }
 
+    // Avancé ici (au lieu de plus bas) pour pouvoir calculer "sets en
+    // cours"/"sets terminés" avant de construire le HTML des stats.
+    const allSets = await fetchAllPaginated(`sets?select=id,name_en,total_cards,release_region,set_names(locale,name)&order=id.asc`);
+    let setsInProgressCount = 0, setsCompletedCount = 0;
+    for (const set of allSets){
+      const bucket = ownedBySet[set.id];
+      const ownedCount = bucket ? bucket.cardIds.size : 0;
+      if (!set.total_cards || ownedCount === 0) continue;
+      if (ownedCount >= set.total_cards) setsCompletedCount += 1;
+      else setsInProgressCount += 1;
+    }
+
     const statsHtml = `
-      <div class="collection-stats-row">
-        <div class="collection-stat"><div class="label">Cartes</div><div class="value">${totalCardCount}</div></div>
-        <div class="collection-stat"><div class="label">Cartes uniques</div><div class="value">${uniqueCardIds.length}</div></div>
-        <div class="collection-stat"><div class="label">Valeur estimée</div><div class="value">${displayPrice(totalValue, valueCurrency)}</div></div>
+      <div class="collection-stats-chart-row">
+        <div class="collection-stats-col">
+          <div class="collection-stats-row">
+            <div class="collection-stat"><div class="label">Cartes</div><div class="value">${totalCardCount}</div></div>
+            <div class="collection-stat"><div class="label">Cartes uniques</div><div class="value">${uniqueCardIds.length}</div></div>
+          </div>
+          <div class="collection-stats-row">
+            <div class="collection-stat"><div class="label">Sets en cours</div><div class="value">${setsInProgressCount}</div></div>
+            <div class="collection-stat"><div class="label">Sets terminés</div><div class="value">${setsCompletedCount}</div></div>
+          </div>
+          <div class="collection-stats-row">
+            <div class="collection-stat"><div class="label">Valeur estimée</div><div class="value">${displayPrice(totalValue, valueCurrency)}</div></div>
+          </div>
+        </div>
+        <div class="price-chart-wrap collection-stats-chart" id="collection-value-chart"></div>
       </div>
-      <div class="price-chart-wrap" id="collection-value-chart"></div>
       <div class="collection-catalog-toolbar">
         <div class="search-wrap collection-search-wrap">
           <span class="search-icon">⌕</span>
@@ -4679,10 +4707,6 @@ async function renderCollectionContent(){
       <div id="collection-catalog" class="collection-sets-container"><div class="empty-state">Chargement des extensions...</div></div>`;
     content.innerHTML = statsHtml;
     collectionRegionFilter = "all"; // les boutons repartent sur "Tout" à chaque rendu de la page
-
-    // Léger : uniquement la liste des sets (présents et futurs), pas leurs
-    // cartes — chaque set charge les siennes à la demande, au premier clic.
-    const allSets = await fetchAllPaginated(`sets?select=id,name_en,total_cards,release_region,set_names(locale,name)&order=id.asc`);
 
     collectionCatalogState = { allSets, ownedBySet, loadedCardsBySet: {}, conditionCountsByCard };
     renderCollectionCatalog();
@@ -4861,12 +4885,10 @@ function buildSetCardsHtml(setId){
           ${qty > 1 ? `<span class="set-tag">×${qty}</span>` : ""}
           ${c.image ? cardImgTag(c.image, "low", "art-img", c.name, 'loading="lazy" decoding="async"') : `<span class="glyph">⚡</span>`}
           <div class="condition-hover-overlay">${overlayRows}</div>
-          <button class="hover-action-btn hover-action-add" title="Ajouter" onclick="event.stopPropagation();openCollectionAddModal(${c.id}, ${setId})">+</button>
-          <button class="hover-action-btn hover-action-edit" title="Gérer mes exemplaires" onclick="event.stopPropagation();openManageOwnedModal(${c.id}, ${setId})">✎</button>
         </div>
         <div class="tile-body-wrap">
-          <div class="tile-body-action tile-body-action-add">+</div>
-          <div class="tile-body-action tile-body-action-edit">✎</div>
+          <div class="tile-body-action tile-body-action-add" onclick="event.stopPropagation();openCollectionAddModal(${c.id}, ${setId})">+</div>
+          <div class="tile-body-action tile-body-action-edit" onclick="event.stopPropagation();openManageOwnedModal(${c.id}, ${setId})">✎</div>
           <div class="tile-body">
             <h3>${c.name}</h3>
           </div>
