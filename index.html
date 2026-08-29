@@ -153,23 +153,40 @@
   .binder-page.color-black{background:#0a0a0d;border:1px solid #2a2a30;}
   .binder-page.color-white{background:#e8e6e0;border:1px solid #c9c6bc;}
   .binder-page.color-gray{background:#4a4c56;border:1px solid #63656f;}
+  .binder-page.color-beige{background:#d4c5a9;border:1px solid #b8a888;}
+  .binder-page.color-blue{background:#2a4a6b;border:1px solid #3d6491;}
+  .binder-page.color-brown{background:#4a3529;border:1px solid #6b4d3a;}
+  .binder-page.color-green{background:#2d4a35;border:1px solid #3f6849;}
+  .binder-page.color-magenta{background:#6b2d52;border:1px solid #8f3d6e;}
+  .binder-page.color-orange{background:#6b4520;border:1px solid #8f5c2c;}
+  .binder-page.color-purple{background:#453569;border:1px solid #5f4a8f;}
+  .binder-page.color-red{background:#5c2626;border:1px solid #7a3333;}
+  .binder-page.color-yellow{background:#6b5f1f;border:1px solid #8f7d2a;}
+  /* Couleurs claires : mêmes cases sombres que pour le blanc, pour garder un bon contraste */
+  .color-white .binder-slot, .color-beige .binder-slot, .color-yellow .binder-slot{border-color:rgba(0,0,0,0.15);background:rgba(0,0,0,0.03);}
+  .color-white .binder-slot .slot-plus, .color-beige .binder-slot .slot-plus, .color-yellow .binder-slot .slot-plus{color:rgba(0,0,0,0.25);}
 
   .binder-slot{
     aspect-ratio:2.5/3.5;border-radius:10px;border:2px solid rgba(255,255,255,0.12);
     display:flex;align-items:center;justify-content:center;cursor:pointer;overflow:hidden;position:relative;
     background:rgba(255,255,255,0.04);transition:border-color .15s;
   }
-  .color-white .binder-slot{border-color:rgba(0,0,0,0.15);background:rgba(0,0,0,0.03);}
   .binder-slot:hover{border-color:var(--gold);}
   .binder-slot img{width:100%;height:100%;object-fit:cover;}
   .binder-slot .slot-plus{font-family:var(--font-mono);font-size:26px;color:rgba(255,255,255,0.25);}
-  .color-white .binder-slot .slot-plus{color:rgba(0,0,0,0.25);}
   .binder-slot-remove{
     position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;
     background:rgba(13,14,21,0.85);border:1px solid var(--border);color:#fff;font-size:12px;
     display:flex;align-items:center;justify-content:center;line-height:1;z-index:2;
   }
   .binder-slot-remove:hover{border-color:var(--red);color:var(--red);}
+  .color-swatch-picker{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;}
+  .color-swatch{
+    width:26px;height:26px;border-radius:50%;border:2px solid transparent;cursor:pointer;
+    padding:0;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.15);
+  }
+  .color-swatch.selected{border-color:var(--gold);}
+  .color-dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.2);}
   .binder-slot-swap{
     position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;
     background:rgba(13,14,21,0.85);border:1px solid var(--border);color:#fff;font-size:11px;
@@ -196,9 +213,9 @@
   .picker-set-accordion.open .accordion-caret{transform:rotate(90deg);}
   .picker-set-body{display:none;padding:0 0 12px;}
   .picker-set-accordion.open .picker-set-body{display:block;}
-  .picker-card-slider{display:flex;gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;}
-  .picker-card-item{flex:0 0 auto;width:66px;cursor:pointer;text-align:center;}
-  .picker-card-item img{width:66px;height:92px;object-fit:cover;border-radius:3px;border:1px solid var(--border);display:block;}
+  .picker-card-slider{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;padding-bottom:4px;}
+  .picker-card-item{width:100%;cursor:pointer;text-align:center;}
+  .picker-card-item img{width:100%;height:auto;aspect-ratio:2.5/3.5;object-fit:cover;border-radius:3px;border:1px solid var(--border);display:block;}
   .picker-card-item:hover img{border-color:var(--gold);}
   .picker-card-name{
     display:block;font-size:9.5px;color:var(--text-dim);margin-top:3px;
@@ -657,13 +674,14 @@
        cases correctement proportionnées par simple division égale. */
 
     .binder-sidebar{
-      display:flex;flex-direction:column;width:300px;flex-shrink:0;
+      display:flex;flex-direction:column;width:400px;flex-shrink:0;
       background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;overflow:hidden;
     }
     .binder-sidebar-scroll{flex:1;margin-top:10px;min-height:0;}
     .binder-sidebar > .listings-tabs{flex-shrink:0;}
     .binder-sidebar-hint{flex-shrink:0;}
     .binder-sidebar #sidebar-search-mode,.binder-sidebar #sidebar-browse-mode{display:flex;flex-direction:column;flex:1;min-height:0;}
+  #sidebar-search-mode .search-wrap{flex:0 0 auto;}
   }
 .ie-section{margin:24px 0;padding:16px;border:1px solid var(--border);border-radius:8px;background:var(--panel);}
 .ie-section h3{margin-top:0;color:var(--text);}
@@ -1102,11 +1120,7 @@
           <option value="5x5">5×5</option>
         </select></div>
       <div class="account-field"><label>Couleur</label>
-        <select id="new-binder-color">
-          <option value="black">Noir</option>
-          <option value="white">Blanc</option>
-          <option value="gray">Gris</option>
-        </select></div>
+        <div class="color-swatch-picker" id="new-binder-color-picker"></div></div>
       <div class="auth-error" id="new-binder-error"></div>
       <button class="auth-submit" onclick="createBinder()">Créer le classeur</button>
     </div>
@@ -1146,9 +1160,7 @@
           <option value="5x5">5×5</option>
         </select></div>
       <div class="account-field"><label>Couleur</label>
-        <select id="edit-binder-color">
-          <option value="black">Noir</option><option value="white">Blanc</option><option value="gray">Gris</option>
-        </select></div>
+        <div class="color-swatch-picker" id="edit-binder-color-picker"></div></div>
       <div class="auth-error" id="edit-binder-error"></div>
       <button class="auth-submit" onclick="saveBinderEdit()">Enregistrer</button>
     </div>
@@ -5030,6 +5042,54 @@ async function fetchGradingCompanies(){
 const COLLECTION_CONDITIONS = ["MT", "NM", "EX", "GD", "LP", "PL", "PO"];
 
 /* ------------------------------------------------------------
+   Couleurs de classeur — remplace les anciens <select> par des
+   pastilles cliquables, seul moyen fiable (tous navigateurs) d'afficher
+   une couleur à côté de chaque choix (un <option> HTML ne le permet pas
+   correctement partout).
+   ------------------------------------------------------------ */
+const BINDER_COLORS = [
+  { value: "black", label: "Noir", hex: "#0a0a0d" },
+  { value: "white", label: "Blanc", hex: "#e8e6e0" },
+  { value: "gray", label: "Gris", hex: "#4a4c56" },
+  { value: "beige", label: "Beige", hex: "#d4c5a9" },
+  { value: "blue", label: "Bleu", hex: "#2a4a6b" },
+  { value: "brown", label: "Brun", hex: "#4a3529" },
+  { value: "green", label: "Vert", hex: "#2d4a35" },
+  { value: "magenta", label: "Magenta", hex: "#6b2d52" },
+  { value: "orange", label: "Orange", hex: "#6b4520" },
+  { value: "purple", label: "Violet", hex: "#453569" },
+  { value: "red", label: "Rouge", hex: "#5c2626" },
+  { value: "yellow", label: "Jaune", hex: "#6b5f1f" },
+];
+
+function binderColorHex(value){
+  const c = BINDER_COLORS.find(c => c.value === value);
+  return c ? c.hex : "#4a4c56";
+}
+
+function colorDotHtml(value){
+  return `<span class="color-dot" style="background:${binderColorHex(value)};"></span>`;
+}
+
+function renderColorSwatchPicker(containerId, selectedValue){
+  const html = BINDER_COLORS.map(c => `
+    <button type="button" class="color-swatch ${c.value === selectedValue ? "selected" : ""}"
+      style="background:${c.hex};" title="${c.label}"
+      onclick="selectColorSwatch('${containerId}', '${c.value}', this)"></button>
+  `).join("");
+  document.getElementById(containerId).innerHTML = html;
+  document.getElementById(containerId).dataset.value = selectedValue;
+}
+
+function selectColorSwatch(containerId, value, btn){
+  const container = document.getElementById(containerId);
+  container.dataset.value = value;
+  container.querySelectorAll(".color-swatch").forEach(b => b.classList.remove("selected"));
+  btn.classList.add("selected");
+}
+
+
+/* ------------------------------------------------------------
    SKU structuré, partagé entre Shopify/WooCommerce/eBay —
    {game_id}-{set_id}-{card_id}-{état}, ou avec note+société en plus
    pour une carte gradée. Confirmé avec l'exemple 1-17-49-0-10-1.
@@ -5855,10 +5915,10 @@ async function adminChangeRole(userId, newRole){
 /* ============================================================
    CLASSEURS / BINDERS
    ============================================================ */
-const BINDER_COLOR_LABELS = { black: "Noir", white: "Blanc", gray: "Gris" };
 
 async function renderBindersListPage(){
   const list = document.getElementById("binders-list");
+  renderColorSwatchPicker("new-binder-color-picker", "black");
   const { data } = await supabaseClient.auth.getSession();
   if (!data.session){
     list.innerHTML = `<p style="color:var(--text-dim);">Connectez-vous pour créer et consulter vos classeurs.</p>`;
@@ -5876,7 +5936,7 @@ async function renderBindersListPage(){
         <button class="tile-remove-btn" style="position:absolute;top:10px;right:10px;" title="Supprimer"
                 onclick="event.stopPropagation();deleteBinderFromList(${b.id})">×</button>
         <div class="name">${b.name}</div>
-        <div class="meta">Format ${b.format} · ${BINDER_COLOR_LABELS[b.color] || b.color} · ${b.page_count} page${b.page_count > 1 ? "s" : ""}</div>
+        <div class="meta">Format ${b.format} · ${colorDotHtml(b.color)}${(BINDER_COLORS.find(c => c.value === b.color) || {}).label || b.color} · ${b.page_count} page${b.page_count > 1 ? "s" : ""}</div>
       </div>`).join("");
   } catch (e) {
     list.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
@@ -5897,7 +5957,7 @@ async function createBinder(){
     return;
   }
   const format = document.getElementById("new-binder-format").value;
-  const color = document.getElementById("new-binder-color").value;
+  const color = document.getElementById("new-binder-color-picker").dataset.value || "black";
 
   try {
     const created = await supabaseAuthedFetch("binders", {
@@ -6222,6 +6282,7 @@ function setSidebarPickerMode(mode, btn){
 }
 
 let cachedAllSetsForPicker = null; // partagé : une seule récupération réseau, même si utilisé aux deux endroits
+let cachedSetIdsWithCards = null; // pour retirer les sets sans aucune carte liée en base
 
 async function loadSlotPickerSets(listId){
   const list = document.getElementById(listId);
@@ -6231,7 +6292,12 @@ async function loadSlotPickerSets(listId){
     if (!cachedAllSetsForPicker){
       cachedAllSetsForPicker = await fetchAllPaginated(`sets?select=id,name_en,release_region,set_names(locale,name)&order=name_en.asc`);
     }
-    list.innerHTML = cachedAllSetsForPicker.map(set => {
+    if (!cachedSetIdsWithCards){
+      const cardSetIdRows = await fetchAllPaginated(`cards?select=set_id`);
+      cachedSetIdsWithCards = new Set(cardSetIdRows.map(r => r.set_id));
+    }
+    const setsWithCards = cachedAllSetsForPicker.filter(set => cachedSetIdsWithCards.has(set.id));
+    list.innerHTML = setsWithCards.map(set => {
       const setName = pickLocalized(set.set_names, LANG) || set.name_en;
       return `
         <div class="picker-set-accordion" data-set-id="${set.id}" data-region="${set.release_region || "intl"}">
@@ -6328,9 +6394,31 @@ async function slotPickerSearch(term, resultsId){
 
 async function assignCardToSlot(cardId){
   try {
+    let targetIndex = slotPickerTargetIndex;
+
+    if (targetIndex == null){
+      // Aucun emplacement cliqué au préalable : on cherche le premier
+      // emplacement libre sur la page actuellement affichée.
+      const [rows, cols] = currentBinder.format.split("x").map(Number);
+      const totalSlots = rows * cols;
+      let freeIndex = null;
+      for (let i = 0; i < totalSlots; i++){
+        if (!currentBinderSlots[i]){ freeIndex = i; break; }
+      }
+      if (freeIndex != null){
+        targetIndex = freeIndex;
+      } else {
+        // Aucun emplacement libre sur cette page : on en crée une
+        // nouvelle à la toute fin du classeur, et la carte y va.
+        currentBinderPage = currentBinder.page_count; // se placer sur la dernière page avant d'en ajouter une
+        await addBinderPage(); // crée la page juste après, l'affiche, mais on enchaîne tout de suite avec l'ajout de la carte
+        targetIndex = 0;
+      }
+    }
+
     await supabaseAuthedFetch("binder_slots?on_conflict=binder_id,page_number,slot_index", {
       method: "POST",
-      body: JSON.stringify({ binder_id: currentBinder.id, page_number: currentBinderPage, slot_index: slotPickerTargetIndex, card_id: cardId }),
+      body: JSON.stringify({ binder_id: currentBinder.id, page_number: currentBinderPage, slot_index: targetIndex, card_id: cardId }),
       headers: { Prefer: "resolution=merge-duplicates" },
     });
     closeSlotPicker();
@@ -6347,7 +6435,7 @@ function toggleEditBinderForm(){
   if (isHidden){
     document.getElementById("edit-binder-name").value = currentBinder.name;
     document.getElementById("edit-binder-format").value = currentBinder.format;
-    document.getElementById("edit-binder-color").value = currentBinder.color;
+    renderColorSwatchPicker("edit-binder-color-picker", currentBinder.color);
     document.getElementById("edit-binder-error").textContent = "";
   }
   form.style.display = isHidden ? "block" : "none";
@@ -6364,7 +6452,7 @@ async function saveBinderEdit(){
     return;
   }
   const format = document.getElementById("edit-binder-format").value;
-  const color = document.getElementById("edit-binder-color").value;
+  const color = document.getElementById("edit-binder-color-picker").dataset.value || currentBinder.color;
   const formatChanged = format !== currentBinder.format;
 
   try {
