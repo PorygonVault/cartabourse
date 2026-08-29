@@ -2343,16 +2343,19 @@ async function saveWoocommerceCredentials(){
   }
 
   try {
-    await supabaseAuthedFetch("woocommerce_credentials", {
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/woocommerce-save-credentials`, {
       method: "POST",
-      headers: { "Prefer": "resolution=merge-duplicates" },
-      body: JSON.stringify({
-        user_id: sessionData.session.user.id,
-        store_url: storeUrl,
-        consumer_key: consumerKey,
-        consumer_secret: consumerSecret,
-      }),
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${sessionData.session.access_token}`,
+      },
+      body: JSON.stringify({ storeUrl, consumerKey, consumerSecret }),
     });
+    const result = await resp.json();
+    if (!result.success){
+      alert(`Impossible d'enregistrer : ${result.error || "erreur inconnue"}`);
+      return;
+    }
     checkWoocommerceConnection();
   } catch (e) {
     alert(`Impossible d'enregistrer : ${e.message}`);
@@ -3160,6 +3163,10 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
           price: item.instant_buy_price,
           quantity: parseInt(item.quantity, 10) || 1,
           imageUrl: item.image_url,
+          condition: item.condition,
+          language: item.language,
+          setName: item.set_name,
+          cardNumber: item.card_number,
         }),
       });
       const result = await resp.json();
