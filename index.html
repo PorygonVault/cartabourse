@@ -1192,6 +1192,10 @@
 
       <div id="ie-woocommerce-options" style="display:none;margin:12px 0;padding:12px;border:1px solid var(--border);border-radius:8px;background:var(--panel);">
         <div id="ie-woocommerce-status"></div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+          <input type="checkbox" id="wc-show-attributes" checked>
+          Afficher les attributs (État, Langue, Extension, Numéro) sur la fiche produit
+        </label>
       </div>
 
       <div id="ie-workspace-wrapper" style="position:relative;">
@@ -3133,6 +3137,7 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
 
   const resolveBlocks = window.VoggtExportInternals.resolveBlocks;
   const buildDescription = window.VoggtExportInternals.buildDescription;
+  const showAttributes = document.getElementById("wc-show-attributes").checked;
 
   let created = 0, failed = 0;
   const errorMessages = [];
@@ -3163,10 +3168,12 @@ async function ieExportToWoocommerce(rawItems, nameTemplate, descriptionTemplate
           price: item.instant_buy_price,
           quantity: parseInt(item.quantity, 10) || 1,
           imageUrl: item.image_url,
-          condition: item.condition,
-          language: item.language,
-          setName: item.set_name,
-          cardNumber: item.card_number,
+          ...(showAttributes ? {
+            condition: CONDITION_NAMES_IE[(item.condition || "").toUpperCase()] || item.condition,
+            language: LANGUAGE_NAMES_IE[item.language] || item.language,
+            setName: item.set_name,
+            cardNumber: item.card_number,
+          } : {}),
         }),
       });
       const result = await resp.json();
@@ -4601,6 +4608,7 @@ async function fetchGradingCompanies(){
 }
 
 const COLLECTION_CONDITIONS = ["MT", "NM", "EX", "GD", "LP", "PL", "PO"];
+const CONDITION_NAMES_IE = { MT: "Mint", NM: "Near Mint", EX: "Excellent", GD: "Good", LP: "Light Played", PL: "Played", PO: "Poor" };
 
 /* ------------------------------------------------------------
    Modale "Ajouter à ma collection" — demande l'état (ou la gradation)
