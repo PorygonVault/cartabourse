@@ -76,7 +76,8 @@
   }
   .drawer-axis-links a:hover{background:var(--panel-light);color:var(--gold-bright);}
   .drawer-divider{height:1px;background:var(--border);margin:20px 0;}
-  .drawer-coming-soon{display:block;padding:8px 6px;font-size:13px;font-style:italic;color:var(--text-faint);}
+  .drawer-coming-soon{display:block;padding:8px 6px;font-size:14px;color:var(--text-faint);}
+  .drawer-coming-soon em{font-style:italic;font-size:12px;}
 
   .account-panel{max-width:440px;margin:24px 0 60px;}
   .account-panel h2{font-family:var(--font-display);font-size:26px;margin:0 0 24px;font-weight:600;}
@@ -1806,6 +1807,12 @@ function drawerAxisSection(label, linksHtml){
 }
 
 function toggleSideDrawer(){ document.getElementById("side-drawer-overlay").classList.toggle("open"); }
+
+/** Un futur outil nommé, pas encore construit — affiché en gris, non
+ * cliquable, avec la mention "(bientôt)" à côté de son nom. */
+function comingSoonItem(name){
+  return `<span class="drawer-coming-soon">${name} <em>(bientôt)</em></span>`;
+}
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") document.getElementById("side-drawer-overlay").classList.remove("open");
 });
@@ -1827,21 +1834,26 @@ async function renderAuthArea(session){
 
     pseudoEl.innerHTML = `<a href="#" onclick="navigateAccount();return false;">${label}</a>`;
 
-    // Un axe par section déjà construite — Codex/Mercatum/Valor/Iris
-    // n'apparaissent pas encore : pas de vraie page dédiée pour eux pour
-    // l'instant (voir la discussion sur la structure Orbis).
-    const terraLinks = `<a href="#" onclick="navigateCollection();return false;">Ma collection</a>`;
-    const lumenLinks = `<a href="#" onclick="navigateBinders();return false;">Mes classeurs</a>`;
-    const comingSoon = `<span class="drawer-coming-soon">Bientôt</span>`;
-    const iterLinks = `<a href="#" onclick="navigateImportExport();return false;">Import/Export</a>`;
+    // Chaque axe liste ses vraies pages construites, plus ses futurs
+    // outils nommés (affichés en "bientôt", non cliquables).
+    const terraLinks = `<a href="#" onclick="navigateCollection();return false;">Ma collection</a>` +
+      comingSoonItem("Zone d'échanges") + comingSoonItem("SafeTrade");
+    const lumenLinks = `<a href="#" onclick="navigateBinders();return false;">Mes classeurs</a>` +
+      comingSoonItem("Rankings");
+    const mercatusLinks = comingSoonItem("Zone de vente");
+    const valorLinks = comingSoonItem("MultiGraph") + comingSoonItem("Oracle");
+    const codexLinks = comingSoonItem("Mes decks");
+    const irisLinks = comingSoonItem("Scanner") + comingSoonItem("BulkScan");
+    const iterLinks = `<a href="#" onclick="navigateImportExport();return false;">Import/Export</a>` +
+      comingSoonItem("Merx");
 
     drawer.innerHTML =
       drawerAxisSection("Terra", terraLinks) +
       drawerAxisSection("Lumen", lumenLinks) +
-      drawerAxisSection("Mercatum", comingSoon) +
-      drawerAxisSection("Valor", comingSoon) +
-      drawerAxisSection("Codex", comingSoon) +
-      drawerAxisSection("Iris", comingSoon) +
+      drawerAxisSection("Mercatus", mercatusLinks) +
+      drawerAxisSection("Valor", valorLinks) +
+      drawerAxisSection("Codex", codexLinks) +
+      drawerAxisSection("Iris", irisLinks) +
       drawerAxisSection("Iter", iterLinks) +
       `<div class="drawer-divider"></div>
       <div class="drawer-axis">
