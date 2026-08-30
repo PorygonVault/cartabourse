@@ -26,13 +26,11 @@
   .search-wrap input{width:100%;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:10px 14px 10px 36px;border-radius:var(--radius);font-size:14px;}
   .search-icon{position:absolute;left:12px;top:50%;transform:translateY(-50%);color:var(--text-faint);font-size:13px;}
 
-  .auth-area{display:flex;align-items:center;gap:10px;flex-shrink:0;}
   .hamburger-btn{
-    display:none;background:none;border:1px solid var(--border);color:var(--text);
+    background:none;border:1px solid var(--border);color:var(--text);
     border-radius:var(--radius);padding:6px 11px;font-size:16px;cursor:pointer;flex-shrink:0;
   }
   .hamburger-btn:hover{border-color:var(--gold);}
-  .header-menu-panel{display:flex;align-items:center;gap:14px;}
   .currency-select{
     font-family:var(--font-mono);font-size:12px;background:var(--panel);border:1px solid var(--border);
     color:var(--text-dim);padding:7px 10px;border-radius:20px;cursor:pointer;flex-shrink:0;
@@ -44,26 +42,39 @@
     color:var(--text-dim);cursor:pointer;transition:all .15s;
   }
   .auth-btn:hover{border-color:var(--gold);color:var(--text);}
-  .auth-user{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;}
-  .auth-user:hover{color:var(--gold-bright);}
 
-  .nav-dropdown{position:relative;display:inline-block;}
-  .nav-dropdown-trigger{
-    background:transparent;border:1px solid transparent;border-radius:20px;cursor:pointer;
-    padding:6px 12px;display:flex;align-items:center;transition:border-color .15s;
+  /* Pseudo — reste directement dans l'en-tête, jamais caché dans le
+     tiroir, comme demandé. */
+  .header-pseudo{font-family:var(--font-mono);font-size:12px;flex-shrink:0;white-space:nowrap;}
+  .header-pseudo a{color:var(--text-dim);text-decoration:none;}
+  .header-pseudo a:hover{color:var(--gold-bright);}
+
+  /* Tiroir latéral — même système sur PC et mobile, contrairement à
+     l'ancien menu qui ne se comportait différemment que sur mobile. */
+  .side-drawer-overlay{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:200;
   }
-  .nav-dropdown-trigger:hover{border-color:var(--border);}
-  .nav-dropdown-trigger img{height:22px;width:auto;display:block;}
-  .nav-dropdown-fallback{font-family:var(--font-mono);font-size:12px;text-transform:uppercase;letter-spacing:0.04em;color:var(--text-dim);}
-  .nav-dropdown-trigger-text{font-family:var(--font-mono);font-size:12px;color:var(--text-dim);max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .nav-dropdown-menu{
-    display:none;position:absolute;top:calc(100% + 6px);left:0;min-width:170px;z-index:60;
-    background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:6px;
-    box-shadow:0 8px 24px rgba(0,0,0,0.35);
+  .side-drawer-overlay.open{display:block;}
+  .side-drawer{
+    position:absolute;top:0;right:0;bottom:0;width:280px;max-width:85vw;
+    background:var(--panel);border-left:1px solid var(--border);
+    padding:20px;overflow-y:auto;
   }
-  .nav-dropdown-menu.open{display:block;}
-  .nav-dropdown-menu a{display:block;padding:8px 12px;border-radius:5px;color:var(--text);text-decoration:none;font-size:13px;white-space:nowrap;}
-  .nav-dropdown-menu a:hover{background:var(--panel-light);color:var(--gold-bright);}
+  .side-drawer-close{
+    background:none;border:none;color:var(--text-dim);font-size:22px;cursor:pointer;
+    position:absolute;top:14px;right:14px;line-height:1;
+  }
+  .side-drawer-close:hover{color:var(--gold-bright);}
+  .drawer-axis{margin:28px 0 10px;}
+  .drawer-axis:first-child{margin-top:36px;}
+  .drawer-axis-title img{height:32px;width:auto;display:block;}
+  .drawer-axis-fallback{font-family:var(--font-display);font-size:18px;font-weight:600;color:var(--text);}
+  .drawer-axis-links{display:flex;flex-direction:column;margin-top:8px;padding-left:4px;}
+  .drawer-axis-links a{
+    padding:8px 6px;color:var(--text-dim);text-decoration:none;font-size:14px;border-radius:5px;
+  }
+  .drawer-axis-links a:hover{background:var(--panel-light);color:var(--gold-bright);}
+  .drawer-divider{height:1px;background:var(--border);margin:20px 0;}
 
   .account-panel{max-width:440px;margin:24px 0 60px;}
   .account-panel h2{font-family:var(--font-display);font-size:26px;margin:0 0 24px;font-weight:600;}
@@ -621,22 +632,9 @@
     .header-inner{padding:12px 14px;gap:12px;position:relative;}
     .search-wrap{min-width:0;flex-basis:100%;order:3;max-width:none;}
     .brand{flex-shrink:0;}
-    .auth-area{gap:6px;}
     .auth-btn{padding:7px 10px;font-size:11.5px;}
-
-    /* Menu principal replié derrière un bouton ☰ — plutôt que d'entasser
-       devise + connexion/liens dans la même ligne que le logo et la
-       recherche, cause principale des débordements sur beaucoup de pages. */
-    .hamburger-btn{display:block;order:2;margin-left:auto;}
-    .header-menu-panel{
-      display:none;position:absolute;top:100%;left:0;right:0;z-index:60;
-      flex-direction:column;align-items:stretch;gap:10px;
-      background:var(--panel);border:1px solid var(--border);border-top:none;
-      padding:14px;border-radius:0 0 8px 8px;
-    }
-    .header-menu-panel.mobile-open{display:flex;}
-    .header-menu-panel .auth-area{flex-direction:column;align-items:stretch;gap:8px;}
-    .header-menu-panel .currency-select{width:100%;}
+    .header-pseudo{order:1;}
+    .hamburger-btn{order:2;margin-left:auto;}
 
     .grid{grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:10px;}
 
@@ -799,18 +797,17 @@
       <span class="search-icon">⌕</span>
       <input id="global-search" type="text" placeholder="Rechercher une carte ou une extension… (Entrée pour lancer)" onkeydown="onSearchKeydown(event)">
     </div>
-    <button class="hamburger-btn" id="hamburger-btn" onclick="toggleMobileMenu()">☰</button>
-    <div class="header-menu-panel" id="header-menu-panel">
-      <select class="currency-select" id="currency-select" onchange="setCurrency(this.value)">
-        <option value="EUR">€ EUR</option>
-        <option value="GBP">£ GBP</option>
-      </select>
-      <div class="auth-area" id="auth-area">
-        <button class="auth-btn" onclick="openAuthModal()">Se connecter</button>
-      </div>
-    </div>
+    <span class="header-pseudo" id="header-pseudo"></span>
+    <button class="hamburger-btn" id="hamburger-btn" onclick="toggleSideDrawer()">☰</button>
   </div>
 </header>
+
+<div class="side-drawer-overlay" id="side-drawer-overlay" onclick="if(event.target===this)toggleSideDrawer()">
+  <div class="side-drawer" id="side-drawer">
+    <button class="side-drawer-close" onclick="toggleSideDrawer()">×</button>
+    <div id="side-drawer-content"></div>
+  </div>
+</div>
 
 <div class="modal-overlay" id="auth-modal-overlay" onclick="if(event.target===this)closeAuthModal()">
   <div class="modal">
@@ -1787,39 +1784,31 @@ async function supabaseAuthedFetch(path, options = {}){
  * bordure) ne sont pas déposés, le nom en texte s'affiche à la place
  * (repli automatique via onerror, aucune modification de code à faire
  * une fois les fichiers prêts — juste les déposer au bon endroit). */
-function navAxisDropdown(label, linksHtml){
+/** Une section par axe dans le tiroir — le logo sert de titre, ses
+ * pages sont listées juste dessous. Tant que les vrais fichiers (sans
+ * bordure) ne sont pas déposés dans /logos, le nom en texte s'affiche à
+ * la place (repli automatique via onerror, rien à retoucher au code
+ * une fois les fichiers prêts). */
+function drawerAxisSection(label, linksHtml){
   return `
-    <div class="nav-dropdown">
-      <button class="nav-dropdown-trigger" onclick="toggleNavDropdown(this)">
+    <div class="drawer-axis">
+      <div class="drawer-axis-title">
         <img src="logos/OrbisLogoWhite-${label}-NoBorder.png" alt="${label}" onerror="this.style.display='none';this.nextElementSibling.style.display='inline';">
-        <span class="nav-dropdown-fallback" style="display:none;">${label}</span>
-      </button>
-      <div class="nav-dropdown-menu">${linksHtml}</div>
+        <span class="drawer-axis-fallback" style="display:none;">${label}</span>
+      </div>
+      <div class="drawer-axis-links">${linksHtml}</div>
     </div>`;
 }
 
-function navSimpleDropdown(label, linksHtml){
-  return `
-    <div class="nav-dropdown">
-      <button class="nav-dropdown-trigger nav-dropdown-trigger-text" onclick="toggleNavDropdown(this)">${label}</button>
-      <div class="nav-dropdown-menu">${linksHtml}</div>
-    </div>`;
-}
-
-function toggleNavDropdown(btn){
-  const menu = btn.nextElementSibling;
-  const wasOpen = menu.classList.contains("open");
-  document.querySelectorAll(".nav-dropdown-menu.open").forEach(m => m.classList.remove("open"));
-  if (!wasOpen) menu.classList.add("open");
-}
-document.addEventListener("click", (e) => {
-  if (!e.target.closest(".nav-dropdown")){
-    document.querySelectorAll(".nav-dropdown-menu.open").forEach(m => m.classList.remove("open"));
-  }
+function toggleSideDrawer(){ document.getElementById("side-drawer-overlay").classList.toggle("open"); }
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") document.getElementById("side-drawer-overlay").classList.remove("open");
 });
 
 async function renderAuthArea(session){
-  const area = document.getElementById("auth-area");
+  const pseudoEl = document.getElementById("header-pseudo");
+  const drawer = document.getElementById("side-drawer-content");
+
   if (session && session.user){
     let label = session.user.email;
     let role = "user";
@@ -1831,24 +1820,39 @@ async function renderAuthArea(session){
       }
     } catch (_) { /* on garde l'email en repli si le profil n'est pas encore accessible */ }
 
+    pseudoEl.innerHTML = `<a href="#" onclick="navigateAccount();return false;">${label}</a>`;
+
     // Un axe par section déjà construite — Codex/Mercatum/Valor/Iris
     // n'apparaissent pas encore : pas de vraie page dédiée pour eux pour
     // l'instant (voir la discussion sur la structure Orbis).
     const terraLinks = `<a href="#" onclick="navigateCollection();return false;">Ma collection</a>`;
     const lumenLinks = `<a href="#" onclick="navigateBinders();return false;">Mes classeurs</a>`;
     const iterLinks = `<a href="#" onclick="navigateImportExport();return false;">Import/Export</a>`;
-    const accountLinks = `
-      <a href="#" onclick="navigateAccount();return false;">Mon compte</a>
-      ${role === "admin" ? `<a href="#" onclick="navigateAdmin();return false;">Admin</a>` : ""}
-      <a href="#" onclick="signOut();return false;">Se déconnecter</a>`;
 
-    area.innerHTML =
-      navAxisDropdown("Terra", terraLinks) +
-      navAxisDropdown("Lumen", lumenLinks) +
-      navAxisDropdown("Iter", iterLinks) +
-      navSimpleDropdown(label, accountLinks);
+    drawer.innerHTML =
+      drawerAxisSection("Terra", terraLinks) +
+      drawerAxisSection("Lumen", lumenLinks) +
+      drawerAxisSection("Iter", iterLinks) +
+      `<div class="drawer-divider"></div>
+      <div class="drawer-axis">
+        <select class="currency-select" id="currency-select" onchange="setCurrency(this.value)" style="width:100%;">
+          <option value="EUR">€ EUR</option>
+          <option value="GBP">£ GBP</option>
+        </select>
+      </div>
+      <div class="drawer-axis-links" style="margin-top:10px;">
+        ${role === "admin" ? `<a href="#" onclick="navigateAdmin();return false;">Admin</a>` : ""}
+        <a href="#" onclick="signOut();return false;">Se déconnecter</a>
+      </div>`;
   } else {
-    area.innerHTML = `<button class="auth-btn" onclick="openAuthModal()">Se connecter</button>`;
+    pseudoEl.innerHTML = `<a href="#" onclick="openAuthModal();return false;">Se connecter</a>`;
+    drawer.innerHTML = `
+      <div class="drawer-axis-links">
+        <select class="currency-select" id="currency-select" onchange="setCurrency(this.value)" style="width:100%;margin-bottom:10px;">
+          <option value="EUR">€ EUR</option>
+          <option value="GBP">£ GBP</option>
+        </select>
+      </div>`;
   }
 }
 
@@ -3767,7 +3771,6 @@ function ieImportResumeFile(event){
    ou un lien partagé la retrouve telle quelle, au lieu de repartir à zéro.
    ============================================================ */
 function navigateHome(){ location.hash = "#/"; }
-function toggleMobileMenu(){ document.getElementById("header-menu-panel").classList.toggle("mobile-open"); }
 function navigateCard(id){ location.hash = "#/card/" + id; }
 function navigateSearch(term){ location.hash = "#/search/" + encodeURIComponent(term); }
 function navigateAccount(){ location.hash = "#/account"; }
@@ -3811,7 +3814,7 @@ async function init(){
 }
 
 function route(){
-  document.getElementById("header-menu-panel").classList.remove("mobile-open");
+  document.getElementById("side-drawer-overlay").classList.remove("open");
   const hash = location.hash || "#/";
   const cardMatch = hash.match(/^#\/card\/(\d+)$/);
   const setMatch = hash.match(/^#\/set\/(\d+)$/);
