@@ -1854,6 +1854,10 @@ async function renderAuthArea(session){
         </select>
       </div>`;
   }
+  // Une seule ligne pour les deux cas (connecté ou non) — le sélecteur
+  // vient d'être (re)créé juste au-dessus, c'est le seul moment où il
+  // est garanti d'exister.
+  document.getElementById("currency-select").value = preferredCurrency;
 }
 
 supabaseClient.auth.onAuthStateChange((event, session) => {
@@ -3799,10 +3803,9 @@ window.addEventListener("DOMContentLoaded", init);
 
 async function init(){
   setupBinderSwipe();
-  document.getElementById("currency-select").value = preferredCurrency;
-  // Attendu (pas juste lancé en arrière-plan) : garantit que le taux est
-  // disponible avant tout affichage de prix, sinon la conversion pouvait
-  // rester silencieusement désactivée si une fiche carte s'ouvrait trop vite.
+  // (l'initialisation de la valeur du sélecteur de devise se fait
+  // maintenant dans renderAuthArea, seul endroit où l'élément existe
+  // réellement — il vit désormais dans le tiroir, construit plus tard)
   await loadExchangeRate();
   try {
     await loadMoreCards();
