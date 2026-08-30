@@ -1837,15 +1837,16 @@ async function renderAuthArea(session){
     // Chaque axe liste ses vraies pages construites, plus ses futurs
     // outils nommés (affichés en "bientôt", non cliquables).
     const terraLinks = `<a href="#" onclick="navigateCollection();return false;">Ma collection</a>` +
-      comingSoonItem("Zone d'échanges") + comingSoonItem("SafeTrade");
+      comingSoonItem("Zone d'échanges") + comingSoonItem("SafeTrade") +
+      comingSoonItem("Coffre-fort") + comingSoonItem("Watchlist");
     const lumenLinks = `<a href="#" onclick="navigateBinders();return false;">Mes classeurs</a>` +
-      comingSoonItem("Rankings");
-    const mercatusLinks = comingSoonItem("Zone de vente");
-    const valorLinks = comingSoonItem("MultiGraph") + comingSoonItem("Oracle");
-    const codexLinks = comingSoonItem("Mes decks");
+      comingSoonItem("Rankings") + comingSoonItem("Hits Wall");
+    const mercatusLinks = comingSoonItem("Zone de vente") + comingSoonItem("Market sniper");
+    const valorLinks = comingSoonItem("MultiGraph") + comingSoonItem("Oracle") + comingSoonItem("Tops & Flops");
+    const codexLinks = comingSoonItem("Mes decks") + comingSoonItem("Meta-Tracker");
     const irisLinks = comingSoonItem("Scanner") + comingSoonItem("BulkScan");
     const iterLinks = `<a href="#" onclick="navigateImportExport();return false;">Import/Export</a>` +
-      comingSoonItem("Merx");
+      comingSoonItem("Merx") + comingSoonItem("Overlays") + comingSoonItem("Miniatures") + comingSoonItem("Calculateur de frais");
 
     drawer.innerHTML =
       drawerAxisSection("Terra", terraLinks) +
