@@ -20,7 +20,8 @@
 
   header.site{position:sticky;top:0;z-index:50;background:rgba(20,22,31,0.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);}
   .header-inner{max-width:1600px;margin:0 auto;padding:16px 28px;display:flex;align-items:center;gap:28px;flex-wrap:wrap;}
-  .brand{font-family:var(--font-display);font-weight:700;font-size:22px;display:flex;align-items:baseline;gap:6px;cursor:pointer;}
+  .brand{font-family:var(--font-display);font-weight:700;font-size:22px;display:flex;align-items:center;gap:6px;cursor:pointer;}
+  .brand img{height:32px;width:auto;display:block;}
   .brand .mark{color:var(--gold-bright);}
   .search-wrap{flex:1;position:relative;max-width:520px;min-width:200px;}
   .search-wrap input{width:100%;background:var(--panel);border:1px solid var(--border);color:var(--text);padding:10px 14px 10px 36px;border-radius:var(--radius);font-size:14px;}
@@ -75,6 +76,7 @@
   }
   .drawer-axis-links a:hover{background:var(--panel-light);color:var(--gold-bright);}
   .drawer-divider{height:1px;background:var(--border);margin:20px 0;}
+  .drawer-coming-soon{display:block;padding:8px 6px;font-size:13px;font-style:italic;color:var(--text-faint);}
 
   .account-panel{max-width:440px;margin:24px 0 60px;}
   .account-panel h2{font-family:var(--font-display);font-size:26px;margin:0 0 24px;font-weight:600;}
@@ -792,7 +794,10 @@
 
 <header class="site">
   <div class="header-inner">
-    <div class="brand" onclick="navigateHome()"><span class="mark">◆</span>CartaBourse</div>
+    <div class="brand" onclick="navigateHome()">
+      <img src="logos/OrbisLogoWhite-NoBorder.png" alt="Orbis TCG" onerror="this.style.display='none';this.nextElementSibling.style.display='inline';">
+      <span class="brand-fallback" style="display:none;"><span class="mark">◆</span>CartaBourse</span>
+    </div>
     <div class="search-wrap">
       <span class="search-icon">⌕</span>
       <input id="global-search" type="text" placeholder="Rechercher une carte ou une extension… (Entrée pour lancer)" onkeydown="onSearchKeydown(event)">
@@ -1827,11 +1832,16 @@ async function renderAuthArea(session){
     // l'instant (voir la discussion sur la structure Orbis).
     const terraLinks = `<a href="#" onclick="navigateCollection();return false;">Ma collection</a>`;
     const lumenLinks = `<a href="#" onclick="navigateBinders();return false;">Mes classeurs</a>`;
+    const comingSoon = `<span class="drawer-coming-soon">Bientôt</span>`;
     const iterLinks = `<a href="#" onclick="navigateImportExport();return false;">Import/Export</a>`;
 
     drawer.innerHTML =
       drawerAxisSection("Terra", terraLinks) +
       drawerAxisSection("Lumen", lumenLinks) +
+      drawerAxisSection("Mercatum", comingSoon) +
+      drawerAxisSection("Valor", comingSoon) +
+      drawerAxisSection("Codex", comingSoon) +
+      drawerAxisSection("Iris", comingSoon) +
       drawerAxisSection("Iter", iterLinks) +
       `<div class="drawer-divider"></div>
       <div class="drawer-axis">
