@@ -29,6 +29,7 @@
   input[type="search"], input[type="date"], input[type="url"], select, textarea{
     background:var(--panel-light);border:1px solid var(--border);color:var(--text);
     padding:8px 12px;border-radius:var(--radius);font-size:14px;font-family:var(--font-body);
+    max-width:100%;
   }
   input[type="text"]:focus, input[type="number"]:focus, input[type="password"]:focus,
   input[type="email"]:focus, input[type="search"]:focus, input[type="date"]:focus,
@@ -125,6 +126,11 @@
   }
   .modal-close:hover{color:var(--text);}
   .modal h3{font-family:var(--font-display);font-size:20px;margin:0 0 20px;font-weight:600;}
+  /* Étiquette + champ dans une modale : toujours l'un sous l'autre,
+     jamais côte à côte — évite qu'un select avec des options longues
+     (ex. "Light Played") ne pousse la modale plus large que l'écran. */
+  .modal label{display:block;margin-bottom:12px;font-size:13px;color:var(--text-dim);}
+  .modal label select, .modal label input{display:block;width:100%;margin-top:5px;}
   .google-btn{
     width:100%;display:flex;align-items:center;justify-content:center;gap:10px;
     background:var(--panel-light);border:1px solid var(--border);border-radius:var(--radius);
@@ -336,6 +342,10 @@
   .manage-owned-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border);}
   .manage-owned-row:last-child{border-bottom:none;}
   .manage-owned-row select, .manage-owned-row input[type="text"]{padding:5px 8px;}
+  .manage-owned-row .tile-remove-btn{
+    position:static;margin-left:auto;border-color:var(--red);color:var(--red);
+  }
+  .manage-owned-row .tile-remove-btn:hover{background:var(--red);color:#fff;}
   .collection-zone-title{font-family:var(--font-display);font-size:16px;margin:18px 0 10px;color:var(--text-dim);}
   .collection-zone-title:first-child{margin-top:0;}
   .quick-add-bar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px;padding:10px 14px;background:var(--panel);border:1px solid var(--border);border-radius:8px;font-size:13px;}
@@ -568,7 +578,7 @@
   .market-placeholder h4{font-family:var(--font-display);font-size:16px;color:var(--text);margin:0 0 6px;}
   .market-placeholder p{font-size:13px;line-height:1.5;margin:0;max-width:420px;margin:0 auto;}
   .price-chart-wrap{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:20px;}
-  #price-chart-svg, .pc-chart-anchor{position:relative;}
+  #price-chart-svg, .pc-chart-anchor{position:relative;overflow:hidden;}
   .price-stat-row{display:flex;gap:28px;margin-bottom:16px;flex-wrap:wrap;}
   .price-stat .label{font-family:var(--font-mono);font-size:10px;color:var(--text-faint);text-transform:uppercase;margin-bottom:3px;}
   .price-stat .value{font-family:var(--font-mono);font-size:19px;color:var(--gold-bright);font-weight:600;}
@@ -589,6 +599,14 @@
      lieu de simplement défiler lui-même. */
   .table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin-top:8px;}
   .listing-table{width:100%;min-width:520px;border-collapse:collapse;font-size:13px;}
+  .ranking-pseudo{display:inline-block;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;}
+  .ranking-stats-with-cards{display:flex;gap:24px;align-items:stretch;margin-bottom:20px;flex-wrap:wrap;}
+  .ranking-stats-col{flex:0 0 260px;margin-bottom:0;flex-direction:column;gap:14px;border-bottom:none;padding-bottom:0;}
+  .ranking-summary-cards-col{flex:1;min-width:220px;max-height:280px;overflow-y:auto;}
+  @media (max-width:640px){
+    .ranking-stats-with-cards{flex-direction:column;}
+    .ranking-stats-col{flex:none;}
+  }
   .listing-table thead th{
     text-align:left;font-family:var(--font-mono);font-size:10.5px;text-transform:uppercase;
     letter-spacing:0.05em;color:var(--text-faint);border-bottom:1px solid var(--border);
@@ -740,7 +758,7 @@
 .ie-hint{font-size:13px;color:var(--text-dim);}
 .ie-checkbox-label{display:flex;align-items:flex-start;gap:8px;font-size:13px;margin-top:10px;color:var(--text-dim);}
 #ie-export-status{margin-top:10px;font-size:14px;color:var(--text);}
-#ie-name-template,#ie-description-template{width:100%;font-size:15px;padding:10px;font-family:inherit;box-sizing:border-box;resize:vertical;background:var(--ink);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);}
+#ie-name-template,#ie-description-template,#ie-description-template-html{width:100%;font-size:15px;padding:10px;font-family:inherit;box-sizing:border-box;resize:vertical;background:var(--ink);border:1px solid var(--border);color:var(--text);border-radius:var(--radius);}
 #ie-description-template:disabled{opacity:0.5;}
 .ie-blocks{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 6px;}
 .ie-block-chip{background:var(--panel-light);border:1px solid var(--border);color:var(--gold-bright);border-radius:6px;padding:4px 9px;font-size:12.5px;cursor:pointer;font-family:var(--font-mono);}
@@ -3979,17 +3997,19 @@ async function renderRankingDetailPage(listId){
       <h1>${listRows[0].name}</h1>
       ${listRows[0].description ? `<p style="color:var(--text-dim);margin-bottom:16px;">${listRows[0].description}</p>` : ""}
 
-      <div class="collection-stats-row" style="margin-bottom:16px;">
-        <div class="collection-stat"><div class="label">Cartes dans le classement</div><div class="value">${totalCards}</div></div>
-        <div class="collection-stat"><div class="label">Complétion moy. (non gradé)</div><div class="value">${avgOwned.toFixed(1)}%</div></div>
-        <div class="collection-stat"><div class="label">Complétion moy. (gradé 10)</div><div class="value">${avgGraded10.toFixed(1)}%</div></div>
-        <div class="collection-stat"><div class="label">Complétion moy. (PSA 10)</div><div class="value">${avgPsa10.toFixed(1)}%</div></div>
+      <div class="ranking-stats-with-cards">
+        <div class="collection-stats-row ranking-stats-col">
+          <div class="collection-stat"><div class="label">Cartes dans le classement</div><div class="value">${totalCards}</div></div>
+          <div class="collection-stat"><div class="label">Complétion moy. (non gradé)</div><div class="value">${avgOwned.toFixed(1)}%</div></div>
+          <div class="collection-stat"><div class="label">Complétion moy. (gradé 10)</div><div class="value">${avgGraded10.toFixed(1)}%</div></div>
+          <div class="collection-stat"><div class="label">Complétion moy. (PSA 10)</div><div class="value">${avgPsa10.toFixed(1)}%</div></div>
+        </div>
+        <div id="ranking-summary-cards" class="ie-picker-card-slider ranking-summary-cards-col"></div>
       </div>
-
-      <div id="ranking-summary-cards" class="ie-picker-card-slider" style="margin-bottom:24px;"></div>
 
       <h3>Classement</h3>
       ${leaderboard.length === 0 ? `<div class="empty-state">Personne ne possède encore de carte de ce classement.</div>` : `
+        <div class="table-scroll">
         <table class="listing-table">
           <thead><tr><th>#</th><th>Membre</th><th>Possédées</th><th>Gradées 10</th><th>PSA 10</th></tr></thead>
           <tbody>
@@ -3998,14 +4018,15 @@ async function renderRankingDetailPage(listId){
               return `
               <tr>
                 <td>${i + 1}</td>
-                <td><a href="#" onclick="openParticipantDrawer('${row.user_id}', '${row.display_name.replace(/'/g, "\\'")}');return false;">${row.display_name}</a></td>
+                <td><a href="#" title="${row.display_name}" class="ranking-pseudo" onclick="openParticipantDrawer('${row.user_id}', '${row.display_name.replace(/'/g, "\\'")}');return false;">${row.display_name}</a></td>
                 <td>${row.owned_count}${pct(row.owned_count)}</td>
                 <td>${row.graded10_count}${pct(row.graded10_count)}</td>
                 <td>${row.psa10_count}${pct(row.psa10_count)}</td>
               </tr>`;
             }).join("")}
           </tbody>
-        </table>`}`;
+        </table>
+        </div>`}`;
 
     renderRankingSummaryCards(currentRankingCards);
   } catch (e) {
@@ -4364,6 +4385,7 @@ function drawPriceChart(history){
     hoverLine.setAttribute("x1", x); hoverLine.setAttribute("x2", x); hoverLine.style.opacity = 1;
 
     const rect = wrap.getBoundingClientRect();
+    tooltip.style.transform = "translate(-50%,-130%)"; // repart de zéro avant de recalculer
     tooltip.style.left = `${(x / W) * rect.width}px`;
     tooltip.style.top = `${(y / H) * rect.height}px`;
     tooltip.style.opacity = 1;
@@ -4371,6 +4393,17 @@ function drawPriceChart(history){
     const dateLabel = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
     const priceLabel = history[i].price != null ? displayPrice(history[i].price, currency) : "—";
     tooltip.textContent = `${dateLabel} · ${priceLabel}`;
+
+    // Empêche l'infobulle de déborder du conteneur (et donc d'élargir
+    // toute la page sur mobile) — décale seulement l'étiquette, jamais
+    // le graphique lui-même.
+    requestAnimationFrame(() => {
+      const tRect = tooltip.getBoundingClientRect();
+      let shift = 0;
+      if (tRect.right > rect.right) shift = rect.right - tRect.right;
+      if (tRect.left < rect.left) shift = rect.left - tRect.left;
+      if (shift !== 0) tooltip.style.transform = `translate(calc(-50% + ${shift}px),-130%)`;
+    });
   }
   function hidePoint(){
     hoverDot.style.opacity = 0; hoverLine.style.opacity = 0; tooltip.style.opacity = 0;
@@ -4780,12 +4813,21 @@ function renderCollectionValueChart(totalByDate, currency){
     hoverDot.setAttribute("cx", x); hoverDot.setAttribute("cy", y); hoverDot.style.opacity = 1;
     hoverLine.setAttribute("x1", x); hoverLine.setAttribute("x2", x); hoverLine.style.opacity = 1;
     const rect = wrap.getBoundingClientRect();
+    tooltip.style.transform = "translate(-50%,-130%)";
     tooltip.style.left = `${(x / W) * rect.width}px`;
     tooltip.style.top = `${(y / H) * rect.height}px`;
     tooltip.style.opacity = 1;
     const d = new Date(dates[i]);
     const dateLabel = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short", year: "numeric" });
     tooltip.textContent = `${dateLabel} · ${displayPrice(values[i], currency)}`;
+
+    requestAnimationFrame(() => {
+      const tRect = tooltip.getBoundingClientRect();
+      let shift = 0;
+      if (tRect.right > rect.right) shift = rect.right - tRect.right;
+      if (tRect.left < rect.left) shift = rect.left - tRect.left;
+      if (shift !== 0) tooltip.style.transform = `translate(calc(-50% + ${shift}px),-130%)`;
+    });
   }
   function hidePoint(){
     hoverDot.style.opacity = 0; hoverLine.style.opacity = 0; tooltip.style.opacity = 0;
