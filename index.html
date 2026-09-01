@@ -3843,31 +3843,71 @@ function navigateScanner(){ location.hash = "#/scanner"; }
 function navigateImportExport(){ location.hash = "#/export/voggt"; }
 function navigateRankings(){ location.hash = "#/rankings"; }
 
+let currentRankingsData = []; // { id, name, description, category, cardCount, searchText }
+
 async function renderRankingsListPage(){
   const content = document.getElementById("rankings-list-content");
   content.innerHTML = `<div class="empty-state">Chargement...</div>`;
   try {
-    const lists = await supabaseAuthedFetch(`ranking_lists?select=id,name,description,category,ranking_list_cards(count)&order=created_at.desc`);
+    const [lists, cardLinks] = await Promise.all([
+      supabaseAuthedFetch(`ranking_lists?select=id,name,description,category,ranking_list_cards(count)&order=created_at.desc`),
+      supabaseAuthedFetch(`ranking_list_cards?select=list_id,cards(card_names(name),sets(name_en))`),
+    ]);
+
     if (lists.length === 0){
       content.innerHTML = `<div class="empty-state">Aucun classement pour l'instant.</div>`;
       return;
     }
-    const byCategory = {};
-    for (const l of lists){
-      const cat = l.category || "Autres";
-      (byCategory[cat] = byCategory[cat] || []).push(l);
+
+    // Texte de recherche par classement : tous les noms de cartes +
+    // le nom du set, réunis en une seule chaîne en minuscules.
+    const searchTextByList = {};
+    for (const link of cardLinks){
+      const names = (link.cards.card_names || []).map(n => n.name).join(" ");
+      const setName = link.cards.sets ? link.cards.sets.name_en : "";
+      searchTextByList[link.list_id] = ((searchTextByList[link.list_id] || "") + " " + names + " " + setName).toLowerCase();
     }
-    content.innerHTML = Object.entries(byCategory).map(([cat, items]) => `
-      <h3 class="collection-zone-title">${cat}</h3>
-      ${items.map(l => `
-        <div class="binder-card-tile" onclick="location.hash='#/rankings/${l.id}'">
-          <div class="name">${l.name}</div>
-          <div class="meta">${l.description || ""} · ${(l.ranking_list_cards[0] || {count:0}).count} carte(s)</div>
-        </div>`).join("")}
-    `).join("");
+
+    currentRankingsData = lists.map(l => ({
+      id: l.id, name: l.name, description: l.description, category: l.category || "Autres",
+      cardCount: (l.ranking_list_cards[0] || {count:0}).count,
+      searchText: (searchTextByList[l.id] || "") + " " + l.name.toLowerCase(),
+    }));
+
+    content.innerHTML = `
+      <input type="text" id="rankings-search" placeholder="Rechercher un classement par nom de set ou de carte..."
+             oninput="filterRankingsList(this.value)" style="width:100%;margin-bottom:20px;">
+      <div id="rankings-list-groups"></div>`;
+
+    renderRankingsGroups(currentRankingsData);
   } catch (e) {
     content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
   }
+}
+
+function renderRankingsGroups(items){
+  const container = document.getElementById("rankings-list-groups");
+  if (items.length === 0){
+    container.innerHTML = `<div class="empty-state">Aucun classement ne correspond à cette recherche.</div>`;
+    return;
+  }
+  const byCategory = {};
+  for (const l of items) (byCategory[l.category] = byCategory[l.category] || []).push(l);
+
+  container.innerHTML = Object.entries(byCategory).map(([cat, group]) => `
+    <h3 class="collection-zone-title">${cat}</h3>
+    ${group.map(l => `
+      <div class="binder-card-tile" onclick="location.hash='#/rankings/${l.id}'">
+        <div class="name">${l.name}</div>
+        <div class="meta">${l.description || ""} · ${l.cardCount} carte(s)</div>
+      </div>`).join("")}
+  `).join("");
+}
+
+function filterRankingsList(term){
+  const t = term.trim().toLowerCase();
+  const filtered = !t ? currentRankingsData : currentRankingsData.filter(l => l.searchText.includes(t));
+  renderRankingsGroups(filtered);
 }
 
 let currentRankingCards = [];
@@ -3927,8 +3967,6 @@ async function renderRankingDetailPage(listId){
         <div class="collection-stat"><div class="label">Complétion moy. (PSA 10)</div><div class="value">${avgPsa10.toFixed(1)}%</div></div>
       </div>
 
-      <input type="text" id="ranking-summary-search" placeholder="Rechercher par nom de carte ou d'extension..."
-             oninput="filterRankingSummaryCards(this.value)" style="width:100%;margin-bottom:10px;">
       <div id="ranking-summary-cards" class="ie-picker-card-slider" style="margin-bottom:24px;"></div>
 
       <h3>Classement</h3>
@@ -3962,14 +4000,6 @@ function renderRankingSummaryCards(cards){
       ${c.image ? cardImgTag(c.image, "low", "", c.name, 'loading="lazy"') : ""}
       <span class="picker-card-name">${c.name}</span>
     </div>`).join("");
-}
-
-function filterRankingSummaryCards(term){
-  const t = term.trim().toLowerCase();
-  const filtered = !t ? currentRankingCards : currentRankingCards.filter(c =>
-    c.name.toLowerCase().includes(t) || c.setName.toLowerCase().includes(t)
-  );
-  renderRankingSummaryCards(filtered);
 }
 
 /* Diaporama — réutilise la modale générique déjà présente sur le site */
@@ -6191,7 +6221,7 @@ async function renderAdminRankings(){
   const content = document.getElementById("admin-content");
   content.innerHTML = `<div class="empty-state">Chargement...</div>`;
   try {
-    const lists = await supabaseAuthedFetch(`ranking_lists?select=id,name,description,ranking_list_cards(count)&order=created_at.desc`);
+    const lists = await supabaseAuthedFetch(`ranking_lists?select=id,name,description,category,ranking_list_cards(count)&order=created_at.desc`);
     content.innerHTML = `
       <div class="account-panel" style="max-width:600px;margin-bottom:24px;">
         <h3>Nouveau classement</h3>
@@ -6209,6 +6239,10 @@ async function renderAdminRankings(){
             <div class="meta">${l.description || ""} · ${(l.ranking_list_cards[0] || {count:0}).count} carte(s)
               — <a href="#" onclick="manageRankingList(${l.id});return false;">Gérer les cartes</a>
               · <a href="#/rankings/${l.id}" target="_blank">Voir le classement</a>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
+              <input type="text" id="ranking-category-${l.id}" value="${l.category || ""}" placeholder="Catégorie" style="flex:1;">
+              <button class="auth-btn" onclick="updateRankingCategory(${l.id})">Enregistrer</button>
             </div>
           </div>`).join("")}
       </div>
@@ -6229,6 +6263,15 @@ async function createRankingList(){
     renderAdminRankings();
   } catch (e) {
     errorEl.textContent = e.message;
+  }
+}
+
+async function updateRankingCategory(listId){
+  const category = document.getElementById(`ranking-category-${listId}`).value.trim();
+  try {
+    await supabaseAuthedFetch(`ranking_lists?id=eq.${listId}`, { method: "PATCH", body: JSON.stringify({ category: category || null }) });
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
   }
 }
 
