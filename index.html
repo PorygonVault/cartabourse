@@ -18,6 +18,25 @@
   body{margin:0;background:var(--ink);color:var(--text);font-family:var(--font-body);-webkit-font-smoothing:antialiased;}
   a{color:inherit;text-decoration:none;}
 
+  /* Style de base pour TOUS les champs de saisie du site — avant
+     cette règle, seuls les champs enveloppés dans .account-field
+     avaient un vrai style ; tous les autres (recherche, admin,
+     catégories...) tombaient sur l'apparence brute du navigateur.
+     Les classes plus spécifiques déjà existantes (.manage-owned-row
+     input, .currency-select...) continuent de s'appliquer par-dessus
+     normalement, seule la couleur/bordure de base change pour elles. */
+  input[type="text"], input[type="number"], input[type="password"], input[type="email"],
+  input[type="search"], input[type="date"], input[type="url"], select, textarea{
+    background:var(--panel-light);border:1px solid var(--border);color:var(--text);
+    padding:8px 12px;border-radius:var(--radius);font-size:14px;font-family:var(--font-body);
+  }
+  input[type="text"]:focus, input[type="number"]:focus, input[type="password"]:focus,
+  input[type="email"]:focus, input[type="search"]:focus, input[type="date"]:focus,
+  input[type="url"]:focus, select:focus, textarea:focus{
+    border-color:var(--gold);outline:none;
+  }
+  input::placeholder, textarea::placeholder{color:var(--text-faint);}
+
   header.site{position:sticky;top:0;z-index:50;background:rgba(20,22,31,0.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);}
   .header-inner{max-width:1600px;margin:0 auto;padding:16px 28px;display:flex;align-items:center;gap:28px;flex-wrap:wrap;}
   .brand{font-family:var(--font-display);font-weight:700;font-size:22px;display:flex;align-items:center;gap:6px;cursor:pointer;}
