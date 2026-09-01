@@ -1123,6 +1123,17 @@
     <div id="collection-content"><div class="empty-state">Chargement...</div></div>
   </section>
 
+  <section id="view-rankings" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Rankings</div>
+    <h1>Rankings</h1>
+    <div id="rankings-list-content"><div class="empty-state">Chargement...</div></div>
+  </section>
+
+  <section id="view-ranking-detail" class="view">
+    <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / <a href="#/rankings" onclick="navigateRankings();return false;">Rankings</a> / <span id="ranking-detail-name"></span></div>
+    <div id="ranking-detail-content"><div class="empty-state">Chargement...</div></div>
+  </section>
+
   <section id="view-binders" class="view">
     <div class="breadcrumb"><a href="#" onclick="navigateHome();return false;">Accueil</a> / Mes classeurs</div>
 
@@ -1243,6 +1254,7 @@
       <button class="tab-btn active" data-tab="cards" onclick="navigateAdmin('cards');return false;">Cartes</button>
       <button class="tab-btn" data-tab="listings" onclick="navigateAdmin('listings');return false;">Listings</button>
       <button class="tab-btn" data-tab="members" onclick="navigateAdmin('members');return false;">Membres</button>
+      <button class="tab-btn" data-tab="rankings" onclick="navigateAdmin('rankings');return false;">Rankings</button>
     </div>
 
     <div id="admin-content"><div class="empty-state">Chargement...</div></div>
@@ -1840,7 +1852,7 @@ async function renderAuthArea(session){
       comingSoonItem("Zone d'échanges") + comingSoonItem("SafeTrade") +
       comingSoonItem("Coffre-fort") + comingSoonItem("Watchlist");
     const lumenLinks = `<a href="#" onclick="navigateBinders();return false;">Mes classeurs</a>` +
-      comingSoonItem("Rankings") + comingSoonItem("Hits Wall");
+      `<a href="#" onclick="navigateRankings();return false;">Rankings</a>` + comingSoonItem("Hits Wall");
     const mercatusLinks = comingSoonItem("Zone de vente") + comingSoonItem("Market sniper");
     const valorLinks = comingSoonItem("MultiGraph") + comingSoonItem("Oracle") + comingSoonItem("Tops & Flops");
     const codexLinks = comingSoonItem("Mes decks") + comingSoonItem("Meta-Tracker") + comingSoonItem("Map");
@@ -3809,6 +3821,62 @@ function navigateBinders(){ location.hash = "#/binders"; }
 function navigateBinder(id){ location.hash = "#/binder/" + id; }
 function navigateScanner(){ location.hash = "#/scanner"; }
 function navigateImportExport(){ location.hash = "#/export/voggt"; }
+function navigateRankings(){ location.hash = "#/rankings"; }
+
+async function renderRankingsListPage(){
+  const content = document.getElementById("rankings-list-content");
+  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const lists = await supabaseAuthedFetch(`ranking_lists?select=id,name,description,ranking_list_cards(count)&order=created_at.desc`);
+    content.innerHTML = lists.length === 0
+      ? `<div class="empty-state">Aucun classement pour l'instant.</div>`
+      : lists.map(l => `
+        <div class="binder-card-tile" onclick="location.hash='#/rankings/${l.id}'">
+          <div class="name">${l.name}</div>
+          <div class="meta">${l.description || ""} · ${(l.ranking_list_cards[0] || {count:0}).count} carte(s)</div>
+        </div>`).join("");
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function renderRankingDetailPage(listId){
+  const content = document.getElementById("ranking-detail-content");
+  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const listRows = await supabaseAuthedFetch(`ranking_lists?id=eq.${listId}&select=name,description`);
+    if (!listRows.length){
+      content.innerHTML = `<div class="empty-state">Classement introuvable.</div>`;
+      return;
+    }
+    document.getElementById("ranking-detail-name").textContent = listRows[0].name;
+
+    const leaderboard = await supabaseAuthedFetch(`rpc/get_ranking_leaderboard`, {
+      method: "POST",
+      body: JSON.stringify({ p_list_id: listId }),
+    });
+
+    content.innerHTML = `
+      <h1>${listRows[0].name}</h1>
+      ${listRows[0].description ? `<p style="color:var(--text-dim);margin-bottom:20px;">${listRows[0].description}</p>` : ""}
+      ${leaderboard.length === 0 ? `<div class="empty-state">Personne ne possède encore de carte de ce classement.</div>` : `
+        <table class="listing-table">
+          <thead><tr><th>#</th><th>Membre</th><th>Cartes possédées</th><th>Gradées 10</th><th>PSA 10</th></tr></thead>
+          <tbody>
+            ${leaderboard.map((row, i) => `
+              <tr>
+                <td>${i + 1}</td>
+                <td>${row.display_name}</td>
+                <td>${row.owned_count}</td>
+                <td>${row.graded10_count}</td>
+                <td>${row.psa10_count}</td>
+              </tr>`).join("")}
+          </tbody>
+        </table>`}`;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
 
 window.addEventListener("hashchange", route);
 
@@ -3856,6 +3924,8 @@ function route(){
   const isImportExport = hash === "#/import-export"; // ancienne route, gardée en alias
   const exportMatch = hash.match(/^#\/export(?:\/(voggt|whatnot|ebay|shopify|woocommerce))?$/);
   const isImport = hash === "#/import";
+  const isRankingsList = hash === "#/rankings";
+  const rankingDetailMatch = hash.match(/^#\/rankings\/(\d+)$/);
 
   document.getElementById("view-home").classList.remove("active");
   document.getElementById("view-card").classList.remove("active");
@@ -3867,6 +3937,8 @@ function route(){
   document.getElementById("view-binder").classList.remove("active");
   document.getElementById("view-scanner").classList.remove("active");
   document.getElementById("view-import-export").classList.remove("active");
+  document.getElementById("view-rankings").classList.remove("active");
+  document.getElementById("view-ranking-detail").classList.remove("active");
 
   if (cardMatch){
     document.getElementById("view-card").classList.add("active");
@@ -3898,6 +3970,12 @@ function route(){
   } else if (isImport){
     document.getElementById("view-import-export").classList.add("active");
     renderImportExportPage("import", null);
+  } else if (isRankingsList){
+    document.getElementById("view-rankings").classList.add("active");
+    renderRankingsListPage();
+  } else if (rankingDetailMatch){
+    document.getElementById("view-ranking-detail").classList.add("active");
+    renderRankingDetailPage(parseInt(rankingDetailMatch[1], 10));
   } else if (isScanner){
     // Section gardée dans le code (facile à réactiver), mais pas encore
     // fonctionnelle — on redirige plutôt que de laisser une page vide/cassée.
@@ -5581,6 +5659,7 @@ function setAdminTab(tab){
   document.querySelectorAll("#admin-tabs .tab-btn").forEach(btn => btn.classList.toggle("active", btn.dataset.tab === tab));
   if (tab === "cards") renderAdminCards();
   else if (tab === "listings") renderAdminListings();
+  else if (tab === "rankings") renderAdminRankings();
   else renderAdminMembers();
 }
 
@@ -5962,6 +6041,168 @@ async function adminDeleteListing(id){
 }
 
 /* ---------- Membres ---------- */
+/* ------------------------------------------------------------
+   Rankings (Lumen) — gestion admin. Liste des classements, création,
+   et gestion des cartes d'un classement précis (ajout manuel + par set
+   entier). Le préréglage "par rareté" viendra une fois la colonne de
+   rareté peuplée sur les cartes (pas encore le cas).
+   ------------------------------------------------------------ */
+let currentRankingListId = null;
+
+async function renderAdminRankings(){
+  const content = document.getElementById("admin-content");
+  content.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const lists = await supabaseAuthedFetch(`ranking_lists?select=id,name,description,ranking_list_cards(count)&order=created_at.desc`);
+    content.innerHTML = `
+      <div class="account-panel" style="max-width:600px;margin-bottom:24px;">
+        <h3>Nouveau classement</h3>
+        <div class="account-field"><label>Nom</label><input type="text" id="new-ranking-name"></div>
+        <div class="account-field"><label>Description</label><input type="text" id="new-ranking-desc"></div>
+        <div class="auth-error" id="new-ranking-error"></div>
+        <button class="auth-submit" onclick="createRankingList()">Créer</button>
+      </div>
+      <div id="admin-rankings-list">
+        ${lists.length === 0 ? `<div class="empty-state">Aucun classement pour l'instant.</div>` : lists.map(l => `
+          <div class="binder-card-tile" style="position:relative;margin-bottom:10px;">
+            <button class="tile-remove-btn" style="position:absolute;top:10px;right:10px;" title="Supprimer" onclick="deleteRankingList(${l.id})">×</button>
+            <div class="name">${l.name}</div>
+            <div class="meta">${l.description || ""} · ${(l.ranking_list_cards[0] || {count:0}).count} carte(s)
+              — <a href="#" onclick="manageRankingList(${l.id});return false;">Gérer les cartes</a>
+              · <a href="#/rankings/${l.id}" target="_blank">Voir le classement</a>
+            </div>
+          </div>`).join("")}
+      </div>
+      <div id="admin-ranking-manage"></div>`;
+  } catch (e) {
+    content.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+async function createRankingList(){
+  const name = document.getElementById("new-ranking-name").value.trim();
+  const description = document.getElementById("new-ranking-desc").value.trim();
+  const errorEl = document.getElementById("new-ranking-error");
+  if (!name){ errorEl.textContent = "Le nom est obligatoire."; return; }
+  try {
+    await supabaseAuthedFetch("ranking_lists", { method: "POST", body: JSON.stringify({ name, description: description || null }) });
+    renderAdminRankings();
+  } catch (e) {
+    errorEl.textContent = e.message;
+  }
+}
+
+async function deleteRankingList(listId){
+  if (!confirm("Supprimer ce classement et toutes ses cartes associées ?")) return;
+  try {
+    await supabaseAuthedFetch(`ranking_lists?id=eq.${listId}`, { method: "DELETE" });
+    renderAdminRankings();
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
+}
+
+async function manageRankingList(listId){
+  currentRankingListId = listId;
+  const container = document.getElementById("admin-ranking-manage");
+  container.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  try {
+    const cards = await supabaseAuthedFetch(
+      `ranking_list_cards?list_id=eq.${listId}&select=id,cards(id,card_number,card_names(locale,name))`
+    );
+    container.innerHTML = `
+      <div class="account-panel" style="max-width:700px;">
+        <h3>Cartes du classement</h3>
+
+        <div class="account-field">
+          <label>Ajouter tout un set</label>
+          <select id="ranking-preset-set"><option value="">— Choisir un set —</option></select>
+          <button class="auth-btn" style="margin-top:8px;" onclick="addSetToRankingList()">Ajouter toutes les cartes de ce set</button>
+        </div>
+
+        <div class="account-field">
+          <label>Ajouter une carte précise</label>
+          <input type="text" id="ranking-card-search" placeholder="Nom de la carte..." oninput="searchCardsForRanking(this.value)">
+          <div id="ranking-card-search-results" class="ie-right-scroll" style="max-height:200px;"></div>
+        </div>
+
+        <h4 style="margin-top:20px;">Cartes actuellement dans la liste (${cards.length})</h4>
+        <div id="ranking-current-cards">
+          ${cards.map(c => {
+            const nameObj = c.cards.card_names.find(n => n.locale === "en") || c.cards.card_names[0];
+            return `<div class="ie-policy-row"><span>${nameObj ? nameObj.name : "?"} (#${c.cards.card_number})</span>
+              <button class="tile-remove-btn" style="position:static;" onclick="removeCardFromRankingList(${c.id})">×</button></div>`;
+          }).join("")}
+        </div>
+      </div>`;
+
+    const sets = await fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`);
+    document.getElementById("ranking-preset-set").innerHTML =
+      `<option value="">— Choisir un set —</option>` + sets.map(s => `<option value="${s.id}">${s.name_en}</option>`).join("");
+  } catch (e) {
+    container.innerHTML = `<div class="empty-state">Erreur : ${e.message}</div>`;
+  }
+}
+
+let rankingSearchDebounce = null;
+function searchCardsForRanking(term){
+  clearTimeout(rankingSearchDebounce);
+  const resultsEl = document.getElementById("ranking-card-search-results");
+  if (!term || term.trim().length < 2){ resultsEl.innerHTML = ""; return; }
+  rankingSearchDebounce = setTimeout(async () => {
+    try {
+      const rows = await supabaseAuthedFetch(
+        `card_names?name=ilike.*${encodeURIComponent(term.trim())}*&select=name,card_id,cards(id,card_number)&limit=15`
+      );
+      resultsEl.innerHTML = rows.map(r => `
+        <div class="ie-policy-row" style="cursor:pointer;" onclick="addCardToRankingList(${r.card_id})">
+          <span>${r.name} (#${r.cards.card_number})</span>
+        </div>`).join("") || `<p class="ie-hint">Aucun résultat.</p>`;
+    } catch (e) {
+      resultsEl.innerHTML = `<p class="ie-hint">Erreur : ${e.message}</p>`;
+    }
+  }, 300);
+}
+
+async function addCardToRankingList(cardId){
+  try {
+    await supabaseAuthedFetch("ranking_list_cards", {
+      method: "POST",
+      body: JSON.stringify({ list_id: currentRankingListId, card_id: cardId }),
+      headers: { Prefer: "resolution=ignore-duplicates" }, // déjà présente ? on ignore simplement, pas d'erreur
+    });
+    manageRankingList(currentRankingListId);
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
+}
+
+async function addSetToRankingList(){
+  const setId = document.getElementById("ranking-preset-set").value;
+  if (!setId) return;
+  try {
+    const cards = await fetchAllPaginated(`cards?set_id=eq.${setId}&select=id`);
+    const rows = cards.map(c => ({ list_id: currentRankingListId, card_id: c.id }));
+    await supabaseAuthedFetch("ranking_list_cards", {
+      method: "POST",
+      body: JSON.stringify(rows),
+      headers: { Prefer: "resolution=ignore-duplicates" },
+    });
+    manageRankingList(currentRankingListId);
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
+}
+
+async function removeCardFromRankingList(rowId){
+  try {
+    await supabaseAuthedFetch(`ranking_list_cards?id=eq.${rowId}`, { method: "DELETE" });
+    manageRankingList(currentRankingListId);
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
+}
+
 async function renderAdminMembers(){
   const content = document.getElementById("admin-content");
   content.innerHTML = `<div class="empty-state">Chargement...</div>`;
