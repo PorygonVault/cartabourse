@@ -4295,9 +4295,10 @@ async function confirmAddMultigraphWidget(){
     let targetCol = 0;
     for (let i = 0; i < 4; i++){ if (counts[i] < 5){ targetCol = i; break; } }
 
+    const { data: sessionData } = await supabaseClient.auth.getSession();
     await supabaseAuthedFetch("multigraph_widgets", {
       method: "POST",
-      body: JSON.stringify({ widget_type: type, config, column_index: targetCol, position: counts[targetCol] }),
+      body: JSON.stringify({ user_id: sessionData.session.user.id, widget_type: type, config, column_index: targetCol, position: counts[targetCol] }),
     });
     document.getElementById("multigraph-add-widget-modal-overlay").classList.remove("active");
     renderMultigraphPage();
