@@ -1036,11 +1036,21 @@
 <div class="modal-overlay" id="multigraph-list-modal-overlay" onclick="if(event.target===this)document.getElementById('multigraph-list-modal-overlay').classList.remove('active')">
   <div class="modal" style="max-width:480px;">
     <button class="modal-close" onclick="document.getElementById('multigraph-list-modal-overlay').classList.remove('active')">×</button>
-    <h3>Ma liste de cartes (MultiGraph)</h3>
+    <h3>Liste de cartes de ce panneau</h3>
     <input type="text" id="mg-list-search" placeholder="Rechercher une carte à ajouter..." oninput="searchCardsForMultigraphList(this.value)">
     <div id="mg-list-search-results" class="ie-right-scroll" style="max-height:160px;margin-bottom:14px;"></div>
     <h4>Cartes actuellement dans la liste</h4>
     <div id="mg-list-current" class="ie-right-scroll" style="max-height:240px;"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="multigraph-set-list-modal-overlay" onclick="if(event.target===this)document.getElementById('multigraph-set-list-modal-overlay').classList.remove('active')">
+  <div class="modal" style="max-width:480px;">
+    <button class="modal-close" onclick="document.getElementById('multigraph-set-list-modal-overlay').classList.remove('active')">×</button>
+    <h3>Liste de sets de ce panneau</h3>
+    <div id="mg-set-list-picker" style="margin-bottom:14px;"></div>
+    <h4>Sets actuellement dans la liste</h4>
+    <div id="mg-set-list-current" class="ie-right-scroll" style="max-height:240px;"></div>
   </div>
 </div>
 
@@ -1251,7 +1261,6 @@
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
       <h1 style="margin:0;">MultiGraph</h1>
       <div style="display:flex;gap:10px;">
-        <button class="auth-btn" onclick="openMultigraphListModal()">Gérer ma liste de cartes</button>
         <button class="auth-btn" onclick="openMultigraphAddWidgetModal()">+ Ajouter un tableau</button>
       </div>
     </div>
@@ -3953,8 +3962,6 @@ function navigateMultigraph(){ location.hash = "#/multigraph"; }
    MULTIGRAPH (Valor)
    ============================================================ */
 
-/** Calcule les plus fortes hausses/baisses parmi une liste de cartes,
- * sur une fenêtre de temps donnée. Retourne le top 5. */
 async function computeTopCardMovers(cardIds, periodDays, direction){
   if (cardIds.length === 0) return [];
   const cutoff = new Date();
@@ -3968,6 +3975,10 @@ async function computeTopCardMovers(cardIds, periodDays, direction){
     if (r.price == null) continue;
     (byCard[r.card_id] = byCard[r.card_id] || []).push(r);
   }
+  // Les cartes sans historique suffisant (ou pas encore de prix du
+  // tout) sont simplement ignorées ici, en silence — jamais une
+  // erreur affichée pour ça, seulement les cartes exploitables
+  // ressortent du calcul.
   const results = [];
   for (const cardId in byCard){
     const list = byCard[cardId];
@@ -3981,9 +3992,6 @@ async function computeTopCardMovers(cardIds, periodDays, direction){
   return results.slice(0, 5);
 }
 
-/** Même principe, mais agrège d'abord tous les prix par set (comme le
- * graphique de valeur de set) avant de comparer la valeur totale du
- * début et de la fin de la période. */
 async function computeTopSetMovers(setIds, periodDays, direction){
   if (setIds.length === 0) return [];
   const cutoff = new Date();
@@ -4016,9 +4024,10 @@ async function computeTopSetMovers(setIds, periodDays, direction){
   return results.slice(0, 5);
 }
 
-/** Résout une source ("list"/"inventory"/"favorites") en une liste
- * d'identifiants de cartes, pour le vendeur/membre actuellement connecté. */
-async function resolveMultigraphCardSource(source){
+/** Résout une source en liste d'identifiants de cartes. "list" lit
+ * maintenant la liste PROPRE à CE panneau (multigraph_widget_cards),
+ * plus une liste globale partagée entre tous les panneaux. */
+async function resolveMultigraphCardSource(source, widgetId){
   if (source === "inventory"){
     const rows = await supabaseAuthedFetch(`collection_items?select=card_id`);
     return [...new Set(rows.map(r => r.card_id))];
@@ -4027,7 +4036,9 @@ async function resolveMultigraphCardSource(source){
     const rows = await supabaseAuthedFetch(`favorites?select=card_id`);
     return rows.map(r => r.card_id);
   }
-  const rows = await supabaseAuthedFetch(`multigraph_watchlist?select=card_id`);
+  // "list" et "database" sont gérés séparément par l'appelant —
+  // "database" n'a pas besoin d'une liste d'identifiants du tout.
+  const rows = await supabaseAuthedFetch(`multigraph_widget_cards?widget_id=eq.${widgetId}&select=card_id`);
   return rows.map(r => r.card_id);
 }
 
@@ -4043,8 +4054,7 @@ async function fetchCardNamesByIds(cardIds){
 }
 
 /* ------------------------------------------------------------
-   Page principale — grille 4 colonnes (PC) / 1 colonne (mobile),
-   réordonnable par glisser-déposer.
+   Page principale
    ------------------------------------------------------------ */
 async function renderMultigraphPage(){
   const grid = document.getElementById("multigraph-grid");
@@ -4060,12 +4070,18 @@ async function renderMultigraphPage(){
     widgets.forEach(w => { cols[Math.min(w.column_index, 3)].push(w); });
 
     grid.innerHTML = cols.map((colWidgets, colIndex) => `
-      <div class="multigraph-col" data-col="${colIndex}" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleMultigraphDrop(event, ${colIndex})">
+      <div class="multigraph-col" data-col="${colIndex}" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleMultigraphColumnDrop(event, ${colIndex})">
         ${colWidgets.map(w => `
-          <div class="multigraph-widget" draggable="true" data-widget-id="${w.id}" ondragstart="handleMultigraphDragStart(event, ${w.id})" ondragend="this.classList.remove('dragging')">
+          <div class="multigraph-widget" draggable="true" data-widget-id="${w.id}"
+               ondragstart="handleMultigraphDragStart(event, ${w.id})" ondragend="this.classList.remove('dragging')"
+               ondragover="event.preventDefault();event.stopPropagation();"
+               ondrop="event.stopPropagation();handleMultigraphWidgetDrop(event, ${w.id}, ${colIndex})">
             <div class="multigraph-widget-header">
               <h4>${multigraphWidgetTitle(w)}</h4>
-              <button class="multigraph-widget-remove" onclick="event.stopPropagation();removeMultigraphWidget(${w.id})">×</button>
+              <div style="display:flex;gap:6px;">
+                <button class="multigraph-widget-remove" title="Modifier" onclick="event.stopPropagation();openEditMultigraphWidget(${w.id})">✎</button>
+                <button class="multigraph-widget-remove" title="Supprimer" onclick="event.stopPropagation();removeMultigraphWidget(${w.id})">×</button>
+              </div>
             </div>
             <div id="mg-widget-content-${w.id}"><div class="empty-state">Chargement...</div></div>
           </div>`).join("")}
@@ -4079,12 +4095,9 @@ async function renderMultigraphPage(){
 
 function multigraphWidgetTitle(w){
   const titles = {
-    card_price: "Évolution — carte",
-    set_price: "Évolution — set",
-    top_gainers: "Top cartes en hausse",
-    top_losers: "Top cartes en baisse",
-    set_top_gainers: "Top sets en hausse",
-    set_top_losers: "Top sets en baisse",
+    card_price: "Évolution — carte", set_price: "Évolution — set",
+    top_gainers: "Top cartes en hausse", top_losers: "Top cartes en baisse",
+    set_top_gainers: "Top sets en hausse", set_top_losers: "Top sets en baisse",
   };
   return w.config && w.config.label ? w.config.label : (titles[w.widget_type] || w.widget_type);
 }
@@ -4094,16 +4107,24 @@ async function renderMultigraphWidgetContent(w){
   if (!el) return;
   try {
     if (w.widget_type === "card_price"){
-      const rows = await supabaseAuthedFetch(`cards?id=eq.${w.config.card_id}&select=card_number,card_names(locale,name)`);
+      const rows = await supabaseAuthedFetch(`cards?id=eq.${w.config.card_id}&select=card_number,card_names(locale,name),card_images(image_url),sets(name_en)`);
       if (!rows.length){ el.innerHTML = `<p class="ie-hint">Carte introuvable.</p>`; return; }
-      const nameObj = rows[0].card_names.find(n => n.locale === LANG) || rows[0].card_names[0];
+      const c = rows[0];
+      const nameObj = c.card_names.find(n => n.locale === LANG) || c.card_names[0];
       el.closest(".multigraph-widget").querySelector("h4").textContent = nameObj ? nameObj.name : `Carte #${w.config.card_id}`;
+      const img = (c.card_images && c.card_images[0]) ? c.card_images[0].image_url : "";
       const history = await supabaseAuthedFetch(`price_history?card_id=eq.${w.config.card_id}&select=period_date,price,currency&order=period_date.asc`);
-      renderMiniPriceChart(el, history);
+      el.innerHTML = `
+        <div style="display:flex;gap:10px;margin-bottom:8px;">
+          ${img ? `<img src="${img}" style="width:44px;border-radius:4px;flex-shrink:0;">` : ""}
+          <div style="font-size:12px;color:var(--text-dim);">${c.sets ? c.sets.name_en : ""} · #${c.card_number}</div>
+        </div>
+        <div id="mg-chart-${w.id}"></div>`;
+      renderMiniPriceChart(document.getElementById(`mg-chart-${w.id}`), history);
     } else if (w.widget_type === "set_price"){
       const setRows = await supabaseAuthedFetch(`sets?id=eq.${w.config.set_id}&select=name_en`);
       if (!setRows.length){ el.innerHTML = `<p class="ie-hint">Set introuvable.</p>`; return; }
-      document.getElementById(`mg-widget-content-${w.id}`).closest(".multigraph-widget").querySelector("h4").textContent = setRows[0].name_en;
+      el.closest(".multigraph-widget").querySelector("h4").textContent = setRows[0].name_en;
       const cards = await fetchAllPaginated(`cards?set_id=eq.${w.config.set_id}&select=id`);
       const cardIds = cards.map(c => c.id);
       const rows = cardIds.length ? await supabaseAuthedFetch(`price_history?card_id=in.(${cardIds.join(",")})&select=period_date,price,currency&order=period_date.asc`) : [];
@@ -4118,17 +4139,30 @@ async function renderMultigraphWidgetContent(w){
       renderMiniPriceChart(el, history);
     } else if (w.widget_type === "top_gainers" || w.widget_type === "top_losers"){
       const direction = w.widget_type === "top_gainers" ? "gainers" : "losers";
-      const cardIds = await resolveMultigraphCardSource(w.config.source || "list");
-      const movers = await computeTopCardMovers(cardIds, w.config.period_days || 7, direction);
-      const names = await fetchCardNamesByIds(movers.map(m => m.card_id));
-      renderMoversList(el, movers.map(m => ({ label: names[m.card_id] || `#${m.card_id}`, pct: m.pct })));
+      const source = w.config.source || "list";
+      let movers, names;
+      if (source === "database"){
+        const rpcResult = await supabaseAuthedFetch(`rpc/get_database_top_movers`, {
+          method: "POST",
+          body: JSON.stringify({ p_period_days: w.config.period_days || 7, p_direction: direction, p_limit: 5 }),
+        });
+        movers = rpcResult.map(r => ({ card_id: r.card_id, pct: Number(r.pct) }));
+      } else {
+        const cardIds = await resolveMultigraphCardSource(source, w.id);
+        movers = await computeTopCardMovers(cardIds, w.config.period_days || 7, direction);
+      }
+      names = await fetchCardNamesByIds(movers.map(m => m.card_id));
+      renderMoversList(el, movers.map(m => ({ label: names[m.card_id] || `#${m.card_id}`, pct: m.pct })), source === "list" ? w.id : null);
     } else if (w.widget_type === "set_top_gainers" || w.widget_type === "set_top_losers"){
       const direction = w.widget_type === "set_top_gainers" ? "gainers" : "losers";
-      const setRows = await supabaseAuthedFetch(`multigraph_set_watchlist?select=set_id`);
+      const setRows = await supabaseAuthedFetch(`multigraph_widget_sets?widget_id=eq.${w.id}&select=set_id`);
       const setIds = setRows.map(r => r.set_id);
+      if (setIds.length === 0){
+        el.innerHTML = `<p class="ie-hint">Aucun set dans la liste de ce panneau — <a href="#" onclick="openWidgetSetListModal(${w.id});return false;">en ajouter</a>.</p>`;
+        return;
+      }
       const movers = await computeTopSetMovers(setIds, w.config.period_days || 7, direction);
-      if (movers.length === 0){ el.innerHTML = `<p class="ie-hint">Aucune donnée — ajoutez des sets à votre liste.</p>`; return; }
-      const setNames = await supabaseAuthedFetch(`sets?id=in.(${movers.map(m => m.set_id).join(",")})&select=id,name_en`);
+      const setNames = movers.length ? await supabaseAuthedFetch(`sets?id=in.(${movers.map(m => m.set_id).join(",")})&select=id,name_en`) : [];
       const nameMap = {}; setNames.forEach(s => { nameMap[s.id] = s.name_en; });
       renderMoversList(el, movers.map(m => ({ label: nameMap[m.set_id] || `Set #${m.set_id}`, pct: m.pct })));
     }
@@ -4137,20 +4171,27 @@ async function renderMultigraphWidgetContent(w){
   }
 }
 
-function renderMoversList(el, items){
-  if (items.length === 0){ el.innerHTML = `<p class="ie-hint">Pas assez de données sur cette période.</p>`; return; }
+function renderMoversList(el, items, editableWidgetId){
+  const editLink = editableWidgetId
+    ? `<p class="ie-hint" style="margin-top:6px;"><a href="#" onclick="openWidgetCardListModal(${editableWidgetId});return false;">Gérer la liste de ce panneau</a></p>`
+    : "";
+  if (items.length === 0){
+    // Jamais présenté comme une erreur — juste un état neutre, en
+    // attendant que des données de prix existent pour les cartes
+    // suivies par ce panneau précis.
+    el.innerHTML = `<p class="ie-hint">Rien à afficher pour l'instant sur cette période.</p>${editLink}`;
+    return;
+  }
   el.innerHTML = items.map(item => `
     <div class="multigraph-mini-row">
       <span class="name">${item.label}</span>
       <span class="pct ${item.pct >= 0 ? "up" : "down"}">${item.pct >= 0 ? "+" : ""}${item.pct.toFixed(1)}%</span>
-    </div>`).join("");
+    </div>`).join("") + editLink;
 }
 
-/** Mini-graphique compact (pas d'infobulle interactive, juste la
- * courbe) — suffisant pour un petit tableau parmi d'autres. */
 function renderMiniPriceChart(el, history){
   const points = history.filter(h => h.price != null);
-  if (points.length < 2){ el.innerHTML = `<p class="ie-hint">Pas encore assez de données.</p>`; return; }
+  if (points.length < 2){ el.innerHTML = `<p class="ie-hint">Pas encore assez de données pour cette carte.</p>`; return; }
   const values = points.map(p => Number(p.price));
   const W = 260, H = 90, pad = 4;
   const minV = Math.min(...values), maxV = Math.max(...values);
@@ -4169,25 +4210,54 @@ function renderMiniPriceChart(el, history){
 }
 
 /* ------------------------------------------------------------
-   Glisser-déposer — réorganise en changeant column_index/position,
-   jamais de positionnement libre, juste un nouvel ordre.
+   Glisser-déposer — réordonne DANS une colonne (dépose sur un panneau
+   précis, s'insère à sa place) ou change de colonne (dépose sur la
+   zone vide en fin de colonne).
    ------------------------------------------------------------ */
 let mgDraggedWidgetId = null;
 function handleMultigraphDragStart(e, widgetId){
   mgDraggedWidgetId = widgetId;
   e.target.classList.add("dragging");
 }
-async function handleMultigraphDrop(e, colIndex){
+
+async function reorderMultigraphColumn(colIndex, orderedIds){
+  for (let i = 0; i < orderedIds.length; i++){
+    await supabaseAuthedFetch(`multigraph_widgets?id=eq.${orderedIds[i]}`, {
+      method: "PATCH",
+      body: JSON.stringify({ column_index: colIndex, position: i }),
+    });
+  }
+}
+
+/** Dépose sur un panneau précis — insère le panneau déplacé juste
+ * avant celui-ci, dans la colonne cible. */
+async function handleMultigraphWidgetDrop(e, targetWidgetId, colIndex){
+  e.preventDefault();
+  if (mgDraggedWidgetId == null || mgDraggedWidgetId === targetWidgetId) return;
+  try {
+    const colWidgets = await supabaseAuthedFetch(`multigraph_widgets?column_index=eq.${colIndex}&select=id&order=position.asc`);
+    let ids = colWidgets.map(w => w.id).filter(id => id !== mgDraggedWidgetId);
+    const targetIndex = ids.indexOf(targetWidgetId);
+    ids.splice(targetIndex === -1 ? ids.length : targetIndex, 0, mgDraggedWidgetId);
+    await reorderMultigraphColumn(colIndex, ids);
+    mgDraggedWidgetId = null;
+    renderMultigraphPage();
+  } catch (e2) {
+    alert(`Erreur : ${e2.message}`);
+  }
+}
+
+/** Dépose sur la zone vide de la colonne (pas sur un panneau précis) —
+ * place le panneau déplacé à la toute fin de cette colonne. */
+async function handleMultigraphColumnDrop(e, colIndex){
   e.preventDefault();
   e.currentTarget.classList.remove("drag-over");
   if (mgDraggedWidgetId == null) return;
   try {
     const colWidgets = await supabaseAuthedFetch(`multigraph_widgets?column_index=eq.${colIndex}&select=id&order=position.asc`);
-    const newPosition = colWidgets.length;
-    await supabaseAuthedFetch(`multigraph_widgets?id=eq.${mgDraggedWidgetId}`, {
-      method: "PATCH",
-      body: JSON.stringify({ column_index: colIndex, position: newPosition }),
-    });
+    const ids = colWidgets.map(w => w.id).filter(id => id !== mgDraggedWidgetId);
+    ids.push(mgDraggedWidgetId);
+    await reorderMultigraphColumn(colIndex, ids);
     mgDraggedWidgetId = null;
     renderMultigraphPage();
   } catch (e2) {
@@ -4196,42 +4266,120 @@ async function handleMultigraphDrop(e, colIndex){
 }
 
 /* ------------------------------------------------------------
-   Ajout d'un tableau — configuration selon le type choisi.
+   Ajout / édition d'un panneau
    ------------------------------------------------------------ */
-function renderMultigraphWidgetConfigFields(type){
+let mgEditingWidgetId = null; // null = création, sinon édition de ce panneau précis
+let mgSelectedCardPreview = null;
+
+function renderMultigraphWidgetConfigFields(type, existingConfig){
+  const cfg = existingConfig || {};
   const el = document.getElementById("mg-widget-config-fields");
   if (type === "card_price"){
     el.innerHTML = `
-      <label>Carte
+      <div class="listings-tabs" style="margin-bottom:10px;">
+        <button type="button" class="tab-btn active" data-tab="search" onclick="setMgCardPickerTab('search', this)">Rechercher</button>
+        <button type="button" class="tab-btn" data-tab="browse" onclick="setMgCardPickerTab('browse', this)">Parcourir</button>
+      </div>
+      <div id="mg-card-picker-search">
         <input type="text" id="mg-config-card-search" placeholder="Rechercher une carte..." oninput="searchCardsForMultigraphWidget(this.value)">
-      </label>
-      <div id="mg-config-card-results" class="ie-right-scroll" style="max-height:160px;"></div>
-      <input type="hidden" id="mg-config-card-id">
+        <div id="mg-config-card-results" class="ie-right-scroll" style="max-height:160px;"></div>
+      </div>
+      <div id="mg-card-picker-browse" style="display:none;max-height:260px;overflow-y:auto;">
+        <div id="mg-browse-sets-list"></div>
+      </div>
+      <input type="hidden" id="mg-config-card-id" value="${cfg.card_id || ""}">
       <p class="ie-hint" id="mg-config-card-selected"></p>`;
-  } else if (type === "set_price" || type === "set_top_gainers" || type === "set_top_losers"){
+    if (cfg.card_id) preloadMgSelectedCard(cfg.card_id);
+  } else if (type === "set_price"){
     el.innerHTML = `<div class="empty-state">Chargement des sets...</div>`;
     fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`).then(sets => {
-      if (type === "set_price"){
-        el.innerHTML = `<label>Set <select id="mg-config-set-id">${sets.map(s => `<option value="${s.id}">${s.name_en}</option>`).join("")}</select></label>`;
-      } else {
-        el.innerHTML = `<label>Période
-            <select id="mg-config-period"><option value="3">3 jours</option><option value="7" selected>7 jours</option><option value="14">14 jours</option></select>
-          </label>
-          <p class="ie-hint">Basé sur votre liste de sets suivis — <a href="#" onclick="document.getElementById('multigraph-add-widget-modal-overlay').classList.remove('active');alert('Utilisez le bouton « Gérer ma liste de cartes » pour l\\'instant limité aux cartes — la gestion de liste de sets arrive dans une prochaine étape.');return false;">gérer ma liste</a></p>`;
-      }
+      el.innerHTML = `<label>Set <select id="mg-config-set-id">${sets.map(s => `<option value="${s.id}" ${cfg.set_id === s.id ? "selected" : ""}>${s.name_en}</option>`).join("")}</select></label>`;
     });
+  } else if (type === "set_top_gainers" || type === "set_top_losers"){
+    el.innerHTML = `
+      <label>Période
+        <select id="mg-config-period">
+          <option value="3" ${cfg.period_days === 3 ? "selected" : ""}>3 jours</option>
+          <option value="7" ${!cfg.period_days || cfg.period_days === 7 ? "selected" : ""}>7 jours</option>
+          <option value="14" ${cfg.period_days === 14 ? "selected" : ""}>14 jours</option>
+        </select>
+      </label>
+      ${mgEditingWidgetId ? `<p class="ie-hint"><a href="#" onclick="openWidgetSetListModal(${mgEditingWidgetId});return false;">Gérer la liste de sets de ce panneau</a></p>` : `<p class="ie-hint">La gestion de la liste de sets sera proposée juste après la création du panneau.</p>`}`;
   } else {
     el.innerHTML = `
       <label>Source
-        <select id="mg-config-source">
-          <option value="list">Ma liste de cartes</option>
-          <option value="inventory">Mon inventaire</option>
-          <option value="favorites">Mes favoris</option>
+        <select id="mg-config-source" onchange="toggleMgListManageLink(this.value)">
+          <option value="list" ${(!cfg.source || cfg.source === "list") ? "selected" : ""}>Ma liste (propre à ce panneau)</option>
+          <option value="inventory" ${cfg.source === "inventory" ? "selected" : ""}>Mon inventaire</option>
+          <option value="favorites" ${cfg.source === "favorites" ? "selected" : ""}>Mes favoris</option>
+          <option value="database" ${cfg.source === "database" ? "selected" : ""}>Toute la base de données</option>
         </select>
       </label>
       <label>Période
-        <select id="mg-config-period"><option value="3">3 jours</option><option value="7" selected>7 jours</option><option value="14">14 jours</option></select>
-      </label>`;
+        <select id="mg-config-period">
+          <option value="3" ${cfg.period_days === 3 ? "selected" : ""}>3 jours</option>
+          <option value="7" ${!cfg.period_days || cfg.period_days === 7 ? "selected" : ""}>7 jours</option>
+          <option value="14" ${cfg.period_days === 14 ? "selected" : ""}>14 jours</option>
+        </select>
+      </label>
+      <p class="ie-hint" id="mg-list-manage-link">
+        ${mgEditingWidgetId ? `<a href="#" onclick="openWidgetCardListModal(${mgEditingWidgetId});return false;">Gérer la liste de ce panneau</a>` : `La gestion de la liste sera proposée juste après la création du panneau.`}
+      </p>`;
+    toggleMgListManageLink(cfg.source || "list");
+  }
+}
+
+function toggleMgListManageLink(source){
+  const linkEl = document.getElementById("mg-list-manage-link");
+  if (linkEl) linkEl.style.display = source === "list" ? "block" : "none";
+}
+
+function setMgCardPickerTab(tab, btn){
+  document.querySelectorAll('#mg-widget-config-fields .tab-btn').forEach(b => b.classList.remove("active"));
+  btn.classList.add("active");
+  document.getElementById("mg-card-picker-search").style.display = tab === "search" ? "block" : "none";
+  document.getElementById("mg-card-picker-browse").style.display = tab === "browse" ? "block" : "none";
+  if (tab === "browse") loadMgBrowseSets();
+}
+
+let mgBrowseSetsLoaded = false;
+async function loadMgBrowseSets(){
+  if (mgBrowseSetsLoaded) return;
+  mgBrowseSetsLoaded = true;
+  const list = document.getElementById("mg-browse-sets-list");
+  list.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  const sets = await fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`);
+  list.innerHTML = sets.map(s => `
+    <div class="picker-set-accordion" data-set-id="${s.id}">
+      <div class="picker-set-header" onclick="toggleMgBrowseSet(${s.id}, this)">${s.name_en}</div>
+      <div class="picker-card-slider" style="display:none;"></div>
+    </div>`).join("");
+}
+
+async function toggleMgBrowseSet(setId, headerEl){
+  const slider = headerEl.nextElementSibling;
+  const isOpen = slider.style.display !== "none";
+  if (isOpen){ slider.style.display = "none"; return; }
+  slider.style.display = "grid";
+  if (slider.dataset.loaded) return;
+  slider.dataset.loaded = "1";
+  const cards = await supabaseAuthedFetch(`cards?set_id=eq.${setId}&select=id,card_number,card_names(locale,name),card_images(image_url)&order=card_number.asc`);
+  slider.innerHTML = cards.map(c => {
+    const nameObj = c.card_names.find(n => n.locale === LANG) || c.card_names[0];
+    const name = nameObj ? nameObj.name : "?";
+    const img = (c.card_images && c.card_images[0]) ? c.card_images[0].image_url : "";
+    return `<div class="picker-card-item" onclick="selectMultigraphCard(${c.id}, '${name.replace(/'/g, "\\'")}')" title="${name}">
+      ${img ? `<img src="${img}" loading="lazy">` : ""}
+      <span class="picker-card-name">${name}</span>
+    </div>`;
+  }).join("");
+}
+
+async function preloadMgSelectedCard(cardId){
+  const rows = await supabaseAuthedFetch(`cards?id=eq.${cardId}&select=card_names(locale,name)`);
+  if (rows.length){
+    const nameObj = rows[0].card_names.find(n => n.locale === LANG) || rows[0].card_names[0];
+    document.getElementById("mg-config-card-selected").textContent = `Sélectionnée : ${nameObj ? nameObj.name : "?"}`;
   }
 }
 
@@ -4251,15 +4399,35 @@ function searchCardsForMultigraphWidget(term){
 function selectMultigraphCard(cardId, name){
   document.getElementById("mg-config-card-id").value = cardId;
   document.getElementById("mg-config-card-selected").textContent = `Sélectionnée : ${name}`;
-  document.getElementById("mg-config-card-results").innerHTML = "";
-  document.getElementById("mg-config-card-search").value = "";
+  const resultsEl = document.getElementById("mg-config-card-results");
+  if (resultsEl) resultsEl.innerHTML = "";
 }
 
 function openMultigraphAddWidgetModal(){
+  mgEditingWidgetId = null;
+  mgBrowseSetsLoaded = false;
   document.getElementById("mg-widget-error").textContent = "";
-  renderMultigraphWidgetConfigFields("card_price");
+  document.getElementById("mg-widget-type").disabled = false;
   document.getElementById("mg-widget-type").value = "card_price";
+  renderMultigraphWidgetConfigFields("card_price", null);
   document.getElementById("multigraph-add-widget-modal-overlay").classList.add("active");
+}
+
+async function openEditMultigraphWidget(widgetId){
+  mgEditingWidgetId = widgetId;
+  mgBrowseSetsLoaded = false;
+  document.getElementById("mg-widget-error").textContent = "";
+  try {
+    const rows = await supabaseAuthedFetch(`multigraph_widgets?id=eq.${widgetId}&select=widget_type,config`);
+    if (!rows.length) return;
+    const w = rows[0];
+    document.getElementById("mg-widget-type").value = w.widget_type;
+    document.getElementById("mg-widget-type").disabled = true; // le type ne se change pas, seulement le contenu
+    renderMultigraphWidgetConfigFields(w.widget_type, w.config);
+    document.getElementById("multigraph-add-widget-modal-overlay").classList.add("active");
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
 }
 
 async function confirmAddMultigraphWidget(){
@@ -4283,12 +4451,21 @@ async function confirmAddMultigraphWidget(){
   }
 
   try {
-    const existing = await supabaseAuthedFetch(`multigraph_widgets?select=id`);
-    if (existing.length >= 20){
-      errorEl.textContent = "Limite de 20 tableaux atteinte — retirez-en un avant d'en ajouter un nouveau.";
+    if (mgEditingWidgetId){
+      await supabaseAuthedFetch(`multigraph_widgets?id=eq.${mgEditingWidgetId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ config }),
+      });
+      document.getElementById("multigraph-add-widget-modal-overlay").classList.remove("active");
+      renderMultigraphPage();
       return;
     }
-    // Place dans la colonne la moins remplie (max 5 par colonne sur PC)
+
+    const existing = await supabaseAuthedFetch(`multigraph_widgets?select=id`);
+    if (existing.length >= 20){
+      errorEl.textContent = "Limite de 20 panneaux atteinte — retirez-en un avant d'en ajouter un nouveau.";
+      return;
+    }
     const counts = [0, 0, 0, 0];
     const all = await supabaseAuthedFetch(`multigraph_widgets?select=column_index`);
     all.forEach(w => { counts[Math.min(w.column_index, 3)] += 1; });
@@ -4296,12 +4473,21 @@ async function confirmAddMultigraphWidget(){
     for (let i = 0; i < 4; i++){ if (counts[i] < 5){ targetCol = i; break; } }
 
     const { data: sessionData } = await supabaseClient.auth.getSession();
-    await supabaseAuthedFetch("multigraph_widgets", {
+    const created = await supabaseAuthedFetch("multigraph_widgets", {
       method: "POST",
       body: JSON.stringify({ user_id: sessionData.session.user.id, widget_type: type, config, column_index: targetCol, position: counts[targetCol] }),
     });
     document.getElementById("multigraph-add-widget-modal-overlay").classList.remove("active");
     renderMultigraphPage();
+
+    // Cas particulier : un panneau "liste propre" vient d'être créé —
+    // sa liste est vide, autant proposer de la remplir tout de suite.
+    const newId = created[0].id;
+    if ((type === "top_gainers" || type === "top_losers") && config.source === "list"){
+      openWidgetCardListModal(newId);
+    } else if (type === "set_top_gainers" || type === "set_top_losers"){
+      openWidgetSetListModal(newId);
+    }
   } catch (e) {
     errorEl.textContent = e.message;
   }
@@ -4317,9 +4503,12 @@ async function removeMultigraphWidget(widgetId){
 }
 
 /* ------------------------------------------------------------
-   Gestion de la liste de cartes (watchlist MultiGraph)
+   Gestion de la liste de CARTES d'UN panneau précis
    ------------------------------------------------------------ */
-async function openMultigraphListModal(){
+let currentMgListWidgetId = null;
+
+async function openWidgetCardListModal(widgetId){
+  currentMgListWidgetId = widgetId;
   document.getElementById("multigraph-list-modal-overlay").classList.add("active");
   document.getElementById("mg-list-search-results").innerHTML = "";
   document.getElementById("mg-list-search").value = "";
@@ -4329,9 +4518,9 @@ async function openMultigraphListModal(){
 async function renderMultigraphCurrentList(){
   const el = document.getElementById("mg-list-current");
   el.innerHTML = `<div class="empty-state">Chargement...</div>`;
-  const rows = await supabaseAuthedFetch(`multigraph_watchlist?select=card_id,cards(card_number,card_names(locale,name))`);
+  const rows = await supabaseAuthedFetch(`multigraph_widget_cards?widget_id=eq.${currentMgListWidgetId}&select=card_id,cards(card_number,card_names(locale,name))`);
   el.innerHTML = rows.length === 0
-    ? `<p class="ie-hint">Aucune carte dans la liste pour l'instant.</p>`
+    ? `<p class="ie-hint">Aucune carte dans la liste de ce panneau pour l'instant.</p>`
     : rows.map(r => {
         const nameObj = r.cards.card_names.find(n => n.locale === LANG) || r.cards.card_names[0];
         return `<div class="ie-policy-row">
@@ -4357,10 +4546,9 @@ function searchCardsForMultigraphList(term){
 
 async function addCardToMultigraphList(cardId){
   try {
-    const { data: sessionData } = await supabaseClient.auth.getSession();
-    await supabaseAuthedFetch("multigraph_watchlist", {
+    await supabaseAuthedFetch("multigraph_widget_cards", {
       method: "POST",
-      body: JSON.stringify({ user_id: sessionData.session.user.id, card_id: cardId }),
+      body: JSON.stringify({ widget_id: currentMgListWidgetId, card_id: cardId }),
       headers: { Prefer: "resolution=ignore-duplicates" },
     });
     await renderMultigraphCurrentList();
@@ -4371,8 +4559,62 @@ async function addCardToMultigraphList(cardId){
 
 async function removeCardFromMultigraphList(cardId){
   try {
-    await supabaseAuthedFetch(`multigraph_watchlist?card_id=eq.${cardId}`, { method: "DELETE" });
+    await supabaseAuthedFetch(`multigraph_widget_cards?widget_id=eq.${currentMgListWidgetId}&card_id=eq.${cardId}`, { method: "DELETE" });
     await renderMultigraphCurrentList();
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
+}
+
+/* ------------------------------------------------------------
+   Gestion de la liste de SETS d'UN panneau précis (pour Top sets)
+   ------------------------------------------------------------ */
+let currentMgSetListWidgetId = null;
+
+async function openWidgetSetListModal(widgetId){
+  currentMgSetListWidgetId = widgetId;
+  document.getElementById("multigraph-set-list-modal-overlay").classList.add("active");
+  await renderMultigraphCurrentSetList();
+}
+
+async function renderMultigraphCurrentSetList(){
+  const el = document.getElementById("mg-set-list-current");
+  el.innerHTML = `<div class="empty-state">Chargement...</div>`;
+  const [rows, allSets] = await Promise.all([
+    supabaseAuthedFetch(`multigraph_widget_sets?widget_id=eq.${currentMgSetListWidgetId}&select=set_id,sets(name_en)`),
+    fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`),
+  ]);
+  const selectedIds = new Set(rows.map(r => r.set_id));
+  document.getElementById("mg-set-list-picker").innerHTML =
+    `<select id="mg-set-list-add-select"><option value="">— Ajouter un set —</option>${allSets.filter(s => !selectedIds.has(s.id)).map(s => `<option value="${s.id}">${s.name_en}</option>`).join("")}</select>
+     <button class="auth-btn" style="margin-top:8px;" onclick="addSetToMultigraphSetList()">Ajouter</button>`;
+  el.innerHTML = rows.length === 0
+    ? `<p class="ie-hint">Aucun set dans la liste de ce panneau pour l'instant.</p>`
+    : rows.map(r => `<div class="ie-policy-row">
+        <span>${r.sets ? r.sets.name_en : "?"}</span>
+        <button class="tile-remove-btn" style="position:static;" onclick="removeSetFromMultigraphSetList(${r.set_id})">×</button>
+      </div>`).join("");
+}
+
+async function addSetToMultigraphSetList(){
+  const setId = document.getElementById("mg-set-list-add-select").value;
+  if (!setId) return;
+  try {
+    await supabaseAuthedFetch("multigraph_widget_sets", {
+      method: "POST",
+      body: JSON.stringify({ widget_id: currentMgSetListWidgetId, set_id: parseInt(setId, 10) }),
+      headers: { Prefer: "resolution=ignore-duplicates" },
+    });
+    await renderMultigraphCurrentSetList();
+  } catch (e) {
+    alert(`Erreur : ${e.message}`);
+  }
+}
+
+async function removeSetFromMultigraphSetList(setId){
+  try {
+    await supabaseAuthedFetch(`multigraph_widget_sets?widget_id=eq.${currentMgSetListWidgetId}&set_id=eq.${setId}`, { method: "DELETE" });
+    await renderMultigraphCurrentSetList();
   } catch (e) {
     alert(`Erreur : ${e.message}`);
   }
