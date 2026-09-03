@@ -4214,7 +4214,14 @@ async function renderMultigraphWidgetContent(w){
       if (source === "database"){
         const rpcResult = await supabaseAuthedFetch(`rpc/get_database_top_movers`, {
           method: "POST",
-          body: JSON.stringify({ p_period_days: w.config.period_days || 7, p_direction: direction, p_limit: 5 }),
+          body: JSON.stringify({
+            p_period_days: w.config.period_days || 7,
+            p_direction: direction,
+            p_limit: 5,
+            p_price_min: w.config.price_min ?? null,
+            p_price_max: w.config.price_max ?? null,
+            p_region: w.config.region || "both",
+          }),
         });
         movers = rpcResult.map(r => ({ card_id: r.card_id, pct: Number(r.pct) }));
       } else {
@@ -4456,7 +4463,7 @@ function renderMultigraphWidgetConfigFields(type, existingConfig){
   } else {
     el.innerHTML = `
       <label>Source
-        <select id="mg-config-source" onchange="toggleMgListManageLink(this.value)">
+        <select id="mg-config-source" onchange="toggleMgSourceFields(this.value)">
           <option value="list" ${(!cfg.source || cfg.source === "list") ? "selected" : ""}>Ma liste (propre à ce panneau)</option>
           <option value="inventory" ${cfg.source === "inventory" ? "selected" : ""}>Mon inventaire</option>
           <option value="favorites" ${cfg.source === "favorites" ? "selected" : ""}>Mes favoris</option>
@@ -4472,14 +4479,31 @@ function renderMultigraphWidgetConfigFields(type, existingConfig){
       </label>
       <p class="ie-hint" id="mg-list-manage-link">
         ${mgEditingWidgetId ? `<a href="#" onclick="openWidgetCardListModal(${mgEditingWidgetId});return false;">Gérer la liste de ce panneau</a>` : `La gestion de la liste sera proposée juste après la création du panneau.`}
-      </p>`;
-    toggleMgListManageLink(cfg.source || "list");
+      </p>
+      <div id="mg-database-fields" style="display:none;">
+        <label>Prix minimum (prix actuel)
+          <input type="number" step="0.01" id="mg-config-price-min" placeholder="Aucun minimum" value="${cfg.price_min ?? ""}">
+        </label>
+        <label>Prix maximum (prix actuel)
+          <input type="number" step="0.01" id="mg-config-price-max" placeholder="Aucun maximum" value="${cfg.price_max ?? ""}">
+        </label>
+        <label>Région
+          <select id="mg-config-region">
+            <option value="both" ${(!cfg.region || cfg.region === "both") ? "selected" : ""}>Internationale + Asiatique</option>
+            <option value="intl" ${cfg.region === "intl" ? "selected" : ""}>Internationale uniquement</option>
+            <option value="asia" ${cfg.region === "asia" ? "selected" : ""}>Asiatique uniquement</option>
+          </select>
+        </label>
+      </div>`;
+    toggleMgSourceFields(cfg.source || "list");
   }
 }
 
-function toggleMgListManageLink(source){
+function toggleMgSourceFields(source){
   const linkEl = document.getElementById("mg-list-manage-link");
   if (linkEl) linkEl.style.display = source === "list" ? "block" : "none";
+  const dbFieldsEl = document.getElementById("mg-database-fields");
+  if (dbFieldsEl) dbFieldsEl.style.display = source === "database" ? "block" : "none";
 }
 
 function setMgCardPickerTab(tab, btn){
@@ -4592,10 +4616,18 @@ async function confirmAddMultigraphWidget(){
   } else if (type === "set_top_gainers" || type === "set_top_losers"){
     config = { period_days: parseInt(document.getElementById("mg-config-period").value, 10) };
   } else {
+    const source = document.getElementById("mg-config-source").value;
     config = {
-      source: document.getElementById("mg-config-source").value,
+      source,
       period_days: parseInt(document.getElementById("mg-config-period").value, 10),
     };
+    if (source === "database"){
+      const priceMin = document.getElementById("mg-config-price-min").value;
+      const priceMax = document.getElementById("mg-config-price-max").value;
+      if (priceMin !== "") config.price_min = parseFloat(priceMin);
+      if (priceMax !== "") config.price_max = parseFloat(priceMax);
+      config.region = document.getElementById("mg-config-region").value;
+    }
   }
 
   try {
