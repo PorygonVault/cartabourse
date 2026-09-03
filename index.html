@@ -623,7 +623,8 @@
   .multigraph-widget-remove:hover{color:var(--red);}
   .multigraph-mini-row{display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px;border-bottom:1px solid var(--border);}
   .multigraph-mini-row:last-child{border-bottom:none;}
-  .multigraph-mini-row .name{color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;}
+  .multigraph-mini-row .name{color:var(--text-dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%;display:inline-block;text-decoration:none;}
+  .multigraph-mini-row a.name:hover{color:var(--gold-bright);text-decoration:underline;}
   .multigraph-mini-row .pct.up{color:var(--green);}
   .multigraph-mini-row .pct.down{color:var(--red);}
   .card-in-watchlist{border-color:var(--green) !important;box-shadow:0 0 0 1px var(--green);}
@@ -3985,6 +3986,22 @@ function navigateMultigraph(){ location.hash = "#/multigraph"; }
    MULTIGRAPH (Valor)
    ============================================================ */
 
+// Plafonds d'affichage — au-delà, on considère la variation trop
+// extrême pour être fiable (souvent un artefact de données plutôt
+// qu'une vraie tendance de marché), donc exclue du top plutôt que
+// montrée telle quelle.
+const MOVER_GAINER_CAPS = { 3: 250, 7: 500, 14: 1000 };
+const MOVER_LOSER_FLOORS = { 3: -70, 7: -80, 14: -90 };
+
+function applyMoverCaps(results, periodDays, direction){
+  if (direction === "gainers"){
+    const cap = MOVER_GAINER_CAPS[periodDays] ?? Infinity;
+    return results.filter(r => r.pct <= cap);
+  }
+  const floor = MOVER_LOSER_FLOORS[periodDays] ?? -Infinity;
+  return results.filter(r => r.pct >= floor);
+}
+
 async function computeTopCardMovers(cardIds, periodDays, direction){
   if (cardIds.length === 0) return [];
   const cutoff = new Date();
@@ -4012,7 +4029,7 @@ async function computeTopCardMovers(cardIds, periodDays, direction){
     results.push({ card_id: parseInt(cardId, 10), pct: ((last - first) / first) * 100, lastPrice: last, currency: list[list.length - 1].currency });
   }
   results.sort((a, b) => direction === "gainers" ? b.pct - a.pct : a.pct - b.pct);
-  return results.slice(0, 5);
+  return applyMoverCaps(results, periodDays, direction).slice(0, 5);
 }
 
 async function computeTopSetMovers(setIds, periodDays, direction){
@@ -4044,7 +4061,7 @@ async function computeTopSetMovers(setIds, periodDays, direction){
     results.push({ set_id: setId, pct: ((last - first) / first) * 100, lastValue: last, currency });
   }
   results.sort((a, b) => direction === "gainers" ? b.pct - a.pct : a.pct - b.pct);
-  return results.slice(0, 5);
+  return applyMoverCaps(results, periodDays, direction).slice(0, 5);
 }
 
 /** Résout une source en liste d'identifiants de cartes. "list" lit
@@ -4205,7 +4222,7 @@ async function renderMultigraphWidgetContent(w){
         movers = await computeTopCardMovers(cardIds, w.config.period_days || 7, direction);
       }
       names = await fetchCardNamesByIds(movers.map(m => m.card_id));
-      renderMoversList(el, movers.map(m => ({ label: names[m.card_id] || `#${m.card_id}`, pct: m.pct })), source === "list" ? w.id : null);
+      renderMoversList(el, movers.map(m => ({ label: names[m.card_id] || `#${m.card_id}`, pct: m.pct, linkType: "card", linkId: m.card_id })), source === "list" ? w.id : null);
     } else if (w.widget_type === "set_top_gainers" || w.widget_type === "set_top_losers"){
       const direction = w.widget_type === "set_top_gainers" ? "gainers" : "losers";
       const setRows = await supabaseAuthedFetch(`multigraph_widget_sets?widget_id=eq.${w.id}&select=set_id`);
@@ -4217,7 +4234,7 @@ async function renderMultigraphWidgetContent(w){
       const movers = await computeTopSetMovers(setIds, w.config.period_days || 7, direction);
       const setNames = movers.length ? await supabaseAuthedFetch(`sets?id=in.(${movers.map(m => m.set_id).join(",")})&select=id,name_en,set_names(locale,name)`) : [];
       const nameMap = {}; setNames.forEach(s => { nameMap[s.id] = pickLocalizedSetName(s); });
-      renderMoversList(el, movers.map(m => ({ label: nameMap[m.set_id] || `Set #${m.set_id}`, pct: m.pct })));
+      renderMoversList(el, movers.map(m => ({ label: nameMap[m.set_id] || `Set #${m.set_id}`, pct: m.pct, linkType: "set", linkId: m.set_id })));
     }
   } catch (e) {
     el.innerHTML = `<p class="ie-hint">Erreur : ${e.message}</p>`;
@@ -4235,11 +4252,17 @@ function renderMoversList(el, items, editableWidgetId){
     el.innerHTML = `<p class="ie-hint">Rien à afficher pour l'instant sur cette période.</p>${editLink}`;
     return;
   }
-  el.innerHTML = items.map(item => `
+  el.innerHTML = items.map(item => {
+    const href = item.linkId != null ? `#/${item.linkType}/${item.linkId}` : null;
+    const nameHtml = href
+      ? `<a href="${href}" target="_blank" rel="noopener" class="name">${item.label}</a>`
+      : `<span class="name">${item.label}</span>`;
+    return `
     <div class="multigraph-mini-row">
-      <span class="name">${item.label}</span>
+      ${nameHtml}
       <span class="pct ${item.pct >= 0 ? "up" : "down"}">${item.pct >= 0 ? "+" : ""}${item.pct.toFixed(1)}%</span>
-    </div>`).join("") + editLink;
+    </div>`;
+  }).join("") + editLink;
 }
 
 let mgChartSeq = 0; // identifiants uniques pour pouvoir avoir plusieurs graphiques MultiGraph sur la même page
