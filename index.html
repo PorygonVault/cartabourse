@@ -608,7 +608,12 @@
   .multigraph-col{display:flex;flex-direction:column;gap:16px;min-height:40px;}
   .multigraph-widget{
     background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px;
-    cursor:grab;
+  }
+  .multigraph-grid.edit-mode .multigraph-widget{cursor:grab;border-style:dashed;border-color:var(--gold);}
+  .multigraph-grid.edit-mode .multigraph-col{outline:1px dashed var(--border);outline-offset:6px;border-radius:8px;min-height:60px;}
+  .multigraph-grid.edit-mode .multigraph-col::after{
+    content:"Déposer ici";display:block;text-align:center;padding:14px;color:var(--text-faint);
+    font-size:12px;font-family:var(--font-mono);
   }
   .multigraph-widget.dragging{opacity:0.4;}
   .multigraph-col.drag-over{outline:2px dashed var(--gold);outline-offset:4px;border-radius:8px;}
@@ -622,6 +627,14 @@
   .multigraph-mini-row .pct.up{color:var(--green);}
   .multigraph-mini-row .pct.down{color:var(--red);}
   .card-in-watchlist{border-color:var(--green) !important;box-shadow:0 0 0 1px var(--green);}
+  .mg-card-chart-wrap{
+    position:relative;background-size:contain;background-position:center;background-repeat:no-repeat;
+    border-radius:6px;
+  }
+  .mg-card-chart-wrap::before{
+    content:"";position:absolute;inset:0;background:var(--panel);opacity:0.82;border-radius:6px;pointer-events:none;
+  }
+  .mg-card-chart-wrap > *{position:relative;z-index:1;}
   .ranking-stats-with-cards{display:flex;gap:24px;align-items:stretch;margin-bottom:20px;flex-wrap:wrap;}
   .ranking-stats-col{flex:0 0 260px;margin-bottom:0;flex-direction:column;gap:14px;border-bottom:none;padding-bottom:0;}
   .ranking-summary-cards-col{flex:1;min-width:220px;max-height:280px;overflow-y:auto;}
@@ -1033,9 +1046,9 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="multigraph-list-modal-overlay" onclick="if(event.target===this)document.getElementById('multigraph-list-modal-overlay').classList.remove('active')">
+<div class="modal-overlay" id="multigraph-list-modal-overlay" onclick="if(event.target===this)closeMultigraphListModal()">
   <div class="modal" style="max-width:480px;">
-    <button class="modal-close" onclick="document.getElementById('multigraph-list-modal-overlay').classList.remove('active')">×</button>
+    <button class="modal-close" onclick="closeMultigraphListModal()">×</button>
     <h3>Liste de cartes de ce panneau</h3>
     <input type="text" id="mg-list-search" placeholder="Rechercher une carte à ajouter..." oninput="searchCardsForMultigraphList(this.value)">
     <div id="mg-list-search-results" class="ie-right-scroll" style="max-height:160px;margin-bottom:14px;"></div>
@@ -1044,9 +1057,9 @@
   </div>
 </div>
 
-<div class="modal-overlay" id="multigraph-set-list-modal-overlay" onclick="if(event.target===this)document.getElementById('multigraph-set-list-modal-overlay').classList.remove('active')">
+<div class="modal-overlay" id="multigraph-set-list-modal-overlay" onclick="if(event.target===this)closeMultigraphSetListModal()">
   <div class="modal" style="max-width:480px;">
-    <button class="modal-close" onclick="document.getElementById('multigraph-set-list-modal-overlay').classList.remove('active')">×</button>
+    <button class="modal-close" onclick="closeMultigraphSetListModal()">×</button>
     <h3>Liste de sets de ce panneau</h3>
     <div id="mg-set-list-picker" style="margin-bottom:14px;"></div>
     <h4>Sets actuellement dans la liste</h4>
@@ -1261,6 +1274,7 @@
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
       <h1 style="margin:0;">MultiGraph</h1>
       <div style="display:flex;gap:10px;">
+        <button class="auth-btn" id="mg-edit-mode-btn" onclick="toggleMultigraphEditMode()">Mode édition : désactivé</button>
         <button class="auth-btn" onclick="openMultigraphAddWidgetModal()">+ Ajouter un tableau</button>
       </div>
     </div>
@@ -4056,6 +4070,15 @@ async function fetchCardNamesByIds(cardIds){
 /* ------------------------------------------------------------
    Page principale
    ------------------------------------------------------------ */
+let mgEditMode = false;
+
+function toggleMultigraphEditMode(){
+  mgEditMode = !mgEditMode;
+  document.getElementById("mg-edit-mode-btn").textContent = `Mode édition : ${mgEditMode ? "activé" : "désactivé"}`;
+  document.getElementById("multigraph-grid").classList.toggle("edit-mode", mgEditMode);
+  document.querySelectorAll(".multigraph-widget").forEach(w => { w.draggable = mgEditMode; });
+}
+
 async function renderMultigraphPage(){
   const grid = document.getElementById("multigraph-grid");
   const { data } = await supabaseClient.auth.getSession();
@@ -4069,10 +4092,11 @@ async function renderMultigraphPage(){
     const cols = [[], [], [], []];
     widgets.forEach(w => { cols[Math.min(w.column_index, 3)].push(w); });
 
+    grid.classList.toggle("edit-mode", mgEditMode);
     grid.innerHTML = cols.map((colWidgets, colIndex) => `
       <div class="multigraph-col" data-col="${colIndex}" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="handleMultigraphColumnDrop(event, ${colIndex})">
         ${colWidgets.map(w => `
-          <div class="multigraph-widget" draggable="true" data-widget-id="${w.id}"
+          <div class="multigraph-widget" draggable="${mgEditMode}" data-widget-id="${w.id}"
                ondragstart="handleMultigraphDragStart(event, ${w.id})" ondragend="this.classList.remove('dragging')"
                ondragover="event.preventDefault();event.stopPropagation();"
                ondrop="event.stopPropagation();handleMultigraphWidgetDrop(event, ${w.id}, ${colIndex})">
@@ -4115,11 +4139,8 @@ async function renderMultigraphWidgetContent(w){
       const img = (c.card_images && c.card_images[0]) ? c.card_images[0].image_url : "";
       const history = await supabaseAuthedFetch(`price_history?card_id=eq.${w.config.card_id}&select=period_date,price,currency&order=period_date.asc`);
       el.innerHTML = `
-        <div style="display:flex;gap:10px;margin-bottom:8px;">
-          ${img ? `<img src="${img}" style="width:44px;border-radius:4px;flex-shrink:0;">` : ""}
-          <div style="font-size:12px;color:var(--text-dim);">${c.sets ? c.sets.name_en : ""} · #${c.card_number}</div>
-        </div>
-        <div id="mg-chart-${w.id}"></div>`;
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">${c.sets ? c.sets.name_en : ""} · #${c.card_number}</div>
+        <div id="mg-chart-${w.id}" class="mg-card-chart-wrap" style="${img ? `background-image:url('${img}');` : ""}"></div>`;
       renderMiniPriceChart(document.getElementById(`mg-chart-${w.id}`), history);
     } else if (w.widget_type === "set_price"){
       const setRows = await supabaseAuthedFetch(`sets?id=eq.${w.config.set_id}&select=name_en`);
@@ -4189,24 +4210,96 @@ function renderMoversList(el, items, editableWidgetId){
     </div>`).join("") + editLink;
 }
 
+let mgChartSeq = 0; // identifiants uniques pour pouvoir avoir plusieurs graphiques MultiGraph sur la même page
+
+/** Même principe que drawPriceChart/renderCollectionValueChart — grille
+ * avec prix, infobulle jour par jour au survol — dimensionné pour un
+ * panneau MultiGraph. */
 function renderMiniPriceChart(el, history){
   const points = history.filter(h => h.price != null);
   if (points.length < 2){ el.innerHTML = `<p class="ie-hint">Pas encore assez de données pour cette carte.</p>`; return; }
+
+  const uid = `mg${mgChartSeq++}`;
+  const dates = points.map(p => p.period_date);
   const values = points.map(p => Number(p.price));
-  const W = 260, H = 90, pad = 4;
+  const currency = points[points.length - 1].currency;
+
+  const W = 280, H = 130, padL = 44, padR = 8, padT = 10, padB = 20;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
   const minV = Math.min(...values), maxV = Math.max(...values);
-  const span = (maxV - minV) || 1;
-  const coords = values.map((v, i) => [
-    pad + (i / (values.length - 1)) * (W - pad * 2),
-    pad + (H - pad * 2) - ((v - minV) / span) * (H - pad * 2),
-  ]);
-  const path = coords.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
-  const last = points[points.length - 1];
+  const span = (maxV - minV) || Math.max(minV * 0.1, 1);
+  const niceMin = Math.max(0, minV - span * 0.1);
+  const niceMax = maxV + span * 0.1;
+  const niceSpan = (niceMax - niceMin) || 1;
+
+  const xFor = (i) => padL + (i / (values.length - 1)) * plotW;
+  const yFor = (v) => padT + plotH - ((v - niceMin) / niceSpan) * plotH;
+  const coords = values.map((v, i) => [xFor(i), yFor(v)]);
+  const linePath = coords.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+
+  const gridLines = [0, 1, 2].map(i => {
+    const y = padT + (plotH / 2) * i;
+    const value = niceMax - (niceSpan / 2) * i;
+    return `<line class="pc-grid" x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}"></line>
+      <text class="pc-axis-label" x="2" y="${y + 3}" font-size="8">${displayPrice(value, currency)}</text>`;
+  }).join("");
+
   el.innerHTML = `
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:70px;">
-      <path d="${path}" fill="none" stroke="#e3c15a" stroke-width="2"></path>
-    </svg>
-    <div class="price-chart-source">${displayPrice(last.price, last.currency)} au dernier relevé</div>`;
+    <div class="pc-chart-anchor" id="${uid}-anchor">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" id="${uid}-svg" style="width:100%;height:110px;">
+        ${gridLines}
+        <path d="${linePath}" fill="none" stroke="#e3c15a" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+        <line class="pc-hover-line" id="${uid}-hline" x1="0" y1="${padT}" x2="0" y2="${padT + plotH}"></line>
+        <circle class="pc-hover-dot" id="${uid}-hdot" r="3"></circle>
+        <rect x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" id="${uid}-hit"></rect>
+      </svg>
+      <div class="pc-tooltip" id="${uid}-tooltip"></div>
+    </div>`;
+
+  const hitArea = document.getElementById(`${uid}-hit`);
+  const hoverDot = document.getElementById(`${uid}-hdot`);
+  const hoverLine = document.getElementById(`${uid}-hline`);
+  const tooltip = document.getElementById(`${uid}-tooltip`);
+  const svgEl = document.getElementById(`${uid}-svg`);
+  const wrap = document.getElementById(`${uid}-anchor`);
+
+  function showPoint(i){
+    i = Math.max(0, Math.min(coords.length - 1, i));
+    const [x, y] = coords[i];
+    hoverDot.setAttribute("cx", x); hoverDot.setAttribute("cy", y); hoverDot.style.opacity = 1;
+    hoverLine.setAttribute("x1", x); hoverLine.setAttribute("x2", x); hoverLine.style.opacity = 1;
+    const rect = wrap.getBoundingClientRect();
+    tooltip.style.transform = "translate(-50%,-130%)";
+    tooltip.style.left = `${(x / W) * rect.width}px`;
+    tooltip.style.top = `${(y / H) * rect.height}px`;
+    tooltip.style.opacity = 1;
+    const d = new Date(dates[i]);
+    const dateLabel = d.toLocaleDateString("fr-FR", { day: "2-digit", month: "short" });
+    tooltip.textContent = `${dateLabel} · ${displayPrice(values[i], currency)}`;
+    requestAnimationFrame(() => {
+      const tRect = tooltip.getBoundingClientRect();
+      let shift = 0;
+      if (tRect.right > rect.right) shift = rect.right - tRect.right;
+      if (tRect.left < rect.left) shift = rect.left - tRect.left;
+      if (shift !== 0) tooltip.style.transform = `translate(calc(-50% + ${shift}px),-130%)`;
+    });
+  }
+  function hidePoint(){ hoverDot.style.opacity = 0; hoverLine.style.opacity = 0; tooltip.style.opacity = 0; }
+
+  hitArea.addEventListener("mousemove", (e) => {
+    const rect = svgEl.getBoundingClientRect();
+    const relX = ((e.clientX - rect.left) / rect.width) * W;
+    showPoint(Math.round(((relX - padL) / plotW) * (coords.length - 1)));
+  });
+  hitArea.addEventListener("mouseleave", hidePoint);
+  hitArea.addEventListener("touchstart", (e) => {
+    const touch = e.touches[0];
+    const rect = svgEl.getBoundingClientRect();
+    const relX = ((touch.clientX - rect.left) / rect.width) * W;
+    showPoint(Math.round(((relX - padL) / plotW) * (coords.length - 1)));
+  }, { passive: true });
+
+  showPoint(coords.length - 1);
 }
 
 /* ------------------------------------------------------------
@@ -4506,6 +4599,16 @@ async function removeMultigraphWidget(widgetId){
    Gestion de la liste de CARTES d'UN panneau précis
    ------------------------------------------------------------ */
 let currentMgListWidgetId = null;
+
+function closeMultigraphListModal(){
+  document.getElementById("multigraph-list-modal-overlay").classList.remove("active");
+  if (currentMgListWidgetId != null) renderMultigraphPage(); // rafraîchit pour refléter les cartes ajoutées/retirées pendant que la fenêtre était ouverte
+}
+
+function closeMultigraphSetListModal(){
+  document.getElementById("multigraph-set-list-modal-overlay").classList.remove("active");
+  if (currentMgSetListWidgetId != null) renderMultigraphPage();
+}
 
 async function openWidgetCardListModal(widgetId){
   currentMgListWidgetId = widgetId;
