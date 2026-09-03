@@ -1047,12 +1047,21 @@
 </div>
 
 <div class="modal-overlay" id="multigraph-list-modal-overlay" onclick="if(event.target===this)closeMultigraphListModal()">
-  <div class="modal" style="max-width:480px;">
+  <div class="modal" style="max-width:520px;">
     <button class="modal-close" onclick="closeMultigraphListModal()">×</button>
     <h3>Liste de cartes de ce panneau</h3>
-    <input type="text" id="mg-list-search" placeholder="Rechercher une carte à ajouter..." oninput="searchCardsForMultigraphList(this.value)">
-    <div id="mg-list-search-results" class="ie-right-scroll" style="max-height:160px;margin-bottom:14px;"></div>
-    <h4>Cartes actuellement dans la liste</h4>
+    <div class="listings-tabs" style="margin-bottom:10px;">
+      <button type="button" class="tab-btn active" data-tab="search" onclick="setMgListPickerTab('search', this)">Rechercher</button>
+      <button type="button" class="tab-btn" data-tab="browse" onclick="setMgListPickerTab('browse', this)">Parcourir</button>
+    </div>
+    <div id="mg-list-picker-search">
+      <input type="text" id="mg-list-search" placeholder="Rechercher une carte à ajouter..." oninput="searchCardsForMultigraphList(this.value)">
+      <div id="mg-list-search-results" class="ie-right-scroll" style="max-height:160px;"></div>
+    </div>
+    <div id="mg-list-picker-browse" style="display:none;max-height:220px;overflow-y:auto;">
+      <div id="mg-list-browse-sets-list"></div>
+    </div>
+    <h4 style="margin-top:14px;">Cartes actuellement dans la liste</h4>
     <div id="mg-list-current" class="ie-right-scroll" style="max-height:240px;"></div>
   </div>
 </div>
@@ -4056,13 +4065,37 @@ async function resolveMultigraphCardSource(source, widgetId){
   return rows.map(r => r.card_id);
 }
 
+/** Choisit le bon nom selon la locale de l'utilisateur — priorité à sa
+ * langue, repli sur l'anglais, jamais sur le japonais comme dernier
+ * recours (on préfère n'importe quelle autre langue non-japonaise
+ * avant ça, l'anglais étant déjà couvert au repli précédent). */
+function pickLocalizedName(names, fallback){
+  if (!names || names.length === 0) return fallback || "?";
+  let match = names.find(n => n.locale === LANG);
+  if (match) return match.name;
+  match = names.find(n => n.locale === "en");
+  if (match) return match.name;
+  match = names.find(n => n.locale !== "ja");
+  if (match) return match.name;
+  return names[0].name;
+}
+
+function pickLocalizedSetName(set){
+  const names = set.set_names || [];
+  let match = names.find(n => n.locale === LANG);
+  if (match) return match.name;
+  match = names.find(n => n.locale === "en");
+  if (match) return match.name;
+  // name_en est déjà toujours en anglais, jamais en japonais — repli sûr
+  return set.name_en || "?";
+}
+
 async function fetchCardNamesByIds(cardIds){
   if (cardIds.length === 0) return {};
   const rows = await supabaseAuthedFetch(`cards?id=in.(${cardIds.join(",")})&select=id,card_number,card_names(locale,name)`);
   const map = {};
   rows.forEach(c => {
-    const nameObj = c.card_names.find(n => n.locale === LANG) || c.card_names.find(n => n.locale === "en") || c.card_names[0];
-    map[c.id] = nameObj ? `${nameObj.name} (#${c.card_number})` : `#${c.card_number}`;
+    map[c.id] = `${pickLocalizedName(c.card_names)} (#${c.card_number})`;
   });
   return map;
 }
@@ -4131,21 +4164,20 @@ async function renderMultigraphWidgetContent(w){
   if (!el) return;
   try {
     if (w.widget_type === "card_price"){
-      const rows = await supabaseAuthedFetch(`cards?id=eq.${w.config.card_id}&select=card_number,card_names(locale,name),card_images(image_url),sets(name_en)`);
+      const rows = await supabaseAuthedFetch(`cards?id=eq.${w.config.card_id}&select=card_number,card_names(locale,name),card_images(image_url),sets(name_en,set_names(locale,name))`);
       if (!rows.length){ el.innerHTML = `<p class="ie-hint">Carte introuvable.</p>`; return; }
       const c = rows[0];
-      const nameObj = c.card_names.find(n => n.locale === LANG) || c.card_names[0];
-      el.closest(".multigraph-widget").querySelector("h4").textContent = nameObj ? nameObj.name : `Carte #${w.config.card_id}`;
+      el.closest(".multigraph-widget").querySelector("h4").textContent = pickLocalizedName(c.card_names, `Carte #${w.config.card_id}`);
       const img = (c.card_images && c.card_images[0]) ? c.card_images[0].image_url : "";
       const history = await supabaseAuthedFetch(`price_history?card_id=eq.${w.config.card_id}&select=period_date,price,currency&order=period_date.asc`);
       el.innerHTML = `
-        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">${c.sets ? c.sets.name_en : ""} · #${c.card_number}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-bottom:6px;">${c.sets ? pickLocalizedSetName(c.sets) : ""} · #${c.card_number}</div>
         <div id="mg-chart-${w.id}" class="mg-card-chart-wrap" style="${img ? `background-image:url('${img}');` : ""}"></div>`;
       renderMiniPriceChart(document.getElementById(`mg-chart-${w.id}`), history);
     } else if (w.widget_type === "set_price"){
-      const setRows = await supabaseAuthedFetch(`sets?id=eq.${w.config.set_id}&select=name_en`);
+      const setRows = await supabaseAuthedFetch(`sets?id=eq.${w.config.set_id}&select=name_en,set_names(locale,name)`);
       if (!setRows.length){ el.innerHTML = `<p class="ie-hint">Set introuvable.</p>`; return; }
-      el.closest(".multigraph-widget").querySelector("h4").textContent = setRows[0].name_en;
+      el.closest(".multigraph-widget").querySelector("h4").textContent = pickLocalizedSetName(setRows[0]);
       const cards = await fetchAllPaginated(`cards?set_id=eq.${w.config.set_id}&select=id`);
       const cardIds = cards.map(c => c.id);
       const rows = cardIds.length ? await supabaseAuthedFetch(`price_history?card_id=in.(${cardIds.join(",")})&select=period_date,price,currency&order=period_date.asc`) : [];
@@ -4183,8 +4215,8 @@ async function renderMultigraphWidgetContent(w){
         return;
       }
       const movers = await computeTopSetMovers(setIds, w.config.period_days || 7, direction);
-      const setNames = movers.length ? await supabaseAuthedFetch(`sets?id=in.(${movers.map(m => m.set_id).join(",")})&select=id,name_en`) : [];
-      const nameMap = {}; setNames.forEach(s => { nameMap[s.id] = s.name_en; });
+      const setNames = movers.length ? await supabaseAuthedFetch(`sets?id=in.(${movers.map(m => m.set_id).join(",")})&select=id,name_en,set_names(locale,name)`) : [];
+      const nameMap = {}; setNames.forEach(s => { nameMap[s.id] = pickLocalizedSetName(s); });
       renderMoversList(el, movers.map(m => ({ label: nameMap[m.set_id] || `Set #${m.set_id}`, pct: m.pct })));
     }
   } catch (e) {
@@ -4385,8 +4417,8 @@ function renderMultigraphWidgetConfigFields(type, existingConfig){
     if (cfg.card_id) preloadMgSelectedCard(cfg.card_id);
   } else if (type === "set_price"){
     el.innerHTML = `<div class="empty-state">Chargement des sets...</div>`;
-    fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`).then(sets => {
-      el.innerHTML = `<label>Set <select id="mg-config-set-id">${sets.map(s => `<option value="${s.id}" ${cfg.set_id === s.id ? "selected" : ""}>${s.name_en}</option>`).join("")}</select></label>`;
+    fetchAllPaginated(`sets?select=id,name_en,official_abbreviation,set_names(locale,name)&order=name_en.asc`).then(sets => {
+      el.innerHTML = `<label>Set <select id="mg-config-set-id">${sets.map(s => `<option value="${s.id}" ${cfg.set_id === s.id ? "selected" : ""}>${pickLocalizedSetName(s)} (${s.official_abbreviation || "?"})</option>`).join("")}</select></label>`;
     });
   } else if (type === "set_top_gainers" || type === "set_top_losers"){
     el.innerHTML = `
@@ -4432,24 +4464,28 @@ function setMgCardPickerTab(tab, btn){
   btn.classList.add("active");
   document.getElementById("mg-card-picker-search").style.display = tab === "search" ? "block" : "none";
   document.getElementById("mg-card-picker-browse").style.display = tab === "browse" ? "block" : "none";
-  if (tab === "browse") loadMgBrowseSets();
+  if (tab === "browse") loadGenericBrowseSets("mg-browse-sets-list", "selectMultigraphCard");
 }
 
-let mgBrowseSetsLoaded = false;
-async function loadMgBrowseSets(){
-  if (mgBrowseSetsLoaded) return;
-  mgBrowseSetsLoaded = true;
-  const list = document.getElementById("mg-browse-sets-list");
+/** Zone "Parcourir" générique (tous les sets en accordéon, grille de
+ * cartes) — réutilisée à la fois pour choisir une seule carte
+ * (widget Évolution) et pour en ajouter plusieurs à la liste d'un
+ * panneau. onCardClickFnName est le nom (en texte) de la fonction à
+ * appeler au clic sur une carte. */
+async function loadGenericBrowseSets(containerId, onCardClickFnName){
+  const list = document.getElementById(containerId);
+  if (list.dataset.loaded) return;
+  list.dataset.loaded = "1";
   list.innerHTML = `<div class="empty-state">Chargement...</div>`;
-  const sets = await fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`);
+  const sets = await fetchAllPaginated(`sets?select=id,name_en,official_abbreviation,set_names(locale,name)&order=name_en.asc`);
   list.innerHTML = sets.map(s => `
     <div class="picker-set-accordion" data-set-id="${s.id}">
-      <div class="picker-set-header" onclick="toggleMgBrowseSet(${s.id}, this)">${s.name_en}</div>
+      <div class="picker-set-header" onclick="toggleGenericBrowseSet(${s.id}, this, '${onCardClickFnName}')">${pickLocalizedSetName(s)} (${s.official_abbreviation || "?"})</div>
       <div class="picker-card-slider" style="display:none;"></div>
     </div>`).join("");
 }
 
-async function toggleMgBrowseSet(setId, headerEl){
+async function toggleGenericBrowseSet(setId, headerEl, onCardClickFnName){
   const slider = headerEl.nextElementSibling;
   const isOpen = slider.style.display !== "none";
   if (isOpen){ slider.style.display = "none"; return; }
@@ -4458,10 +4494,9 @@ async function toggleMgBrowseSet(setId, headerEl){
   slider.dataset.loaded = "1";
   const cards = await supabaseAuthedFetch(`cards?set_id=eq.${setId}&select=id,card_number,card_names(locale,name),card_images(image_url)&order=card_number.asc`);
   slider.innerHTML = cards.map(c => {
-    const nameObj = c.card_names.find(n => n.locale === LANG) || c.card_names[0];
-    const name = nameObj ? nameObj.name : "?";
+    const name = pickLocalizedName(c.card_names);
     const img = (c.card_images && c.card_images[0]) ? c.card_images[0].image_url : "";
-    return `<div class="picker-card-item" onclick="selectMultigraphCard(${c.id}, '${name.replace(/'/g, "\\'")}')" title="${name}">
+    return `<div class="picker-card-item" onclick="window['${onCardClickFnName}'](${c.id}, '${name.replace(/'/g, "\\'")}')" title="${name}">
       ${img ? `<img src="${img}" loading="lazy">` : ""}
       <span class="picker-card-name">${name}</span>
     </div>`;
@@ -4471,8 +4506,7 @@ async function toggleMgBrowseSet(setId, headerEl){
 async function preloadMgSelectedCard(cardId){
   const rows = await supabaseAuthedFetch(`cards?id=eq.${cardId}&select=card_names(locale,name)`);
   if (rows.length){
-    const nameObj = rows[0].card_names.find(n => n.locale === LANG) || rows[0].card_names[0];
-    document.getElementById("mg-config-card-selected").textContent = `Sélectionnée : ${nameObj ? nameObj.name : "?"}`;
+    document.getElementById("mg-config-card-selected").textContent = `Sélectionnée : ${pickLocalizedName(rows[0].card_names)}`;
   }
 }
 
@@ -4498,7 +4532,6 @@ function selectMultigraphCard(cardId, name){
 
 function openMultigraphAddWidgetModal(){
   mgEditingWidgetId = null;
-  mgBrowseSetsLoaded = false;
   document.getElementById("mg-widget-error").textContent = "";
   document.getElementById("mg-widget-type").disabled = false;
   document.getElementById("mg-widget-type").value = "card_price";
@@ -4508,7 +4541,6 @@ function openMultigraphAddWidgetModal(){
 
 async function openEditMultigraphWidget(widgetId){
   mgEditingWidgetId = widgetId;
-  mgBrowseSetsLoaded = false;
   document.getElementById("mg-widget-error").textContent = "";
   try {
     const rows = await supabaseAuthedFetch(`multigraph_widgets?id=eq.${widgetId}&select=widget_type,config`);
@@ -4615,7 +4647,18 @@ async function openWidgetCardListModal(widgetId){
   document.getElementById("multigraph-list-modal-overlay").classList.add("active");
   document.getElementById("mg-list-search-results").innerHTML = "";
   document.getElementById("mg-list-search").value = "";
+  document.getElementById("mg-list-browse-sets-list").dataset.loaded = ""; // vide le cache d'affichage, au cas où un autre panneau a été géré entre-temps
+  document.getElementById("mg-list-browse-sets-list").innerHTML = "";
+  setMgListPickerTab("search", document.querySelector('#multigraph-list-modal-overlay .tab-btn[data-tab="search"]'));
   await renderMultigraphCurrentList();
+}
+
+function setMgListPickerTab(tab, btn){
+  document.querySelectorAll('#multigraph-list-modal-overlay .tab-btn').forEach(b => b.classList.remove("active"));
+  if (btn) btn.classList.add("active");
+  document.getElementById("mg-list-picker-search").style.display = tab === "search" ? "block" : "none";
+  document.getElementById("mg-list-picker-browse").style.display = tab === "browse" ? "block" : "none";
+  if (tab === "browse") loadGenericBrowseSets("mg-list-browse-sets-list", "addCardToMultigraphList");
 }
 
 async function renderMultigraphCurrentList(){
@@ -4625,9 +4668,8 @@ async function renderMultigraphCurrentList(){
   el.innerHTML = rows.length === 0
     ? `<p class="ie-hint">Aucune carte dans la liste de ce panneau pour l'instant.</p>`
     : rows.map(r => {
-        const nameObj = r.cards.card_names.find(n => n.locale === LANG) || r.cards.card_names[0];
         return `<div class="ie-policy-row">
-          <span>${nameObj ? nameObj.name : "?"} (#${r.cards.card_number})</span>
+          <span>${pickLocalizedName(r.cards.card_names)} (#${r.cards.card_number})</span>
           <button class="tile-remove-btn" style="position:static;" onclick="removeCardFromMultigraphList(${r.card_id})">×</button>
         </div>`;
       }).join("");
@@ -4684,17 +4726,17 @@ async function renderMultigraphCurrentSetList(){
   const el = document.getElementById("mg-set-list-current");
   el.innerHTML = `<div class="empty-state">Chargement...</div>`;
   const [rows, allSets] = await Promise.all([
-    supabaseAuthedFetch(`multigraph_widget_sets?widget_id=eq.${currentMgSetListWidgetId}&select=set_id,sets(name_en)`),
-    fetchAllPaginated(`sets?select=id,name_en&order=name_en.asc`),
+    supabaseAuthedFetch(`multigraph_widget_sets?widget_id=eq.${currentMgSetListWidgetId}&select=set_id,sets(name_en,official_abbreviation,set_names(locale,name))`),
+    fetchAllPaginated(`sets?select=id,name_en,official_abbreviation,set_names(locale,name)&order=name_en.asc`),
   ]);
   const selectedIds = new Set(rows.map(r => r.set_id));
   document.getElementById("mg-set-list-picker").innerHTML =
-    `<select id="mg-set-list-add-select"><option value="">— Ajouter un set —</option>${allSets.filter(s => !selectedIds.has(s.id)).map(s => `<option value="${s.id}">${s.name_en}</option>`).join("")}</select>
+    `<select id="mg-set-list-add-select"><option value="">— Ajouter un set —</option>${allSets.filter(s => !selectedIds.has(s.id)).map(s => `<option value="${s.id}">${pickLocalizedSetName(s)} (${s.official_abbreviation || "?"})</option>`).join("")}</select>
      <button class="auth-btn" style="margin-top:8px;" onclick="addSetToMultigraphSetList()">Ajouter</button>`;
   el.innerHTML = rows.length === 0
     ? `<p class="ie-hint">Aucun set dans la liste de ce panneau pour l'instant.</p>`
     : rows.map(r => `<div class="ie-policy-row">
-        <span>${r.sets ? r.sets.name_en : "?"}</span>
+        <span>${r.sets ? `${pickLocalizedSetName(r.sets)} (${r.sets.official_abbreviation || "?"})` : "?"}</span>
         <button class="tile-remove-btn" style="position:static;" onclick="removeSetFromMultigraphSetList(${r.set_id})">×</button>
       </div>`).join("");
 }
