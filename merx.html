@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Merx — Orbis TCG</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root{
-    --ink:#14161f; --ink-deep:#0d0e15; --panel:#1c1f2c; --panel-light:#242839;
-    --border:#333749; --gold:#c9a227; --gold-bright:#e3c15a;
-    --merx:#5b8a8f; --merx-bright:#7fb0b5;
-    --text:#ede9e0; --text-dim:#9a9db3; --text-faint:#666a80;
+    --ink:#0e0f14; --ink-deep:#08090c; --panel:#181b22; --panel-light:#20242e;
+    --border:#2a2e3a; --border-soft:#22252f;
+    --mauve:#a87fc9; --mauve-bright:#c9a3e0; --mauve-deep:#7a5a96;
+    --text:#f5f3f7; --text-dim:#9aa0b0; --text-faint:#5c6170;
     --font-display:'Fraunces', serif; --font-body:'Inter', sans-serif; --font-mono:'IBM Plex Mono', monospace;
   }
   *{box-sizing:border-box;}
@@ -19,73 +19,101 @@
   a{color:inherit;}
   .wrap{max-width:760px;margin:0 auto;padding:0 24px;}
 
-  header{padding:28px 0;border-bottom:1px solid var(--border);}
+  header{padding:26px 0;border-bottom:1px solid var(--border-soft);}
   .brand-row{display:flex;align-items:baseline;gap:10px;}
   .brand-row .orbis{font-family:var(--font-mono);font-size:12px;color:var(--text-faint);letter-spacing:0.03em;}
   .brand-row .merx{font-family:var(--font-display);font-size:20px;font-weight:600;}
 
-  .hero{padding:76px 0 64px;}
-  .hero h1{font-family:var(--font-display);font-weight:600;font-size:42px;line-height:1.18;margin:0 0 22px;max-width:15ch;}
-  .hero p.lede{font-size:18px;color:var(--text-dim);max-width:50ch;margin:0 0 36px;}
+  .hero{padding:72px 0 60px;}
+  .hero h1{font-family:var(--font-display);font-weight:600;font-size:40px;line-height:1.2;margin:0 0 20px;max-width:16ch;}
+  .hero p.lede{font-size:17.5px;color:var(--text-dim);max-width:50ch;margin:0 0 34px;}
 
-  .locator{
-    background:var(--panel);border:1px solid var(--border);border-radius:6px;
-    padding:20px 22px;margin:0 0 40px;display:flex;align-items:center;gap:16px;
-  }
-  .locator .thumb{
-    width:44px;height:60px;flex-shrink:0;border-radius:3px;
-    background:linear-gradient(135deg, #2a4a6b, #1c1f2c);border:1px solid var(--border);
-  }
+  .locator{position:relative;border-radius:8px;padding:1px;margin:0 0 36px;background:var(--mauve);}
+  .locator-inner{background:var(--panel);border-radius:7px;padding:18px 20px;display:flex;align-items:center;gap:16px;}
+  .locator .thumb{width:42px;height:58px;flex-shrink:0;border-radius:3px;background:var(--panel-light);border:1px solid var(--border);}
   .locator .card-name{font-weight:600;font-size:15px;margin-bottom:6px;}
-  .locator .trail{font-family:var(--font-mono);font-size:12.5px;color:var(--merx-bright);display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+  .locator .trail{font-family:var(--font-mono);font-size:12.5px;color:var(--text-dim);display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
   .locator .trail .sep{color:var(--text-faint);}
 
   .cta-row{display:flex;gap:14px;flex-wrap:wrap;}
-  .btn{display:inline-block;font-family:var(--font-mono);font-size:13px;letter-spacing:0.02em;padding:12px 22px;border-radius:4px;text-decoration:none;}
-  .btn-primary{background:var(--merx);color:#0d1112;font-weight:500;}
-  .btn-primary:hover{background:var(--merx-bright);}
-  .btn-ghost{border:1px solid var(--border);color:var(--text-dim);}
-  .btn-ghost:hover{border-color:var(--merx);color:var(--text);}
+  .btn{display:inline-block;font-family:var(--font-body);font-size:14px;font-weight:600;padding:13px 24px;border-radius:6px;text-decoration:none;}
+  .btn-primary{background:var(--mauve);color:#181121;}
+  .btn-primary:hover{background:var(--mauve-bright);}
+  .btn-ghost{border:1px solid var(--border);color:var(--text-dim);font-weight:500;}
+  .btn-ghost:hover{border-color:var(--text-faint);color:var(--text);}
 
-  section{padding:56px 0;border-top:1px solid var(--border);}
-  .kicker{font-family:var(--font-display);font-size:26px;font-weight:600;margin:0 0 18px;max-width:24ch;}
+  section{padding:52px 0;border-top:1px solid var(--border-soft);}
+  .kicker{font-family:var(--font-display);font-size:25px;font-weight:600;margin:0 0 16px;max-width:24ch;}
   .lede-block p{font-size:16px;color:var(--text-dim);max-width:58ch;margin:0 0 14px;}
 
   .storage-types{display:flex;flex-direction:column;}
-  .storage-type{padding:22px 0;border-top:1px solid var(--border);}
+  .storage-type{padding:20px 0;border-top:1px solid var(--border-soft);}
   .storage-type:first-child{border-top:none;}
   .storage-type h3{font-size:16px;font-weight:600;margin:0 0 6px;}
   .storage-type p{margin:0;color:var(--text-dim);font-size:14.5px;max-width:56ch;}
 
   .steps{counter-reset:step;}
-  .step{display:flex;gap:20px;padding:22px 0;border-top:1px solid var(--border);}
+  .step{display:flex;gap:20px;padding:20px 0;border-top:1px solid var(--border-soft);}
   .step:first-child{border-top:none;}
-  .step .num{counter-increment:step;font-family:var(--font-mono);font-size:13px;color:var(--merx-bright);flex:0 0 28px;padding-top:3px;}
+  .step .num{counter-increment:step;font-family:var(--font-mono);font-size:13px;color:var(--mauve-bright);flex:0 0 28px;padding-top:3px;}
   .step .num::before{content:counter(step, decimal-leading-zero);}
   .step h3{font-family:var(--font-body);font-weight:600;font-size:16px;margin:0 0 6px;}
   .step p{margin:0;color:var(--text-dim);font-size:14.5px;max-width:52ch;}
 
-  .callout{background:var(--panel);border-left:2px solid var(--merx);border-radius:0 6px 6px 0;padding:18px 22px;margin-top:24px;}
-  .callout p{margin:0;font-size:14.5px;color:var(--text-dim);}
+  .callout{background:var(--panel);border-radius:8px;padding:18px 20px;margin-top:22px;position:relative;}
+  .callout::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:2px;background:var(--mauve);}
+  .callout p{margin:0;font-size:14.5px;color:var(--text-dim);padding-left:14px;}
   .callout strong{color:var(--text);}
 
+  /* Maquettes — clairement des concepts. La première (côté client) est
+     volontairement en thème clair : c'est le vrai thème prévu pour
+     l'app, pas celui du site vitrine. */
+  .mockup-frame{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin:28px 0;}
+  .mockup-label{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);margin-bottom:10px;}
+
+  .mockup-screen-light{
+    background:#f7f5fa;border-radius:6px;padding:14px;aspect-ratio:16/8;display:flex;flex-direction:column;
+  }
+  .mockup-browse-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;flex:1;}
+  .mockup-card{
+    position:relative;background:#e9e5f0;border-radius:5px;border:1px solid #ded7e8;overflow:hidden;
+  }
+  .mockup-card.sel{border:2px solid var(--mauve-deep);}
+  .mockup-card .info{
+    position:absolute;left:3px;right:3px;bottom:3px;display:flex;justify-content:space-between;align-items:flex-end;
+  }
+  .mockup-card .lang{font-family:var(--font-mono);font-size:8px;background:#fff;color:#3a2f45;border-radius:2px;padding:1px 3px;}
+  .mockup-card .price{font-family:var(--font-mono);font-size:8px;font-weight:600;background:var(--mauve-deep);color:#fff;border-radius:2px;padding:1px 3px;}
+  .mockup-card .cond{position:absolute;top:3px;left:3px;font-family:var(--font-mono);font-size:7px;color:#6b5f78;background:#fff;border-radius:2px;padding:1px 3px;}
+  .mockup-card.sel::after{content:"✓";position:absolute;top:3px;right:3px;width:12px;height:12px;background:var(--mauve-deep);color:#fff;border-radius:50%;font-size:8px;display:flex;align-items:center;justify-content:center;}
+  .mockup-cta-light{margin-top:12px;background:var(--mauve-deep);color:#fff;text-align:center;font-family:var(--font-body);font-weight:600;font-size:12px;padding:9px;border-radius:5px;}
+
+  .mockup-screen{background:var(--ink-deep);border-radius:6px;padding:16px;}
+  .mockup-notif{display:flex;align-items:center;gap:12px;background:var(--panel-light);border-radius:6px;padding:12px 14px;}
+  .mockup-notif .badge{width:32px;height:32px;border-radius:50%;background:var(--mauve);flex-shrink:0;}
+  .mockup-notif .txt{font-size:13px;}
+  .mockup-notif .txt .t{font-weight:600;margin-bottom:2px;}
+  .mockup-notif .txt .s{color:var(--text-dim);font-size:12px;}
+
   .audience{display:flex;flex-direction:column;gap:2px;}
-  .audience .row{display:flex;justify-content:space-between;gap:20px;padding:16px 0;border-top:1px solid var(--border);}
+  .audience .row{display:flex;justify-content:space-between;gap:20px;padding:15px 0;border-top:1px solid var(--border-soft);}
   .audience .row:first-child{border-top:none;}
   .audience .row .what{color:var(--text-dim);font-size:14.5px;max-width:36ch;text-align:right;}
   .audience .row .who{font-weight:600;font-size:15px;}
 
-  .status-badge{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;color:var(--merx-bright);border:1px solid var(--merx);border-radius:20px;padding:6px 14px;margin-bottom:18px;}
-  .status-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--merx-bright);}
+  .status-badge{display:inline-flex;align-items:center;gap:8px;font-family:var(--font-mono);font-size:12px;color:var(--text-dim);border:1px solid var(--border);border-radius:20px;padding:6px 14px;margin-bottom:18px;}
+  .status-badge .dot{width:6px;height:6px;border-radius:50%;background:var(--mauve);}
 
-  footer{padding:40px 0 60px;color:var(--text-faint);font-size:13px;}
+  footer{padding:36px 0 56px;color:var(--text-faint);font-size:13px;}
   footer a{color:var(--text-dim);text-decoration:underline;}
 
   @media (max-width:640px){
-    .hero h1{font-size:30px;}
-    .locator{flex-direction:column;align-items:flex-start;}
+    .hero h1{font-size:29px;}
+    .locator-inner{flex-direction:column;align-items:flex-start;}
     .audience .row{flex-direction:column;gap:4px;}
     .audience .row .what{text-align:left;}
+    .mockup-browse-grid{grid-template-columns:repeat(4,1fr);}
+    .mockup-screen-light{aspect-ratio:4/5;}
   }
 </style>
 </head>
@@ -101,13 +129,15 @@
 <div class="hero wrap">
   <span class="status-badge"><span class="dot"></span>En développement</span>
   <h1>Chaque carte de la boutique, retrouvée au bac près.</h1>
-  <p class="lede">Merx cartographie votre vitrine, vos classeurs et vos racks, carte par carte. Vos clients parcourent tout depuis une borne en magasin, réservent d'un geste — et le comptoir sait déjà exactement où aller chercher.</p>
+  <p class="lede">Vitrine, classeurs, racks — Merx sait exactement où se trouve chaque carte. Vos clients parcourent tout depuis une borne, réservent en deux clics, et le comptoir sait déjà où aller chercher.</p>
 
   <div class="locator">
-    <div class="thumb"></div>
-    <div>
-      <div class="card-name">Dracaufeu — Set de Base</div>
-      <div class="trail">Classeur 2<span class="sep">/</span>Page 4<span class="sep">/</span>Emplacement B3</div>
+    <div class="locator-inner">
+      <div class="thumb"></div>
+      <div>
+        <div class="card-name">Dracaufeu — Set de Base</div>
+        <div class="trail">Classeur 2<span class="sep">/</span>Page 4<span class="sep">/</span>Emplacement B3</div>
+      </div>
     </div>
   </div>
 
@@ -119,63 +149,93 @@
 
 <section>
   <div class="wrap lede-block">
-    <h2 class="kicker">La vitrine ne peut pas tout montrer</h2>
-    <p>Un classeur de 400 cartes, un rack de plusieurs milliers, une vitrine qui ne peut exposer qu'une fraction du stock — un client qui cherche une carte précise doit demander, et quelqu'un doit tout fouiller à la main.</p>
-    <p>Merx transforme ce fouillis en un catalogue que le client parcourt lui-même, pendant que la boutique sait déjà où se trouve chaque carte.</p>
+    <h2 class="kicker">Du monde en boutique ? Pas le temps de vous occuper de tout le monde ?</h2>
+    <p>Feuilleter un classeur avec un client, c'est normal, ça se fait très bien. Le problème arrive quand trois personnes cherchent quelque chose en même temps et qu'il n'y a qu'une seule paire de mains au comptoir.</p>
+    <p>Merx laisse vos clients parcourir vitrine, classeurs et racks tout seuls, pendant que vous gérez le reste — et vous savez déjà où se trouve chaque carte qu'ils réservent.</p>
   </div>
 </section>
 
 <section>
   <div class="wrap">
-    <h2 class="kicker">Trois façons de cataloguer, selon votre rangement</h2>
+    <h2 class="kicker">Trois rangements, trois façons de scanner</h2>
     <div class="storage-types">
       <div class="storage-type">
         <h3>Vitrine</h3>
-        <p>Scan ligne par ligne (de gauche à droite ou l'inverse), un bouton marque le passage à la ligne suivante — chaque carte garde sa vraie position dans la vitrine virtuelle.</p>
+        <p>Scan ligne par ligne, gauche à droite ou l'inverse, un bouton pour dire "nouvelle ligne" — la position de chaque carte reste fidèle à la vraie vitrine.</p>
       </div>
       <div class="storage-type">
         <h3>Classeur</h3>
-        <p>Une page à la fois, validée avant de passer à la suivante — Merx retient précisément la page et l'emplacement de chaque carte.</p>
+        <p>Une page à la fois, validée avant de passer à la suivante. Merx retient la page et l'emplacement exact de chaque carte.</p>
       </div>
       <div class="storage-type">
         <h3>Rack</h3>
-        <p>Chaque rack est ajouté dans l'application, puis scanné rangée par rangée — même principe pour un stock de plusieurs milliers de cartes.</p>
+        <p>Chaque rack est ajouté dans l'app, puis scanné rangée par rangée — même logique, à l'échelle de plusieurs milliers de cartes.</p>
       </div>
     </div>
     <div class="callout">
-      <p><strong>BulkScan</strong> (à venir) permet de cataloguer tout ça par simple photo, sans saisir chaque carte à la main.</p>
+      <p><strong>BulkScan</strong>, en préparation, fera tout ça en photo — plus besoin de saisir carte par carte à la main.</p>
     </div>
   </div>
 </section>
 
 <section id="comment-ca-marche">
   <div class="wrap">
-    <h2 class="kicker">Ce que vit le client, une fois la boutique cataloguée</h2>
+    <h2 class="kicker">Côté client, une fois la boutique cataloguée</h2>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Aperçu — maquette du thème clair prévu pour l'app, disposition paysage</div>
+      <div class="mockup-screen-light">
+        <div class="mockup-browse-grid">
+          <div class="mockup-card"><span class="cond">NM</span><div class="info"><span class="lang">FR</span><span class="price">12€</span></div></div>
+          <div class="mockup-card sel"><span class="cond">NM</span><div class="info"><span class="lang">EN</span><span class="price">8€</span></div></div>
+          <div class="mockup-card"><span class="cond">EX</span><div class="info"><span class="lang">JP</span><span class="price">25€</span></div></div>
+          <div class="mockup-card"><span class="cond">NM</span><div class="info"><span class="lang">FR</span><span class="price">4€</span></div></div>
+          <div class="mockup-card sel"><span class="cond">MT</span><div class="info"><span class="lang">FR</span><span class="price">40€</span></div></div>
+          <div class="mockup-card"><span class="cond">GD</span><div class="info"><span class="lang">DE</span><span class="price">3€</span></div></div>
+        </div>
+        <div class="mockup-cta-light">Réserver 2 cartes</div>
+      </div>
+    </div>
+
     <div class="steps">
       <div class="step">
         <div class="num"></div>
         <div>
           <h3>Il parcourt la boutique depuis la borne</h3>
-          <p>Vitrine, classeurs, racks — tout est consultable au même endroit, sans avoir à demander.</p>
+          <p>Vitrine, classeurs, racks, tout au même endroit — sans avoir à demander à qui que ce soit.</p>
         </div>
       </div>
       <div class="step">
         <div class="num"></div>
         <div>
-          <h3>Il sélectionne les cartes qui l'intéressent</h3>
-          <p>Une simple sélection, directement depuis l'écran.</p>
+          <h3>Il sélectionne ce qui l'intéresse</h3>
+          <p>Un tap sur chaque carte, langue, prix et état déjà affichés dessus.</p>
         </div>
       </div>
       <div class="step">
         <div class="num"></div>
         <div>
           <h3>Le comptoir reçoit la réservation</h3>
-          <p>Une notification arrive côté boutique — il ne reste plus qu'à préparer ce qui a été demandé.</p>
+          <p>Plus qu'à préparer ce qui a été demandé.</p>
         </div>
       </div>
     </div>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Aperçu — maquette, pas la version finale</div>
+      <div class="mockup-screen">
+        <div class="mockup-notif">
+          <div class="badge"></div>
+          <div class="txt">
+            <div class="t">Nouvelle réservation — Borne 1</div>
+            <div class="s">Dracaufeu (Classeur 2, Page 4) + 1 autre carte</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="callout">
-      <p>Carte vendue : rien de plus à faire. Carte non retenue : il suffit de la sélectionner dans l'application, qui affiche le guide pour la remettre exactement à sa place.</p>
+      <p>Carte vendue : rien à faire de plus. Carte laissée de côté : une sélection dans l'app, et le guide de rangement vous montre où la remettre.</p>
     </div>
   </div>
 </section>
@@ -184,16 +244,16 @@
   <div class="wrap">
     <h2 class="kicker">Trois personnes, un même écran</h2>
     <div class="audience">
-      <div class="row"><span class="who">Le gérant</span><span class="what">Catalogue sa boutique une fois, au fil des réassorts</span></div>
+      <div class="row"><span class="who">Le gérant</span><span class="what">Catalogue la boutique une fois, met à jour au fil des réassorts</span></div>
       <div class="row"><span class="who">L'employé au comptoir</span><span class="what">Reçoit la réservation, prépare, range si besoin</span></div>
-      <div class="row"><span class="who">Le client en magasin</span><span class="what">Découvre tout le stock, pas juste ce qui est sous ses yeux</span></div>
+      <div class="row"><span class="who">Le client en magasin</span><span class="what">Voit tout le stock, pas juste ce qui est sous ses yeux</span></div>
     </div>
   </div>
 </section>
 
 <footer>
   <div class="wrap">
-    Merx fait partie d'Orbis TCG, sous l'axe Iter. Une question, une envie de tester en premier ?
+    Merx fait partie d'Orbis TCG, sous l'axe Iter. Envie d'en discuter ou de tester en premier ?
     <a href="mailto:contact@porygonvault.com">Écrivez-nous</a>.
   </div>
 </footer>
