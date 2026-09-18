@@ -2,30 +2,40 @@
 Collecte des prix Cardmarket via le fichier price guide officiel
 CartaBourse
 
-Remplace l'ancienne version (qui interrogeait TCGdex carte par carte,
-avec le prix avg1 — ne se mettait à jour qu'une fois par semaine).
-Utilise maintenant directement le fichier officiel de Cardmarket, avec
-le prix "trend" (mis à jour chaque jour, confirmé sur ce projet), stocké
-dans une colonne "price" volontairement neutre — si la méthode de calcul
-change encore un jour, pas besoin de renommer la colonne à nouveau.
+Utilise le fichier officiel de Cardmarket, avec le prix "trend" (mis à
+jour chaque jour), stocké dans une colonne "price" volontairement
+neutre — si la méthode de calcul change encore un jour, pas besoin de
+renommer la colonne à nouveau.
 
-Fait deux choses, dans l'ordre, à chaque exécution :
+Fait trois choses, dans l'ordre, à chaque exécution :
   1. Télécharge le fichier price_guide_6.json depuis Cardmarket, et le
      commit/push dans le dépôt Git (utile pour l'historique, le debug,
      et pour que d'autres outils du dépôt puissent s'en servir sans
      retélécharger) — mêmes commandes git que vos automatisations
      GitHub Actions existantes (ebay-daily.yml, etc.)
-  2. Utilise ce même fichier pour mettre à jour price_history, en
-     rapprochant via card_variants.cardmarket_id (jamais par nom).
-
-Purge automatique : comme avant, les points de plus de 2 semaines sont
-supprimés à chaque exécution.
+  2. Écrit dans price_history une ligne par carte individuelle
+     (idCategory=51) présente dans le fichier :
+       - si son cardmarket_id est déjà relié à une carte de la base
+         (card_variants.cardmarket_id) → ligne "carte" normale
+         (card_id renseigné) ;
+       - sinon → ligne "non reliée" (cardmarket_id renseigné, card_id
+         et product_id restent NULL). Le but : dès qu'un cardmarket_id
+         est relié à une carte plus tard (cross-référencement manuel,
+         futur import), tout l'historique déjà accumulé est récupérable
+         d'un coup — voir backfill-cardmarket-id-vers-price-history.sql.
+     Nécessite la migration migration-price-history-cardmarket-id.sql
+     (colonne cardmarket_id + target_key à 3 branches).
+  3. Purge automatique : comme avant, les points de plus de 2 semaines
+     sont supprimés, mais UNIQUEMENT pour les lignes déjà reliées à une
+     carte ou un produit — les lignes "non reliées" (cardmarket_id
+     seul) ne sont jamais purgées : elles doivent survivre jusqu'à ce
+     qu'on sache à quelle carte elles correspondent.
 
 Prérequis :
-  1. reinit-price-history-colonne-price.sql exécuté dans Supabase
+  1. migration-price-history-cardmarket-id.sql exécuté dans Supabase
   2. pip install requests
   3. Lancé depuis un dépôt Git déjà cloné (avec les identifiants git
-     configurés — c'est le cas automatiquement dans GitHub Actions)
+     configurés AVANT ce script — voir cardmarket-daily.yml)
 
 Utilisation :
   SUPABASE_URL=https://xxxx.supabase.co SUPABASE_SERVICE_KEY=... \
@@ -116,15 +126,19 @@ def supabase_upsert(table, rows, on_conflict):
 
 
 def purge_old_prices():
+    # Uniquement les lignes deja reliees (card_id ou product_id) : les
+    # lignes "non reliees" (cardmarket_id seul) ne sont jamais purgees,
+    # elles doivent survivre jusqu'a ce qu'une carte leur soit associee.
     cutoff = (datetime.date.today() - datetime.timedelta(days=RETENTION_DAYS)).isoformat()
     resp = requests.delete(
-        f"{SUPABASE_URL}/rest/v1/price_history?period_date=lt.{cutoff}",
+        f"{SUPABASE_URL}/rest/v1/price_history?period_date=lt.{cutoff}&cardmarket_id=is.null",
         headers=SUPABASE_HEADERS,
     )
     if resp.status_code not in (200, 204):
         print(f"Erreur lors de la purge des anciens prix : {resp.status_code} — {resp.text[:300]}")
         return
-    print(f"Purge : points de prix antérieurs au {cutoff} supprimés ({RETENTION_DAYS} jours de rétention).")
+    print(f"Purge : points de prix (cartes/produits déjà reliés) antérieurs au {cutoff} supprimés "
+          f"({RETENTION_DAYS} jours de rétention — les lignes non reliées ne sont jamais purgées).")
 
 
 def run_git(*args):
@@ -140,7 +154,13 @@ def download_and_publish_json():
     Ordre important : on se synchronise avec le dépôt distant AVANT
     d'écrire le fichier localement — un pull --rebase avec une
     modification locale déjà présente (mais non commitée) risquerait
-    d'échouer ou de mal se comporter en cas de changement distant entre-temps."""
+    d'échouer ou de mal se comporter en cas de changement distant entre-temps.
+
+    Nécessite que git config user.name/user.email soient déjà définis
+    AVANT l'appel à ce script (voir cardmarket-daily.yml) — sans ça, le
+    commit ci-dessous échoue silencieusement (le fichier est bien
+    téléchargé et utilisé pour la suite, mais jamais persisté dans le
+    dépôt)."""
     if not SKIP_GIT_PUSH:
         run_git("pull", "--rebase")
 
@@ -173,7 +193,10 @@ def download_and_publish_json():
 
 def update_prices_from_json():
     """Fonction 2 : utilise le fichier déjà téléchargé localement pour
-    mettre à jour price_history, en rapprochant via card_variants.cardmarket_id."""
+    mettre à jour price_history — en ligne "carte" (card_id) pour les
+    cardmarket_id déjà reliés, en ligne "non reliée" (cardmarket_id
+    seul) pour les autres, afin de garder leur historique prêt pour le
+    jour où elles seront reliées."""
     print("\nRécupération des identifiants Cardmarket déjà connus (card_variants)...")
     variants = supabase_get_all("card_variants?cardmarket_id=not.is.null&select=card_id,cardmarket_id")
     cardmarket_to_card = {}
@@ -184,42 +207,49 @@ def update_prices_from_json():
     with open(LOCAL_JSON_PATH, encoding="utf-8") as f:
         data = json.load(f)
     guides = data.get("priceGuides", [])
-    print(f"  {len(guides)} entrée(s) dans le fichier (Pokémon uniquement, créé le {data.get('createdAt')}).")
+    print(f"  {len(guides)} entrée(s) dans le fichier (créé le {data.get('createdAt')}).")
 
     today = datetime.date.today().isoformat()
     rows = []
     matched = 0
+    unmatched = 0
 
     for g in guides:
         if g.get("idCategory") != CARD_CATEGORY_ID:
             continue
-        card_id = cardmarket_to_card.get(str(g.get("idProduct")))
-        if card_id is None:
-            continue
-
         trend = g.get("trend")
         if trend is None:
             continue
 
-        matched += 1
-        rows.append({
-            "card_id": card_id,
+        id_product = g.get("idProduct")
+        card_id = cardmarket_to_card.get(str(id_product))
+
+        row = {
             "period_date": today,
             "price": trend,
             "min_price": g.get("low"),
             "max_price": None,
             "currency": "EUR",
-        })
+        }
+        if card_id is not None:
+            row["card_id"] = card_id
+            matched += 1
+        else:
+            row["cardmarket_id"] = id_product
+            unmatched += 1
+        rows.append(row)
 
-    print(f"{matched} carte(s) avec un prix trouvé.\n")
+    print(f"{matched + unmatched} produit(s) individuel(s) avec un prix dans le fichier : "
+          f"{matched} déjà reliés à une carte, {unmatched} pas encore reliés.\n")
 
-    print("Écriture dans price_history par lots...")
+    print("Écriture dans price_history...")
     for i in range(0, len(rows), UPSERT_BATCH_SIZE):
         batch = rows[i:i + UPSERT_BATCH_SIZE]
         supabase_upsert("price_history", batch, on_conflict="target_key,period_date,currency")
         print(f"  [{min(i + UPSERT_BATCH_SIZE, len(rows))}/{len(rows)}] écrit(s)...")
 
-    print(f"\nTerminé — {matched} prix mis à jour pour aujourd'hui ({today}).")
+    print(f"\nTerminé — {matched} carte(s) mise(s) à jour, {unmatched} en attente de rattachement, "
+          f"pour aujourd'hui ({today}).")
 
 
 def main():
