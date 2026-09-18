@@ -117,12 +117,21 @@ def supabase_get_all(path):
 
 
 def supabase_upsert(table, rows, on_conflict):
+    """Renvoie True si le lot a bien été écrit, False sinon — pour que
+    l'appelant puisse compter les échecs réels plutôt que de supposer
+    que tout s'est bien passé dès que la requête part sans exception."""
     if not rows:
-        return
+        return True
     url = f"{SUPABASE_URL}/rest/v1/{table}?on_conflict={on_conflict}"
-    resp = requests.post(url, headers=SUPABASE_HEADERS, json=rows)
+    try:
+        resp = requests.post(url, headers=SUPABASE_HEADERS, json=rows, timeout=120)
+    except requests.exceptions.RequestException as e:
+        print(f"  Erreur réseau upsert {table} : {e}")
+        return False
     if resp.status_code not in (200, 201, 204):
         print(f"  Erreur upsert {table} : {resp.status_code} — {resp.text[:300]}")
+        return False
+    return True
 
 
 def purge_old_prices():
@@ -224,18 +233,22 @@ def update_prices_from_json():
         id_product = g.get("idProduct")
         card_id = cardmarket_to_card.get(str(id_product))
 
+        # PostgREST exige que tous les objets d'un même envoi en lot aient
+        # exactement les mêmes clés ("All object keys must match" / PGRST102) —
+        # donc toujours les deux clés ici, avec None pour celle qui ne
+        # s'applique pas, plutôt que de l'omettre selon le cas.
         row = {
             "period_date": today,
             "price": trend,
             "min_price": g.get("low"),
             "max_price": None,
             "currency": "EUR",
+            "card_id": card_id,
+            "cardmarket_id": None if card_id is not None else id_product,
         }
         if card_id is not None:
-            row["card_id"] = card_id
             matched += 1
         else:
-            row["cardmarket_id"] = id_product
             unmatched += 1
         rows.append(row)
 
@@ -243,13 +256,30 @@ def update_prices_from_json():
           f"{matched} déjà reliés à une carte, {unmatched} pas encore reliés.\n")
 
     print("Écriture dans price_history...")
+    failed_batches = 0
+    failed_rows = 0
+    written_rows = 0
     for i in range(0, len(rows), UPSERT_BATCH_SIZE):
         batch = rows[i:i + UPSERT_BATCH_SIZE]
-        supabase_upsert("price_history", batch, on_conflict="target_key,period_date,currency")
-        print(f"  [{min(i + UPSERT_BATCH_SIZE, len(rows))}/{len(rows)}] écrit(s)...")
+        ok = supabase_upsert("price_history", batch, on_conflict="target_key,period_date,currency")
+        if ok:
+            written_rows += len(batch)
+            print(f"  [{min(i + UPSERT_BATCH_SIZE, len(rows))}/{len(rows)}] écrit(s)...")
+        else:
+            failed_batches += 1
+            failed_rows += len(batch)
+            print(f"  [{min(i + UPSERT_BATCH_SIZE, len(rows))}/{len(rows)}] ÉCHEC de ce lot "
+                  f"({len(batch)} ligne(s) non écrite(s)).")
 
-    print(f"\nTerminé — {matched} carte(s) mise(s) à jour, {unmatched} en attente de rattachement, "
-          f"pour aujourd'hui ({today}).")
+    if failed_batches:
+        print(f"\nTerminé avec des ERREURS — {failed_batches} lot(s) sur "
+              f"{(len(rows) + UPSERT_BATCH_SIZE - 1) // UPSERT_BATCH_SIZE} ont échoué "
+              f"({failed_rows} ligne(s) non écrite(s) sur {len(rows)}). "
+              f"{written_rows} ligne(s) bien écrite(s) — relancer le script réécrira les lots manquants "
+              f"(l'upsert est idempotent), pour aujourd'hui ({today}).")
+    else:
+        print(f"\nTerminé — {matched} carte(s) mise(s) à jour, {unmatched} en attente de rattachement, "
+              f"{written_rows} ligne(s) écrite(s) au total, pour aujourd'hui ({today}).")
 
 
 def main():
