@@ -207,11 +207,34 @@ def update_prices_from_json():
     seul) pour les autres, afin de garder leur historique prêt pour le
     jour où elles seront reliées."""
     print("\nRécupération des identifiants Cardmarket déjà connus (card_variants)...")
-    variants = supabase_get_all("card_variants?cardmarket_id=not.is.null&select=card_id,cardmarket_id")
-    cardmarket_to_card = {}
+    variants = supabase_get_all("card_variants?cardmarket_id=not.is.null&select=card_id,cardmarket_id,variant_id")
+
+    # Une même carte a souvent plusieurs variantes (normal, reverse holo...),
+    # donc plusieurs cardmarket_id distincts qui pointent vers le même
+    # card_id. price_history n'a qu'une ligne par carte et par jour (pas de
+    # notion de variante) : s'il fallait écrire un prix par variante, deux
+    # lignes de la même écriture porteraient le même target_key ("c:<id>"),
+    # ce que Postgres refuse ("ON CONFLICT DO UPDATE command cannot affect
+    # row a second time"). On ne retient donc qu'UN SEUL cardmarket_id par
+    # carte — celui de la variante "normal" en priorité, sinon le premier
+    # rencontré — pour le prix "carte". Les autres variantes de la même
+    # carte restent des lignes "non reliées" (cardmarket_id seul), ce qui
+    # ne perd rien : leur historique reste disponible sous leur propre
+    # cardmarket_id.
+    card_to_preferred_cardmarket = {}
     for v in variants:
-        cardmarket_to_card.setdefault(str(v["cardmarket_id"]), v["card_id"])
-    print(f"  {len(cardmarket_to_card)} identifiant(s) Cardmarket connu(s) en base.")
+        card_id = v["card_id"]
+        is_normal = v.get("variant_id") == "normal"
+        current = card_to_preferred_cardmarket.get(card_id)
+        if current is None or (is_normal and not current[1]):
+            card_to_preferred_cardmarket[card_id] = (str(v["cardmarket_id"]), is_normal)
+
+    cardmarket_to_card = {
+        cm_id: card_id
+        for card_id, (cm_id, _is_normal) in card_to_preferred_cardmarket.items()
+    }
+    print(f"  {len(variants)} variante(s) avec cardmarket_id, {len(cardmarket_to_card)} carte(s) unique(s) "
+          f"retenue(s) pour le prix \"carte\" (1 par carte, variante normale privilégiée).")
 
     with open(LOCAL_JSON_PATH, encoding="utf-8") as f:
         data = json.load(f)
@@ -251,6 +274,20 @@ def update_prices_from_json():
         else:
             unmatched += 1
         rows.append(row)
+
+    # Garde-fou : même en théorie impossible désormais, on déduplique par
+    # target_key (même logique que la colonne générée en base) avant
+    # l'envoi, pour ne jamais reproduire l'erreur Postgres "ON CONFLICT DO
+    # UPDATE command cannot affect row a second time" si une autre source
+    # de doublon apparaissait un jour (ex. idProduct dupliqué dans le
+    # fichier Cardmarket lui-même).
+    rows_by_target = {}
+    for row in rows:
+        key = f"c:{row['card_id']}" if row["card_id"] is not None else f"cm:{row['cardmarket_id']}"
+        rows_by_target[key] = row
+    if len(rows_by_target) != len(rows):
+        print(f"  ({len(rows) - len(rows_by_target)} doublon(s) de target_key supprimé(s) avant l'envoi.)")
+    rows = list(rows_by_target.values())
 
     print(f"{matched + unmatched} produit(s) individuel(s) avec un prix dans le fichier : "
           f"{matched} déjà reliés à une carte, {unmatched} pas encore reliés.\n")
